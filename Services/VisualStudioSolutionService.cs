@@ -1,4 +1,6 @@
-﻿using System;
+﻿using FODevManager.Utils;
+using Microsoft.Extensions.Configuration;
+using System;
 using System.IO;
 using System.Text;
 
@@ -8,24 +10,35 @@ namespace FODevManager.Services
     {
         private readonly string _defaultSourceDirectory;
 
-        public VisualStudioSolutionService(string defaultSourceDirectory)
+        public VisualStudioSolutionService(AppConfig config)
         {
-            _defaultSourceDirectory = defaultSourceDirectory;
+            _defaultSourceDirectory = config.DefaultSourceDirectory;
         }
 
         public string GetSolutionFilePath(string profileName)
         {
-            return Path.Combine(_defaultSourceDirectory, $"{profileName}.sln");
+            return Path.Combine(_defaultSourceDirectory, profileName, $"{profileName}.sln");
         }
 
-        public void CreateSolutionFile(string profileName)
+        public string GetSolutionDirectory(string profileName)
         {
+            return Path.Combine(_defaultSourceDirectory, profileName);
+        }
+
+        public string CreateSolutionFile(string profileName)
+        {
+            string solutionDir = GetSolutionDirectory(profileName);
             string solutionFilePath = GetSolutionFilePath(profileName);
+
+            if (!Directory.Exists(solutionDir))
+            {
+                Directory.CreateDirectory(solutionDir);
+            }
 
             if (File.Exists(solutionFilePath))
             {
                 Console.WriteLine($"Solution file already exists for profile '{profileName}'.");
-                return;
+                return solutionFilePath;
             }
 
             var sb = new StringBuilder();
@@ -34,28 +47,31 @@ namespace FODevManager.Services
             sb.AppendLine("VisualStudioVersion = 17.12.35527.113");
 
             File.WriteAllText(solutionFilePath, sb.ToString());
-            Console.WriteLine($"Created solution file: {solutionFilePath}");
+            Console.WriteLine($"✅ Created solution file: {solutionFilePath}");
+
+            return solutionFilePath;
         }
 
         public void AddProjectToSolution(string profileName, string modelName, string projectFilePath)
         {
+            string solutionDir = GetSolutionDirectory(profileName);
             string solutionFilePath = GetSolutionFilePath(profileName);
 
             if (!File.Exists(solutionFilePath))
             {
-                Console.WriteLine($"Solution file does not exist. Creating one...");
+                Console.WriteLine($"Solution file does not exist for profile '{profileName}'. Creating one...");
                 CreateSolutionFile(profileName);
             }
 
             string projectGuid = Guid.NewGuid().ToString("B").ToUpper();
-            string relativePath = Path.GetRelativePath(_defaultSourceDirectory, projectFilePath);
+            string relativePath = Path.GetRelativePath(solutionDir, projectFilePath);
 
             var sb = new StringBuilder(File.ReadAllText(solutionFilePath));
             sb.AppendLine($"Project(\"{projectGuid}\") = \"{modelName}\", \"{relativePath}\", \"{projectGuid}\"");
             sb.AppendLine("EndProject");
 
             File.WriteAllText(solutionFilePath, sb.ToString());
-            Console.WriteLine($"Added project '{modelName}' to solution '{profileName}.sln'.");
+            Console.WriteLine($"✅ Added project '{modelName}' to solution '{profileName}.sln'.");
         }
 
         public void RemoveProjectFromSolution(string profileName, string modelName)

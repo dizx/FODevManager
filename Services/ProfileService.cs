@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using FODevManager.Models;
 using FODevManager.Utils;
+using Microsoft.Extensions.Configuration;
 
 namespace FODevManager.Services
 {
@@ -13,12 +14,11 @@ namespace FODevManager.Services
         private readonly string _defaultSourceDirectory;
         private readonly VisualStudioSolutionService _solutionService;
 
-        public ProfileService() 
+        public ProfileService(AppConfig config, VisualStudioSolutionService solutionService)
         {
-            var config = FileHelper.LoadJson<dynamic>("appsettings.json");
-            _appDataPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FODevManager");
-            _defaultSourceDirectory = Environment.ExpandEnvironmentVariables(config["DefaultSourceDirectory"]);
-            _solutionService = new VisualStudioSolutionService(_defaultSourceDirectory);
+            _appDataPath = config.ProfileStoragePath;
+            _defaultSourceDirectory = config.DefaultSourceDirectory;
+            _solutionService = solutionService;
 
             FileHelper.EnsureDirectoryExists(_appDataPath);
             FileHelper.EnsureDirectoryExists(_defaultSourceDirectory);
@@ -34,13 +34,17 @@ namespace FODevManager.Services
                 return;
             }
 
-            var profile = new ProfileModel { ProfileName = profileName };
+            // Create the solution file and get its path
+            string solutionFilePath = _solutionService.CreateSolutionFile(profileName);
+
+                var profile = new ProfileModel
+            {
+                ProfileName = profileName,
+                SolutionFilePath = solutionFilePath
+            };
+
             FileHelper.SaveJson(profilePath, profile);
-
-            // Create a solution file
-            _solutionService.CreateSolutionFile(profileName);
-
-            Console.WriteLine($"Profile '{profileName}' and solution file '{profileName}.sln' created.");
+            Console.WriteLine($"✅ Profile '{profileName}' created with solution file: {solutionFilePath}");
         }
 
         public void AddEnvironment(string profileName, string modelName, string projectFilePath)

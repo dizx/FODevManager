@@ -1,4 +1,10 @@
-﻿using FODevManager.Services;
+﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using FODevManager.Services;
+using System;
+using System.IO;
+using FODevManager.Utils;
 
 class Program
 {
@@ -10,11 +16,30 @@ class Program
             return;
         }
 
-        string profileName = args[1];
-        string command = args.Length > 2 ? args[2].ToLower() : "";
+        // Build the Host with Configuration and DI
+        using IHost host = Host.CreateDefaultBuilder()
+            .ConfigureAppConfiguration((context, config) =>
+            {
+                config.SetBasePath(AppContext.BaseDirectory);
+                config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+            })
+            .ConfigureServices((context, services) =>
+            {
+                IConfiguration configuration = context.Configuration;
 
-        var profileService = new ProfileService();
-        var modelService = new ModelDeploymentService();
+                services.AddSingleton(new AppConfig(configuration));
+                services.AddSingleton<ProfileService>();
+                services.AddSingleton<ModelDeploymentService>();
+                services.AddSingleton<VisualStudioSolutionService>();
+            })
+            .Build();
+
+        // Resolve services
+        var profileService = host.Services.GetRequiredService<ProfileService>();
+        var modelService = host.Services.GetRequiredService<ModelDeploymentService>();
+
+        string profileName = args[1];
+        string command = args.Length > 2 ? args[2].ToLower() : args[1];
 
         switch (command)
         {
