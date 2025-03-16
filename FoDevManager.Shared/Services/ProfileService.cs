@@ -13,6 +13,7 @@ namespace FODevManager.Services
         private readonly string _appDataPath;
         private readonly string _defaultSourceDirectory;
         private readonly VisualStudioSolutionService _solutionService;
+        private string ProfilePath(string profileName) => Path.Combine(_appDataPath, $"{profileName}.json");
 
         public ProfileService(AppConfig config, VisualStudioSolutionService solutionService)
         {
@@ -26,7 +27,7 @@ namespace FODevManager.Services
 
         public void CreateProfile(string profileName)
         {
-            string profilePath = Path.Combine(_appDataPath, $"{profileName}.json");
+            string profilePath = ProfilePath(profileName);
 
             if (File.Exists(profilePath))
             {

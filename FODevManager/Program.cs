@@ -53,14 +53,15 @@ class Program
                     profileService.CheckProfile(commandParser.ProfileName);
                     break;
                 case "list":
-                    profileService.ListProfiles();
+                    if (commandParser.ProfileName == null)
+                        profileService.ListProfiles();
+                    else
+                        profileService.ListModelsInProfile(commandParser.ProfileName);
                     break;
                 case "deploy-all":
                     modelService.DeployAllUndeployedModels(commandParser.ProfileName);
                     break;
-                case "list-models":
-                    profileService.ListModelsInProfile(commandParser.ProfileName);
-                    break;
+                
                 default:
                     Console.WriteLine("Invalid profile command.");
                     break;
