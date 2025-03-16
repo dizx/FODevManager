@@ -33,6 +33,7 @@ namespace FODevManager.Utils
                 switch (args[i])
                 {
                     case "-profile":
+                        if (args.Length == 2) { Command = args[++i]; break; }
                         if (i + 1 < args.Length) ProfileName = args[++i];
                         break;
 
@@ -50,7 +51,8 @@ namespace FODevManager.Utils
             }
 
             // Ensure required arguments are present
-            IsValid = !string.IsNullOrEmpty(ProfileName) && !string.IsNullOrEmpty(Command);
+            IsValid = (!string.IsNullOrEmpty(Command) && Command.Equals("list"))
+                || (!string.IsNullOrEmpty(ProfileName) && !string.IsNullOrEmpty(Command));
         }
     }
 }

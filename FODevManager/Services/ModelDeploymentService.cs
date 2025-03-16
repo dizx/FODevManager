@@ -55,6 +55,43 @@ namespace FODevManager.Services
             }
         }
 
+        public void DeployAllUndeployedModels(string profileName)
+        {
+            string profilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FODevManager", $"{profileName}.json");
+
+            if (!File.Exists(profilePath))
+            {
+                Console.WriteLine($"❌ Error: Profile '{profileName}' does not exist.");
+                return;
+            }
+
+            var profile = FileHelper.LoadJson<ProfileModel>(profilePath);
+            bool anyUndeployed = false;
+
+            foreach (var model in profile.Environments)
+            {
+                string linkPath = Path.Combine(_deploymentBasePath, profileName, "Metadata");
+
+                if (!model.IsDeployed && !Directory.Exists(linkPath))
+                {
+                    Console.WriteLine($"🔄 Deploying model: {model.ModelName}...");
+                    DeployModel(profileName, model.ModelName);
+                    model.IsDeployed = true;
+                    anyUndeployed = true;
+                }
+            }
+
+            if (!anyUndeployed)
+            {
+                Console.WriteLine($"✅ All models in profile '{profileName}' are already deployed.");
+                return;
+            }
+
+            // Save updated profile
+            FileHelper.SaveJson(profilePath, profile);
+            Console.WriteLine($"✅ Deployment complete. Updated profile '{profileName}'.");
+        }
+
         public void CheckModelDeployment(string profileName, string modelName)
         {
             string linkPath = Path.Combine(_deploymentBasePath, profileName, "Metadata");
@@ -68,5 +105,7 @@ namespace FODevManager.Services
                 Console.WriteLine($"❌ Model '{modelName}' is NOT deployed.");
             }
         }
+
+
     }
 }

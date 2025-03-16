@@ -55,6 +55,9 @@ class Program
                 case "list":
                     profileService.ListProfiles();
                     break;
+                case "deploy-all":
+                    modelService.DeployAllUndeployedModels(commandParser.ProfileName);
+                    break;
                 default:
                     Console.WriteLine("Invalid profile command.");
                     break;
@@ -64,12 +67,7 @@ class Program
         {
             switch (commandParser.Command)
             {
-                case "add":
-                    if (string.IsNullOrEmpty(commandParser.FilePath))
-                    {
-                        Console.WriteLine("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" add \"ProjectFilePath\"");
-                        return;
-                    }
+                case "add":                    
                     profileService.AddEnvironment(commandParser.ProfileName, commandParser.ModelName, commandParser.FilePath);
                     break;
                 case "remove":

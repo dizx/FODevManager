@@ -49,6 +49,11 @@ namespace FODevManager.Services
 
         public void AddEnvironment(string profileName, string modelName, string projectFilePath)
         {
+            if (string.IsNullOrEmpty(projectFilePath))
+            {
+                projectFilePath = Path.Combine(_defaultSourceDirectory, modelName, $"{modelName}.rnrproj");
+            }
+
             string profilePath = Path.Combine(_appDataPath, $"{profileName}.json");
 
             if (!File.Exists(profilePath))
@@ -60,6 +65,13 @@ namespace FODevManager.Services
             if (!Path.IsPathRooted(projectFilePath))
             {
                 projectFilePath = Path.Combine(_defaultSourceDirectory, modelName, $"{modelName}.rnrproj");
+            }
+
+            if (!File.Exists(projectFilePath))
+            {
+                Console.WriteLine($"{projectFilePath} does not exist.");
+                Console.WriteLine("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" add \"ProjectFilePath\"");
+                return;
             }
 
             var profile = FileHelper.LoadJson<ProfileModel>(profilePath);
