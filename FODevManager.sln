@@ -1,9 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.12.35527.113 d17.12
+VisualStudioVersion = 17.12.35527.113
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FODevManager", "FODevManager.csproj", "{D0BD848C-6881-422D-A6FF-1358A86A95E2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FODevManager", "FODevManager\FODevManager.csproj", "{D0BD848C-6881-422D-A6FF-1358A86A95E2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FODevManager.Tests", "FODevManager.Tests\FODevManager.Tests.csproj", "{5F3CB06E-F54A-456A-9575-BD704A524651}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,10 @@ Global
 		{D0BD848C-6881-422D-A6FF-1358A86A95E2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D0BD848C-6881-422D-A6FF-1358A86A95E2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D0BD848C-6881-422D-A6FF-1358A86A95E2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5F3CB06E-F54A-456A-9575-BD704A524651}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5F3CB06E-F54A-456A-9575-BD704A524651}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5F3CB06E-F54A-456A-9575-BD704A524651}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5F3CB06E-F54A-456A-9575-BD704A524651}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
