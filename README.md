@@ -18,107 +18,49 @@ FODevManager is a .NET 9 console application designed to manage **developer prof
 
 - **.NET 9 SDK** ([Download Here](https://dotnet.microsoft.com/en-us/download/dotnet/9.0))
 - **Windows OS** (with Developer Mode enabled for hard links)
-- **Visual Studio 2022** (for `.sln` file support)
+- **Visual Studio 2022**
 
-### Build & Run
 
-Clone or download the repository, then build and run:
-
-```sh
-# Build the application
- dotnet build
-
-# Run the application
- dotnet run --project FODevManager
+## **📂 Project Structure**
 ```
-
-To create an **executable (**``**)**:
-
-```sh
- dotnet publish -c Release -o publish
+/FODevManager
+ ├── Program.cs
+ ├── Utils
+ │    ├── CommandParser.cs                 # Handles command-line arguments
+ │    ├── FileHelper.cs                    # Handles file operations
+ ├── Config
+ │    ├── AppConfig.cs                      # Configuration class for settings
+ ├── Models
+ │    ├── ProfileModel.cs                   # Represents a developer profile
+ │    ├── ProfileEnvironmentModel.cs        # Represents an environment inside a profile
+ ├── Services
+ │    ├── ProfileService.cs                 # Manages profile operations
+ │    ├── ModelDeploymentService.cs         # Handles model deployment
+ │    ├── VisualStudioSolutionService.cs    # Manages .sln files
+ ├── appsettings.json                        # Configuration file
+ ├── Tests
+ │    ├── CommandParserTests.cs             # Unit tests for argument parsing
+ ├── publish/                                # Compiled executable
 ```
-
-This will generate the executable in the `publish/` folder.
 
 ---
 
-## Usage
-
-### 1. Creating a Developer Profile
-
+## **📦 Installation**
+### **1. Build the Application**
 ```sh
-fodev.exe -profile "MyProfile" create
+dotnet build
 ```
 
-- Creates a **profile JSON file** in the application data folder.
-- Creates a **Visual Studio Solution (**``**)** in the default source directory.
-
-### 2. Listing Installed Profiles
-
+### **2. Publish for Deployment**
 ```sh
-fodev.exe list
+dotnet publish -c Release -o publish
 ```
-
-- Displays all saved profiles.
-
-### 3. Adding a Model to a Profile
-
-```sh
-fodev.exe -profile "MyProfile" -model "MyModel" add
-```
-
-- Adds the model to the **profile JSON**.
-- Automatically **adds the model to the Visual Studio solution (**``**)**.
-- If no path is provided, assumes the default **source directory** (configured in `appsettings.json`).
-
-### 4. Listing Models in a Profile
-
-```sh
-fodev.exe list -models "MyProfile"
-```
-
-- Shows all models in the selected profile.
-
-### 5. Checking Deployment Status of a Model
-
-```sh
-fodev.exe -profile "MyProfile" -model "MyModel" check
-```
-
-- Checks if the model’s **hard link is active** and if the project file exists.
-
-### 6. Deploying a Model
-
-```sh
-fodev.exe -profile "MyProfile" -model "MyModel" deploy
-```
-
-- Creates a **hard link** from the **Metadata** folder to the **application directory**.
-
-### 7. Removing a Model from a Profile
-
-```sh
-fodev.exe -profile "MyProfile" -model "MyModel" remove
-```
-
-- Removes the model from the profile JSON.
-- **Removes the model from the Visual Studio solution (**``**)**.
-
-### 8. Deleting a Profile
-
-```sh
-fodev.exe -profile "MyProfile" delete
-```
-
-- Deletes the profile JSON.
-- **Deletes the associated Visual Studio solution (**``**)**.
-- **Removes all models from the solution** before deletion.
+This creates a **standalone executable** in the `publish/` folder.
 
 ---
 
-## Configuration (`appsettings.json`)
-
-The `appsettings.json` file allows customization of:
+## **⚙ Configuration (`appsettings.json`)**
+Modify this file to set the paths for **profiles, deployments, and model sources**.
 
 ```json
 {
@@ -127,30 +69,86 @@ The `appsettings.json` file allows customization of:
   "DefaultSourceDirectory": "C:/Source/D365FO"
 }
 ```
-
-- **ProfileStoragePath**: Location where profiles (`.json` files) are stored.
-- **DeploymentBasePath**: Where models are deployed.
-- **DefaultSourceDirectory**: The default path where models and `.sln` files are created.
-
----
-
-## Future Enhancements
-
-- **GUI Version**
-- **Bulk Model Deployment**
-- **Dependency Management for Models**
+- **`ProfileStoragePath`** → Directory where profiles are stored.  
+- **`DeploymentBasePath`** → Directory where models are deployed.  
+- **`DefaultSourceDirectory`** → Default location where model sources are located.
 
 ---
 
-## License
+## **🚀 Usage (CLI Commands)**
+All commands follow this format:
+```
+fodev.exe -profile "ProfileName" <command> [options]
+```
 
-FODevManager is open-source and licensed under the **MIT License**.
+### **📌 Profile Management**
+| **Command** | **Description** |
+|------------|----------------|
+| `fodev.exe -profile "MyProfile" create` | Creates a new profile |
+| `fodev.exe -profile "MyProfile" delete` | Deletes a profile |
+| `fodev.exe -profile "MyProfile" check` | Checks if all profile-related files exist |
+| `fodev.exe list` | Lists all profiles |
 
 ---
 
-## Support & Contributions
+### **📌 Model Management**
+| **Command** | **Description** |
+|------------|----------------|
+| `fodev.exe -profile "MyProfile" -model "MyModel" add "C:\Path\to\project.rnrproj"` | Adds a model to a profile |
+| `fodev.exe -profile "MyProfile" -model "MyModel" remove` | Removes a model from a profile |
+| `fodev.exe -profile "MyProfile" -model "MyModel" check` | Checks if the model is deployed |
 
-For issues or feature requests, open an **issue** or submit a **pull request** on the repository!
+---
 
-🚀 Happy Coding!
+### **📌 Model Deployment**
+| **Command** | **Description** |
+|------------|----------------|
+| `fodev.exe -profile "MyProfile" -model "MyModel" deploy` | Deploys a single model |
+| `fodev.exe -profile "MyProfile" deploy-all` | Deploys all **undeployed** models in the profile |
 
+---
+
+## **🔍 How Deployment Works**
+1. **When a model is added**, it is stored in the profile JSON file.
+2. **During deployment**, the tool:
+   - Creates a **hard link** between the `Metadata` folder and the `DeploymentBasePath`.
+   - Updates the **profile JSON** to mark the model as deployed.
+3. **`deploy-all`** finds **all undeployed models** and deploys them.
+
+---
+
+## **🧪 Running Unit Tests**
+We use **NUnit** for testing.
+
+### **📌 Run All Tests**
+```sh
+dotnet test
+```
+
+### **📌 Test Coverage**
+✅ **CommandParserTests** (Ensures correct CLI parsing)  
+✅ **(Upcoming) Tests for ProfileService & ModelDeploymentService**
+
+---
+
+## **📌 Upcoming Features**
+- ✅ **Deploy all undeployed models** *(Added!)*
+- 🏗 **Logging system** *(Log all operations to a file)*
+- 🏗 **Bulk deletion of profiles**
+- 🏗 **GUI version (future expansion)**
+
+---
+
+## **🤝 Contributions**
+Feel free to **open issues** or **submit pull requests**.  
+For discussions, please use the **GitHub Issues** tab.
+
+---
+
+## **📜 License**
+This project is licensed under the **MIT License**.
+
+---
+
+### **💡 Need Help?**
+📧 Contact **mortenaa@gmail.com** or create an **issue on GitHub**.
