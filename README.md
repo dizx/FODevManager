@@ -87,7 +87,7 @@ fodev.exe -profile "ProfileName" <command> [options]
 | `fodev.exe -profile "MyProfile" create` | Creates a new profile |
 | `fodev.exe -profile "MyProfile" delete` | Deletes a profile |
 | `fodev.exe -profile "MyProfile" check` | Checks if all profile-related files exist |
-| `fodev.exe list` | Lists all profiles |
+| `fodev.exe -profile list` | Lists all profiles |
 
 ---
 
@@ -105,6 +105,7 @@ fodev.exe -profile "ProfileName" <command> [options]
 |------------|----------------|
 | `fodev.exe -profile "MyProfile" -model "MyModel" deploy` | Deploys a single model |
 | `fodev.exe -profile "MyProfile" deploy-all` | Deploys all **undeployed** models in the profile |
+| `fodev.exe -profile "MyProfile" list-models` | Lists all **models** in profile |
 
 ---
 

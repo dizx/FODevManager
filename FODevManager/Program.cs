@@ -34,7 +34,7 @@ class Program
                 services.AddSingleton<VisualStudioSolutionService>();
             })
             .Build();
-
+        
         // Resolve services
         var profileService = host.Services.GetRequiredService<ProfileService>();
         var modelService = host.Services.GetRequiredService<ModelDeploymentService>();
@@ -58,6 +58,9 @@ class Program
                 case "deploy-all":
                     modelService.DeployAllUndeployedModels(commandParser.ProfileName);
                     break;
+                case "list-models":
+                    profileService.ListModelsInProfile(commandParser.ProfileName);
+                    break;
                 default:
                     Console.WriteLine("Invalid profile command.");
                     break;
@@ -79,6 +82,7 @@ class Program
                 case "check":
                     modelService.CheckModelDeployment(commandParser.ProfileName, commandParser.ModelName);
                     break;
+                
                 default:
                     Console.WriteLine("Invalid model command.");
                     break;

@@ -209,7 +209,8 @@ namespace FODevManager.Services
             Console.WriteLine($"Models in Profile '{profileName}':");
             foreach (var model in profile.Environments)
             {
-                Console.WriteLine($"- {model.ModelName} (Deployed: {model.IsDeployed})");
+                string status = model.IsDeployed ? "✅ Deployed" : "❌ Not Deployed";
+                Console.WriteLine($"   - {model.ModelName} ({status})");
             }
         }
 
