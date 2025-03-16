@@ -94,6 +94,89 @@ namespace FODevManager.Services
             }
         }
 
+        public void UnDeployModel(string profileName, string modelName)
+        {
+            Console.WriteLine("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
+            StopW3SVC();
+
+            try
+            {
+                var profile = LoadProfileFile(profileName);
+                var environment = GetProfileEnvironment(profile, modelName);
+                string linkPath = Path.Combine(_deploymentBasePath, modelName);
+
+                if (!Directory.Exists(linkPath))
+                {
+                    Console.WriteLine($"❌ Model '{modelName}' is NOT deployed.");
+                    return;
+                }
+
+                try
+                {
+                    Console.WriteLine($"🔄 Removing deployment link for model '{modelName}'...");
+                    Directory.Delete(linkPath, true);
+                    Console.WriteLine($"✅ Model '{modelName}' successfully undeployed.");
+
+                    // Update profile status
+                    environment.IsDeployed = false;
+                    SaveProfileFile(profile);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"❌ Error undeploying model '{modelName}': {ex.Message}");
+                }
+            }
+            finally
+            {
+                Console.WriteLine("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
+                StartW3SVC();
+            }
+        }
+
+        public void UnDeployAllModels(string profileName)
+        {
+            Console.WriteLine("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
+            StopW3SVC();
+
+            try
+            {
+                var profile = LoadProfileFile(profileName);
+                bool anyDeployed = false;
+
+                foreach (var model in profile.Environments)
+                {
+                    string linkPath = Path.Combine(_deploymentBasePath, model.ModelName);
+
+                    if (Directory.Exists(linkPath))
+                    {
+                        Console.WriteLine($"🔄 Removing deployment link for model '{model.ModelName}'...");
+                        Directory.Delete(linkPath, true);
+                        model.IsDeployed = false;
+                        anyDeployed = true;
+                    }
+                }
+
+                if (!anyDeployed)
+                {
+                    Console.WriteLine($"✅ All models in profile '{profileName}' are already undeployed.");
+                    return;
+                }
+
+                SaveProfileFile(profile);
+                Console.WriteLine($"✅ Undeployment complete. Updated profile '{profileName}'.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Error undeploying models: {ex.Message}");
+            }
+            finally
+            {
+                Console.WriteLine("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
+                StartW3SVC();
+            }
+        }
+
+
         private ProfileModel LoadProfileFile(string profileName)
         {
             string profilePath = ProfilePath(profileName);
