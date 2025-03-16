@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FODevManager.Tests", "FODev
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FoDevManager.Shared", "FoDevManager.Shared\FoDevManager.Shared.csproj", "{6C994939-B512-4D44-8970-2D380F24F493}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FODevManager.WinUI", "FODevManager.WinUI\FODevManager.WinUI.csproj", "{6516EF8A-7C4E-47F3-A503-A8311905F8F9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,12 @@ Global
 		{6C994939-B512-4D44-8970-2D380F24F493}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6C994939-B512-4D44-8970-2D380F24F493}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6C994939-B512-4D44-8970-2D380F24F493}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6516EF8A-7C4E-47F3-A503-A8311905F8F9}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{6516EF8A-7C4E-47F3-A503-A8311905F8F9}.Debug|Any CPU.Build.0 = Debug|x64
+		{6516EF8A-7C4E-47F3-A503-A8311905F8F9}.Debug|Any CPU.Deploy.0 = Debug|x64
+		{6516EF8A-7C4E-47F3-A503-A8311905F8F9}.Release|Any CPU.ActiveCfg = Release|x64
+		{6516EF8A-7C4E-47F3-A503-A8311905F8F9}.Release|Any CPU.Build.0 = Release|x64
+		{6516EF8A-7C4E-47F3-A503-A8311905F8F9}.Release|Any CPU.Deploy.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -220,5 +220,36 @@ namespace FODevManager.Services
                 Console.WriteLine($"   - {model.ModelName} ({status})");
             }
         }
+
+        public List<string> GetAllProfiles()
+        {
+            var profileNames = new List<string>();
+
+            if (!Directory.Exists(_appDataPath))
+            {
+                return new List<string>();
+            }
+
+            var files = Directory.GetFiles(_appDataPath, "*.json");
+
+            if (files.Length == 0)
+            {
+                return new List<string>();
+            }
+
+            foreach (var file in files)
+            {
+                string profileName = Path.GetFileNameWithoutExtension(file);
+                profileNames.Add(profileName);
+
+            }
+
+            return profileNames;
+        }
+
+        public object GetModelsInProfile(string profileName)
+        {
+            throw new NotImplementedException();
+        }
     }
 }
