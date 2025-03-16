@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using FODevManager.Models;
 using FODevManager.Utils;
-using Microsoft.Extensions.Configuration;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace FODevManager.Services
 {
@@ -35,7 +35,9 @@ namespace FODevManager.Services
 
             try
             {
-                DeploySingleModel(profileName, modelName);
+                var profile = LoadProfileFile(profileName);
+
+                DeploySingleModel(profile, modelName);
                 UpdateProfileFile(profileName, new ProfileEnvironmentModel { ModelName = modelName, IsDeployed = true });
             }
             finally
@@ -52,25 +54,20 @@ namespace FODevManager.Services
 
             try
             {
-                string profilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FODevManager", $"{profileName}.json");
+                string profilePath = ProfilePath(profileName);
 
-                if (!File.Exists(profilePath))
-                {
-                    Console.WriteLine($"❌ Error: Profile '{profileName}' does not exist.");
-                    return;
-                }
+                var profile = LoadProfileFile(profileName);
 
-                var profile = FileHelper.LoadJson<ProfileModel>(profilePath);
                 bool anyUndeployed = false;
 
                 foreach (var model in profile.Environments)
                 {
-                    string linkPath = Path.Combine(_deploymentBasePath, profileName, "Metadata");
+                    string linkPath = Path.Combine(_deploymentBasePath, profileName);
 
                     if (!model.IsDeployed && !Directory.Exists(linkPath))
                     {
                         Console.WriteLine($"🔄 Deploying model: {model.ModelName}...");
-                        DeploySingleModel(profileName, model.ModelName);
+                        DeploySingleModel(profile, model.ModelName);
                         model.IsDeployed = true;
                         anyUndeployed = true;
                     }
@@ -82,7 +79,8 @@ namespace FODevManager.Services
                     return;
                 }
 
-                FileHelper.SaveJson(profilePath, profile);
+                SaveProfileFile(profile);
+
                 Console.WriteLine($"✅ Deployment complete. Updated profile '{profileName}'.");
             }
             catch (Exception ex)
@@ -96,16 +94,44 @@ namespace FODevManager.Services
             }
         }
 
-        private void DeploySingleModel(string profileName, string modelName)
+        private ProfileModel LoadProfileFile(string profileName)
+        {
+            string profilePath = ProfilePath(profileName);
+
+            if (!File.Exists(profilePath))
+            {
+                throw new Exception($"Profile '{profileName}' does not exist");
+            }
+
+            var profile = FileHelper.LoadJson<ProfileModel>(profilePath);
+
+            return profile == null ? throw new Exception($"Can't load profile '{profileName}'") : profile;
+        }
+
+        private void SaveProfileFile(ProfileModel profile)
+        {
+            var profileName = profile.ProfileName;
+
+            string profilePath = ProfilePath(profileName);
+
+            if (!File.Exists(profilePath))
+            {
+                throw new Exception($"Profile '{profileName}' does not exist");
+            }
+
+            FileHelper.SaveJson(profilePath, profile);
+            
+        }
+
+        private void DeploySingleModel(ProfileModel profile, string modelName)
         {
             try
             {
-                string targetDir = Path.Combine(_deploymentBasePath, profileName);
-                if (!Directory.Exists(targetDir))
-                    Directory.CreateDirectory(targetDir);
+                var environment = GetProfileEnvironment(profile, modelName);
+                string targetDir = Path.Combine(_deploymentBasePath, modelName);
 
-                string linkPath = Path.Combine(targetDir, "Metadata");
-                string sourcePath = Path.Combine(_defaultSourceDirectory, modelName, "Metadata");
+                string linkPath = targetDir;
+                string sourcePath = Path.Combine(Path.GetDirectoryName(environment.ProjectFilePath), "Metadata");
 
                 if (!Directory.Exists(sourcePath))
                 {
@@ -128,27 +154,24 @@ namespace FODevManager.Services
             }
         }
 
+        private ProfileEnvironmentModel GetProfileEnvironment(ProfileModel profile, string modelName)
+        {
+            var environment = profile.Environments.FirstOrDefault(e => e.ModelName == modelName);
+
+            if (environment == null)
+            {
+                throw new Exception($"Model '{modelName}' not found in profile '{profile.ProfileName}'.");
+            }
+
+            return environment;
+        }
 
         private void UpdateProfileFile(string profileName, ProfileEnvironmentModel updatedEnvironment)
         {
-            string profilePath = ProfilePath(profileName);
-
-            if (!File.Exists(profilePath))
-            {
-                Console.WriteLine($"❌ Error: Profile '{profileName}' does not exist.");
-                return;
-            }
-
-            var profile = FileHelper.LoadJson<ProfileModel>(profilePath);
+            var profile = LoadProfileFile(profileName);
 
             // Find the model in the profile
-            var existingEnvironment = profile.Environments.FirstOrDefault(e => e.ModelName == updatedEnvironment.ModelName);
-
-            if (existingEnvironment == null)
-            {
-                Console.WriteLine($"❌ Error: Model '{updatedEnvironment.ModelName}' not found in profile '{profileName}'.");
-                return;
-            }
+            var existingEnvironment = GetProfileEnvironment(profile, updatedEnvironment.ModelName);
 
             // Update the existing model entry
             if(!string.IsNullOrEmpty(updatedEnvironment.ProjectFilePath))
@@ -156,23 +179,36 @@ namespace FODevManager.Services
             existingEnvironment.IsDeployed = updatedEnvironment.IsDeployed;
 
             // Save the updated profile
-            FileHelper.SaveJson(profilePath, profile);
+            SaveProfileFile(profile);
             Console.WriteLine($"✅ Updated model '{updatedEnvironment.ModelName}' in profile '{profileName}'.");
         }
 
         public void CheckModelDeployment(string profileName, string modelName)
         {
-            string linkPath = Path.Combine(_deploymentBasePath, profileName);
+            var env = GetProfileEnvironment(LoadProfileFile(profileName), modelName);
+
+            Console.WriteLine($"- Model: {env.ModelName}, Source Path Exists: {File.Exists(env.ProjectFilePath)}");
+
+            string linkPath = Path.Combine(_deploymentBasePath, modelName);
 
             if (Directory.Exists(linkPath))
             {
                 Console.WriteLine($"✅ Model '{modelName}' is deployed at {linkPath}.");
-                UpdateProfileFile(profileName, new ProfileEnvironmentModel { ModelName = modelName, IsDeployed = true });
+                
+                if (env.IsDeployed == false)
+                {
+                    env.IsDeployed = true;
+                    UpdateProfileFile(profileName, env);
+                }
             }
             else
             {
                 Console.WriteLine($"❌ Model '{modelName}' is NOT deployed.");
-                UpdateProfileFile(profileName, new ProfileEnvironmentModel { ModelName = modelName, IsDeployed = false });
+                if(env.IsDeployed == true)
+                {
+                    env.IsDeployed = false;
+                    UpdateProfileFile(profileName, env);
+                }
             }
         }
 

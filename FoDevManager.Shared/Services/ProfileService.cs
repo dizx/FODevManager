@@ -13,14 +13,16 @@ namespace FODevManager.Services
         private readonly string _appDataPath;
         private readonly string _defaultSourceDirectory;
         private readonly VisualStudioSolutionService _solutionService;
+        private readonly ModelDeploymentService _modelDeploymentService;
+
         private string ProfilePath(string profileName) => Path.Combine(_appDataPath, $"{profileName}.json");
 
-        public ProfileService(AppConfig config, VisualStudioSolutionService solutionService)
+        public ProfileService(AppConfig config, VisualStudioSolutionService solutionService, ModelDeploymentService modelDeploymentService)
         {
             _appDataPath = config.ProfileStoragePath;
             _defaultSourceDirectory = config.DefaultSourceDirectory;
             _solutionService = solutionService;
-
+            _modelDeploymentService = modelDeploymentService;
             FileHelper.EnsureDirectoryExists(_appDataPath);
             FileHelper.EnsureDirectoryExists(_defaultSourceDirectory);
         }
@@ -102,11 +104,15 @@ namespace FODevManager.Services
             }
 
             var profile = JsonSerializer.Deserialize<ProfileModel>(File.ReadAllText(profilePath));
+            if(profile == null)
+            {
+                throw new Exception($"Profile '{profileName}' is empty");
+            }
 
             Console.WriteLine($"Profile: {profile.ProfileName}");
             foreach (var env in profile.Environments)
             {
-                Console.WriteLine($"- Model: {env.ModelName}, Deployed: {env.IsDeployed}, Path Exists: {File.Exists(env.ProjectFilePath)}");
+                _modelDeploymentService.CheckModelDeployment(profileName, env.ModelName);
             }
         }
 

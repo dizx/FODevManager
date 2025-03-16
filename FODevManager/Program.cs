@@ -58,7 +58,7 @@ class Program
                     else
                         profileService.ListModelsInProfile(commandParser.ProfileName);
                     break;
-                case "deploy-all":
+                case "deploy":
                     modelService.DeployAllUndeployedModels(commandParser.ProfileName);
                     break;
                 
