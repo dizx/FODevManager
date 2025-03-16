@@ -3,14 +3,33 @@
     x:Class="FODevManager.WinUI.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:FODevManager.WinUI">
+    xmlns:local="using:FODevManager.WinUI.Converters">
     <Application.Resources>
         <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
-                <!-- Other merged dictionaries here -->
-            </ResourceDictionary.MergedDictionaries>
-            <!-- Other app resources here -->
+            <local:BoolToStatusConverter x:Key="BoolToStatusConverter"/>
+            <!-- Button Style -->
+            <Style TargetType="Button">
+                <Setter Property="Padding" Value="12,6"/>
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="Background" Value="{ThemeResource SystemAccentColor}"/>
+                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="FontSize" Value="16"/>
+            </Style>
+
+            <!-- TextBox Style -->
+            <Style TargetType="TextBox">
+                <Setter Property="Padding" Value="8"/>
+                <Setter Property="CornerRadius" Value="6"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource SystemBaseHighColor}"/>
+                <Setter Property="FontSize" Value="14"/>
+            </Style>
+
+            <!-- ListView Style -->
+            <Style TargetType="ListView">
+                <Setter Property="BorderBrush" Value="Transparent"/>
+                <Setter Property="Background" Value="{ThemeResource SystemBaseLowColor}"/>
+                <Setter Property="CornerRadius" Value="8"/>
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

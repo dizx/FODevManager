@@ -5,6 +5,10 @@ using FODevManager.Models;
 using System.Collections.Generic;
 using System.Linq;
 using System;
+using Microsoft.UI.Composition.SystemBackdrops;
+using Microsoft.UI.Composition;
+using Microsoft.UI.Xaml.Media;
+using WinRT;
 
 namespace FODevManager.WinUI
 {
@@ -13,17 +17,43 @@ namespace FODevManager.WinUI
         private readonly ProfileService _profileService;
         private readonly ModelDeploymentService _deploymentService;
 
+        private MicaController _micaController;
+        private SystemBackdropConfiguration _backdropConfig;
+
         public MainWindow(ProfileService profileService, ModelDeploymentService deploymentService)
         {
             this.InitializeComponent();
+            ApplyMicaEffect();
             _profileService = profileService;
             _deploymentService = deploymentService;
             LoadProfiles();
         }
 
+        private void ApplyMicaEffect()
+        {
+            if (MicaController.IsSupported())
+            {
+                _backdropConfig = new SystemBackdropConfiguration();
+                _backdropConfig.IsInputActive = true;
+                _backdropConfig.Theme = SystemBackdropTheme.Default;
+
+                _micaController = new MicaController();
+                _micaController.AddSystemBackdropTarget(this.As<ICompositionSupportsSystemBackdrop>());
+                _micaController.SetSystemBackdropConfiguration(_backdropConfig);
+            }
+        }
+
         private void LoadProfiles()
         {
-            ProfilesDropdown.ItemsSource = _profileService.GetAllProfiles();
+            var profiles = _profileService.GetAllProfiles();
+            ProfilesDropdown.ItemsSource = profiles;
+
+            // Select the first profile if available
+            if (profiles.Any())
+            {
+                ProfilesDropdown.SelectedIndex = 0;
+                ModelsListView.ItemsSource = _profileService.GetModelsInProfile(profiles.First());
+            }
         }
 
         private void ProfilesDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)

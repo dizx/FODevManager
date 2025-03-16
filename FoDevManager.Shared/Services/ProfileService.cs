@@ -22,7 +22,7 @@ namespace FODevManager.Services
             _appDataPath = config.ProfileStoragePath;
             _defaultSourceDirectory = config.DefaultSourceDirectory;
             _solutionService = solutionService;
-            _modelDeploymentService = modelDeploymentService;
+            //_modelDeploymentService = modelDeploymentService;
             FileHelper.EnsureDirectoryExists(_appDataPath);
             FileHelper.EnsureDirectoryExists(_defaultSourceDirectory);
         }
@@ -246,10 +246,51 @@ namespace FODevManager.Services
 
             return profileNames;
         }
-
-        public object GetModelsInProfile(string profileName)
+        private ProfileModel LoadProfileFile(string profileName)
         {
-            throw new NotImplementedException();
+            string profilePath = ProfilePath(profileName);
+
+            if (!File.Exists(profilePath))
+            {
+                throw new Exception($"Profile '{profileName}' does not exist");
+            }
+
+            var profile = FileHelper.LoadJson<ProfileModel>(profilePath);
+
+            return profile == null ? throw new Exception($"Can't load profile '{profileName}'") : profile;
+        }
+
+        private void SaveProfileFile(ProfileModel profile)
+        {
+            var profileName = profile.ProfileName;
+
+            string profilePath = ProfilePath(profileName);
+
+            if (!File.Exists(profilePath))
+            {
+                throw new Exception($"Profile '{profileName}' does not exist");
+            }
+
+            FileHelper.SaveJson(profilePath, profile);
+
+        }
+
+        public List<ProfileEnvironmentModel> GetModelsInProfile(string profileName)
+        {
+            var models = new List<ProfileEnvironmentModel>();
+            var profile = LoadProfileFile(profileName);
+
+            if (profile.Environments.Count == 0)
+            {
+                return new List<ProfileEnvironmentModel>();
+            }
+
+            
+            foreach (var model in profile.Environments)
+            {
+                models.Add(model);
+            }
+            return models;
         }
     }
 }
