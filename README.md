@@ -104,8 +104,8 @@ fodev.exe -profile "ProfileName" <command> [options]
 | **Command** | **Description** |
 |------------|----------------|
 | `fodev.exe -profile "MyProfile" -model "MyModel" deploy` | Deploys a single model |
-| `fodev.exe -profile "MyProfile" deploy-all` | Deploys all **undeployed** models in the profile |
-| `fodev.exe -profile "MyProfile" list-models` | Lists all **models** in profile |
+| `fodev.exe -profile "MyProfile" deploy` | Deploys all **undeployed** models in the profile |
+| `fodev.exe -profile "MyProfile" list` | Lists all **models** in profile |
 
 ---
 
@@ -120,7 +120,7 @@ fodev.exe -profile "ProfileName" <command> [options]
 
 ## **🧪 Running Unit Tests**
 We use **NUnit** for testing.
-
+	
 ### **📌 Run All Tests**
 ```sh
 dotnet test

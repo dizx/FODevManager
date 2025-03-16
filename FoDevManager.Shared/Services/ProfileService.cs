@@ -220,7 +220,5 @@ namespace FODevManager.Services
                 Console.WriteLine($"   - {model.ModelName} ({status})");
             }
         }
-
-
     }
 }

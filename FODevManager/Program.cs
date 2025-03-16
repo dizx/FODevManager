@@ -61,7 +61,9 @@ class Program
                 case "deploy":
                     modelService.DeployAllUndeployedModels(commandParser.ProfileName);
                     break;
-                
+                case "undeploy":
+                    modelService.UnDeployAllModels(commandParser.ProfileName);
+                    break;
                 default:
                     Console.WriteLine("Invalid profile command.");
                     break;
@@ -79,6 +81,9 @@ class Program
                     break;
                 case "deploy":
                     modelService.DeployModel(commandParser.ProfileName, commandParser.ModelName);
+                    break;
+                case "undeploy":
+                    modelService.UnDeployModel(commandParser.ProfileName, commandParser.ModelName);
                     break;
                 case "check":
                     modelService.CheckModelDeployment(commandParser.ProfileName, commandParser.ModelName);
