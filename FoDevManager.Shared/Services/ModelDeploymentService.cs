@@ -214,7 +214,8 @@ namespace FODevManager.Services
                 string targetDir = Path.Combine(_deploymentBasePath, modelName);
 
                 string linkPath = targetDir;
-                string sourcePath = Path.Combine(Path.GetDirectoryName(environment.ProjectFilePath), "Metadata");
+                //string sourcePath = Path.Combine(Path.GetDirectoryName(environment.ProjectFilePath), "Metadata");
+                string sourcePath = environment.MetadataFolder;
 
                 if (!Directory.Exists(sourcePath))
                 {
