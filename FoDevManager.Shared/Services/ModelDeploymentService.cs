@@ -365,9 +365,9 @@ namespace FODevManager.Services
                 return false;
             }
 
-            string projectPath = FileHelper.GetModelRootFolder(model.ProjectFilePath);
+            string projectRootPath = FileHelper.GetModelRootFolder(model.ProjectFilePath);
 
-            if (GitHelper.IsGitRepository(projectPath))
+            if (GitHelper.IsGitRepository(projectRootPath))
             {
                 Console.WriteLine($"✅ '{modelName}' in profile '{profileName}' is a Git repository.");
                 return true;
@@ -392,11 +392,11 @@ namespace FODevManager.Services
                 return;
             }
 
-            string projectPath = FileHelper.GetModelRootFolder(model.ProjectFilePath);
+            string projectRootPath = FileHelper.GetModelRootFolder(model.ProjectFilePath);
 
-            if (GitHelper.IsGitRepository(projectPath))
+            if (GitHelper.IsGitRepository(projectRootPath))
             {
-                GitHelper.OpenGitRemoteUrl(projectPath);
+                GitHelper.OpenGitRemoteUrl(projectRootPath);
             }
             else
             {
