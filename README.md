@@ -118,6 +118,22 @@ fodev.exe -profile "ProfileName" <command> [options]
 
 ---
 
+## **🛠 Git Integration**
+### **Checking if a Model's Project is a Git Repository**
+```sh
+fodev.exe -profile "MyProfile" -model "MyModel" git-check
+```
+- Verifies if the model's project directory is a **Git repository**.
+
+### **Opening Git Remote Repository in Browser**
+```sh
+fodev.exe -profile "MyProfile" -model "MyModel" git-open
+```
+- Opens the **GitHub/GitLab/Bitbucket remote URL** for the model’s project.
+
+---
+
+
 ## **🧪 Running Unit Tests**
 We use **NUnit** for testing.
 	
