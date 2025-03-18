@@ -61,7 +61,7 @@ namespace FODevManager.Services
                 return;
             }
 
-            var metaDataFolder = GetMetadataFolder(modelName, projectFilePath);
+            var metaDataFolder = FileHelper.GetMetadataFolder(modelName, projectFilePath);
             
             if (!Directory.Exists(metaDataFolder))
             {
@@ -94,73 +94,7 @@ namespace FODevManager.Services
                 return Path.Combine(_defaultSourceDirectory, modelName, $"{modelName}.rnrproj");
             }
 
-            if (!Path.IsPathRooted(projectFilePath))
-            {
-                return Path.Combine(projectFilePath, modelName, $"{modelName}.rnrproj");
-            }
-
-            if (!Path.HasExtension(projectFilePath))
-            {
-                if(PathContainsDirectory(projectFilePath, "project") && PathContainsDirectory(projectFilePath, modelName))
-                {
-                    return projectFilePath = Path.Combine(projectFilePath, $"{modelName}.rnrproj");
-                }
-                if (PathContainsDirectory(projectFilePath, "project") && !PathContainsDirectory(projectFilePath, modelName))
-                {
-                    if(File.Exists(Path.Combine(projectFilePath, modelName, $"{modelName}.rnrproj")))
-                        return projectFilePath = Path.Combine(projectFilePath, modelName, $"{modelName}.rnrproj");
-                }
-                if (File.Exists(Path.Combine(projectFilePath, modelName, $"{modelName}.rnrproj")))
-                    return projectFilePath = Path.Combine(projectFilePath, modelName, $"{modelName}.rnrproj");
-
-                if (File.Exists(Path.Combine(projectFilePath, "project", modelName, $"{modelName}.rnrproj")))
-                    return Path.Combine(projectFilePath, "project", modelName, $"{modelName}.rnrproj");
-
-            }
-            return Path.Combine(projectFilePath, "project", modelName, modelName, $"{modelName}.rnrproj");
-        }
-
-        static bool PathContainsDirectory(string path, string directoryName)
-        {
-            string fullPath = Path.GetFullPath(path); // Normalize path
-            string normalizedDir = Path.DirectorySeparatorChar + directoryName + Path.DirectorySeparatorChar;
-
-            return fullPath.Contains(normalizedDir, StringComparison.OrdinalIgnoreCase);
-        }
-
-        private string GetMetadataFolder(string modelName, string projectFilePath)
-        {
-            string currentPath = Path.GetDirectoryName(projectFilePath);
-
-            // Move up to 3 levels and check for Metadata folder
-            for (int i = 0; i < 3; i++)
-            {
-                if (string.IsNullOrEmpty(currentPath)) break;
-
-                string metadataPath = Path.Combine(currentPath, "Metadata", modelName);
-                if (Directory.Exists(metadataPath))
-                {
-                    return metadataPath;
-                }
-
-                metadataPath = Path.Combine(currentPath, "Metadata");
-                if (Directory.Exists(metadataPath))
-                {
-                    return Path.Combine(metadataPath, modelName);
-                }
-
-                // Move one level up
-                currentPath = Directory.GetParent(currentPath)?.FullName;
-            }
-
-            // Default: return the highest-level Metadata folder if not found
-            return Path.Combine(currentPath ?? projectFilePath, "Metadata", modelName);
-        }
-
-        static string GetParentDirectory(string path)
-        {
-            DirectoryInfo parentDir = Directory.GetParent(Path.GetDirectoryName(path));
-            return parentDir?.FullName + Path.DirectorySeparatorChar;
+            return FileHelper.GetProjectFilePath(profileName, modelName, projectFilePath);
         }
 
         public void CheckProfile(string profileName)

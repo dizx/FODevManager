@@ -39,7 +39,7 @@ class Program
         var profileService = host.Services.GetRequiredService<ProfileService>();
         var modelService = host.Services.GetRequiredService<ModelDeploymentService>();
 
-        if (commandParser.ModelName == null)
+        if (commandParser.ModelName == null) //Commands on Profile
         {
             switch (commandParser.Command)
             {
@@ -71,7 +71,7 @@ class Program
         }
         else
         {
-            switch (commandParser.Command)
+            switch (commandParser.Command) //Commands on Model
             {
                 case "add":                    
                     profileService.AddEnvironment(commandParser.ProfileName, commandParser.ModelName, commandParser.FilePath);
@@ -88,7 +88,12 @@ class Program
                 case "check":
                     modelService.CheckModelDeployment(commandParser.ProfileName, commandParser.ModelName);
                     break;
-                
+                case "git-status":
+                    modelService.CheckIfGitRepository(commandParser.ProfileName, commandParser.ModelName);
+                    break;
+                case "git-open":
+                    modelService.OpenGitRepositoryUrl(commandParser.ProfileName, commandParser.ModelName);
+                    break;
                 default:
                     Console.WriteLine("Invalid model command.");
                     break;

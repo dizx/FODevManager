@@ -296,6 +296,8 @@ namespace FODevManager.Services
             }
         }
 
+
+
         private void StopW3SVC()
         {
             try
@@ -351,6 +353,58 @@ namespace FODevManager.Services
                 Console.WriteLine($"❌ Failed to start W3SVC: {ex.Message}");
             }
         }
+
+        public bool CheckIfGitRepository(string profileName, string modelName)
+        {
+            var profile = LoadProfileFile(profileName);
+            var model = GetProfileEnvironment(profile, modelName);
+
+            if (model == null)
+            {
+                Console.WriteLine($"❌ Model '{modelName}' not found in profile '{profileName}'.");
+                return false;
+            }
+
+            string projectPath = FileHelper.GetModelRootFolder(model.ProjectFilePath);
+
+            if (GitHelper.IsGitRepository(projectPath))
+            {
+                Console.WriteLine($"✅ '{modelName}' in profile '{profileName}' is a Git repository.");
+                return true;
+            }
+            else
+            {
+                Console.WriteLine($"❌ '{modelName}' in profile '{profileName}' is NOT a Git repository.");
+            }
+
+            return false;
+
+        }
+
+        public void OpenGitRepositoryUrl(string profileName, string modelName)
+        {
+            var profile = LoadProfileFile(profileName);
+            var model = GetProfileEnvironment(profile, modelName);
+
+            if (model == null)
+            {
+                Console.WriteLine($"❌ Model '{modelName}' not found in profile '{profileName}'.");
+                return;
+            }
+
+            string projectPath = FileHelper.GetModelRootFolder(model.ProjectFilePath);
+
+            if (GitHelper.IsGitRepository(projectPath))
+            {
+                GitHelper.OpenGitRemoteUrl(projectPath);
+            }
+            else
+            {
+                Console.WriteLine($"❌ The model '{modelName}' in profile '{profileName}' is not a Git repository.");
+            }
+        }
+
+
     }
 
 }
