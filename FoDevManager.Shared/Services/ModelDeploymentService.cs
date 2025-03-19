@@ -272,7 +272,7 @@ namespace FODevManager.Services
         {
             var env = GetProfileEnvironment(LoadProfileFile(profileName), modelName);
 
-            MessageLogger.Write($"- Model: {env.ModelName}, Source Path Exists: {File.Exists(env.ProjectFilePath)}");
+            MessageLogger.Write($"✅ Model '{env.ModelName}' source path exists: {File.Exists(env.ProjectFilePath)}");
 
             string linkPath = Path.Combine(_deploymentBasePath, modelName);
 
@@ -372,7 +372,7 @@ namespace FODevManager.Services
 
                 if (GitHelper.IsGitRepository(projectRootPath, out string gitRemoteUrl))
                 {
-                    MessageLogger.Write($"✅ '{modelName}' in profile '{profileName}' is a Git repository.");
+                    MessageLogger.Write($"✅ Model '{modelName}' Git repository: {gitRemoteUrl}");
 
                     model.GitUrl = gitRemoteUrl;
                     SaveProfileFile(profile);
@@ -381,7 +381,7 @@ namespace FODevManager.Services
                 }
                 else
                 {
-                    MessageLogger.Write($"❌ '{modelName}' in profile '{profileName}' is NOT a Git repository.");
+                    MessageLogger.Write($"❌ Model '{modelName}' is NOT a Git repository.");
                 }
             }
             catch
