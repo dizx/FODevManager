@@ -258,8 +258,11 @@ namespace FODevManager.Services
             // Find the model in the profile
             var existingEnvironment = GetProfileEnvironment(profile, updatedEnvironment.ModelName);
 
+            if (!string.IsNullOrEmpty(updatedEnvironment.ModelRootFolder))
+                existingEnvironment.ModelRootFolder = updatedEnvironment.ModelRootFolder;
+
             // Update the existing model entry
-            if(!string.IsNullOrEmpty(updatedEnvironment.ProjectFilePath))
+            if (!string.IsNullOrEmpty(updatedEnvironment.ProjectFilePath))
                 existingEnvironment.ProjectFilePath = updatedEnvironment.ProjectFilePath;
             existingEnvironment.IsDeployed = updatedEnvironment.IsDeployed;
 
@@ -271,6 +274,17 @@ namespace FODevManager.Services
         public void CheckModelDeployment(string profileName, string modelName)
         {
             var env = GetProfileEnvironment(LoadProfileFile(profileName), modelName);
+
+            if(string.IsNullOrEmpty(env.ModelRootFolder))
+            {
+                string modelRootPath = FileHelper.GetModelRootFolder(env.ProjectFilePath);
+                if (!Directory.Exists(modelRootPath))
+                {
+                    MessageLogger.Write($"❌ Error: Model root folder not found at {modelRootPath}.");
+                    return;
+                }
+                env.ModelRootFolder = modelRootPath;
+            }
 
             MessageLogger.Write($"✅ Model '{env.ModelName}' source path exists: {File.Exists(env.ProjectFilePath)}");
 
@@ -295,6 +309,8 @@ namespace FODevManager.Services
                     UpdateProfileFile(profileName, env);
                 }
             }
+
+            UpdateProfileFile(profileName, env);
         }
 
 

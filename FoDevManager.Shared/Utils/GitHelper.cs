@@ -68,36 +68,82 @@ namespace FODevManager.Utils
         {
             try
             {
-                ProcessStartInfo psi = new ProcessStartInfo
-                {
-                    FileName = "git",
-                    Arguments = "rev-parse --abbrev-ref HEAD",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WorkingDirectory = repoPath
-                };
-
-                using (Process process = new Process { StartInfo = psi })
-                {
-                    process.Start();
-                    string output = process.StandardOutput.ReadLine() ?? string.Empty;
-                    process.WaitForExit();
-
-                    if (string.IsNullOrWhiteSpace(output))
-                    {
-                        MessageLogger.Error("Could not determine the branch.");
-                        return null;
-                    }
-
-                    return output.Trim();
-                }
+;               var result = string.Empty;
+                if (RunProcess(repoPath, "git", "rev-parse --abbrev-ref HEAD", out result, "Could not determine the branch."))
+                    return result;
             }
             catch (Exception ex)
             {
                 MessageLogger.Error($"Error fetching branch: {ex.Message}");
-                return null;
+            }
+
+            return null;
+        }
+
+        private static bool RunProcess(string workingDir, string fileName, string args, string errorMessage = "")
+        {
+            var result = string.Empty;
+            return RunProcess(workingDir, fileName, args, out result, errorMessage);
+
+        }
+
+        private static bool RunProcess(string workingDir, string fileName, string args, out string result, string errorMessage = "")
+        {
+            result = string.Empty;
+
+            ProcessStartInfo psi = new()
+            {
+                FileName = fileName,
+                Arguments = args,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = workingDir
+            };
+
+            using Process process = new Process { StartInfo = psi };
+            
+            process.Start();
+            string output = process.StandardOutput.ReadToEnd() ?? string.Empty;
+            string error = process.StandardError.ReadToEnd();
+
+            process.WaitForExit();
+
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                MessageLogger.Error(error);
+                return false;
+            }
+            
+            result = output.Trim();
+
+            return process.ExitCode == 0;
+
+        }
+
+        public static bool FetchFromRemote(string profileName, string repoPath)
+        {
+                if (!IsGitRepository(repoPath))
+                return false;
+
+            try
+            {
+                var result = string.Empty;
+                if(RunProcess(repoPath, "git", "fetch --all"))
+                {
+                    if(RunProcess(repoPath, "git", "status -sb", out result))
+                    {
+                        MessageLogger.Info($"Model {profileName }: {result}");
+                        return true;
+                    }
+                }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"Error fetching from remote: {ex.Message}");
+                return false;
             }
         }
 

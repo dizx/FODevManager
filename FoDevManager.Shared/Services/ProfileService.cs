@@ -6,6 +6,7 @@ using FODevManager.Models;
 using FODevManager.Utils;
 using FoDevManager.Messages;
 using Microsoft.Extensions.Configuration;
+using System.Reflection;
 
 namespace FODevManager.Services
 {
@@ -54,7 +55,6 @@ namespace FODevManager.Services
         public void AddEnvironment(string profileName, string modelName, string projectFilePath)
         {
             projectFilePath = GetProjectFilePath(profileName, modelName, projectFilePath);
-
             if (!File.Exists(projectFilePath))
             {
                 MessageLogger.Write($"{projectFilePath} does not exist.");
@@ -63,10 +63,16 @@ namespace FODevManager.Services
             }
 
             var metaDataFolder = FileHelper.GetMetadataFolder(modelName, projectFilePath);
-            
             if (!Directory.Exists(metaDataFolder))
             {
                 MessageLogger.Write($"❌ Error: Metadata folder not found at {metaDataFolder}.");
+                return;
+            }
+
+            string modelRootPath = FileHelper.GetModelRootFolder(projectFilePath);
+            if (!Directory.Exists(modelRootPath))
+            {
+                MessageLogger.Write($"❌ Error: Model root folder not found at {modelRootPath}.");
                 return;
             }
 
@@ -75,6 +81,7 @@ namespace FODevManager.Services
             profile.Environments.Add(new ProfileEnvironmentModel
             {
                 ModelName = modelName,
+                ModelRootFolder = modelRootPath,
                 ProjectFilePath = projectFilePath,
                 MetadataFolder = metaDataFolder,
                 IsDeployed = false
@@ -114,7 +121,7 @@ namespace FODevManager.Services
                 return;
             }
 
-            var profile = JsonSerializer.Deserialize<ProfileModel>(File.ReadAllText(profilePath));
+            var profile = LoadProfileFile(profileName);
             if(profile == null)
             {
                 throw new Exception($"Profile '{profileName}' is empty");
@@ -127,6 +134,22 @@ namespace FODevManager.Services
                 _modelDeploymentService.CheckIfGitRepository(profileName, env.ModelName);
             }
         }
+
+        public void GitFetchLatest(string profileName)
+        {
+            var profile = LoadProfileFile(profileName);
+
+            MessageLogger.Write($"Fetch Git for profile: {profile.ProfileName}");
+            foreach (var env in profile.Environments)
+            {
+                if (!string.IsNullOrEmpty(env.ModelRootFolder))
+                {
+                    GitHelper.FetchFromRemote(env.ModelName, env.ModelRootFolder);
+                }    
+            }
+        }
+
+
 
         public void DeleteProfile(string profileName)
         {

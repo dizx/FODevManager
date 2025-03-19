@@ -72,6 +72,10 @@ class Program
                     TryCatch(() => profileService.OpenVisualStudioSolution(commandParser.ProfileName));
                     break;
 
+                case "git-fetch":
+                    TryCatch(() => profileService.GitFetchLatest(commandParser.ProfileName));
+                    break;
+
                 default:
                     MessageLogger.Error($"Invalid model command: {commandParser.Command}");
                     break;

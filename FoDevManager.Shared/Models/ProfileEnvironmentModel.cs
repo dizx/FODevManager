@@ -3,6 +3,9 @@
     public class ProfileEnvironmentModel
     {
         public string ModelName { get; set; } = "";
+
+        public string ModelRootFolder { get; set; } = "";
+
         public string ProjectFilePath { get; set; } = "";
 
         public string MetadataFolder { get; set; } = "";
