@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using System;
 using System.IO;
 using System.Text;
+using FoDevManager.Messages;
 
 namespace FODevManager.Services
 {
@@ -37,7 +38,7 @@ namespace FODevManager.Services
 
             if (File.Exists(solutionFilePath))
             {
-                Console.WriteLine($"Solution file already exists for profile '{profileName}'.");
+                MessageLogger.Write($"Solution file already exists for profile '{profileName}'.");
                 return solutionFilePath;
             }
 
@@ -47,7 +48,7 @@ namespace FODevManager.Services
             sb.AppendLine("VisualStudioVersion = 17.12.35527.113");
 
             File.WriteAllText(solutionFilePath, sb.ToString());
-            Console.WriteLine($"✅ Created solution file: {solutionFilePath}");
+            MessageLogger.Write($"✅ Created solution file: {solutionFilePath}");
 
             return solutionFilePath;
         }
@@ -59,7 +60,7 @@ namespace FODevManager.Services
 
             if (!File.Exists(solutionFilePath))
             {
-                Console.WriteLine($"Solution file does not exist for profile '{profileName}'. Creating one...");
+                MessageLogger.Write($"Solution file does not exist for profile '{profileName}'. Creating one...");
                 CreateSolutionFile(profileName);
             }
 
@@ -71,7 +72,7 @@ namespace FODevManager.Services
             sb.AppendLine("EndProject");
 
             File.WriteAllText(solutionFilePath, sb.ToString());
-            Console.WriteLine($"✅ Added project '{modelName}' to solution '{profileName}.sln'.");
+            MessageLogger.Write($"✅ Added project '{modelName}' to solution '{profileName}.sln'.");
         }
 
         public void RemoveProjectFromSolution(string profileName, string modelName)
@@ -80,7 +81,7 @@ namespace FODevManager.Services
 
             if (!File.Exists(solutionFilePath))
             {
-                Console.WriteLine($"Solution file for profile '{profileName}' does not exist.");
+                MessageLogger.Write($"Solution file for profile '{profileName}' does not exist.");
                 return;
             }
 
@@ -110,7 +111,7 @@ namespace FODevManager.Services
             }
 
             File.WriteAllText(solutionFilePath, sb.ToString());
-            Console.WriteLine($"Removed project '{modelName}' from solution '{profileName}.sln'.");
+            MessageLogger.Write($"Removed project '{modelName}' from solution '{profileName}.sln'.");
         }
     }
 }

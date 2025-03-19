@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using FODevManager.Models;
 using FODevManager.Utils;
+using FoDevManager.Messages;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace FODevManager.Services
@@ -30,7 +31,7 @@ namespace FODevManager.Services
 
         public void DeployModel(string profileName, string modelName)
         {
-            Console.WriteLine("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
+            MessageLogger.Write("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
             StopW3SVC();
 
             try
@@ -42,14 +43,14 @@ namespace FODevManager.Services
             }
             finally
             {
-                Console.WriteLine("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
+                MessageLogger.Write("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
                 StartW3SVC();
             }
         }
 
         public void DeployAllUndeployedModels(string profileName)
         {
-            Console.WriteLine("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
+            MessageLogger.Write("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
             StopW3SVC();
 
             try
@@ -66,7 +67,7 @@ namespace FODevManager.Services
 
                     if (!model.IsDeployed && !Directory.Exists(linkPath))
                     {
-                        Console.WriteLine($"🔄 Deploying model: {model.ModelName}...");
+                        MessageLogger.Write($"🔄 Deploying model: {model.ModelName}...");
                         DeploySingleModel(profile, model.ModelName);
                         model.IsDeployed = true;
                         anyUndeployed = true;
@@ -75,28 +76,28 @@ namespace FODevManager.Services
 
                 if (!anyUndeployed)
                 {
-                    Console.WriteLine($"✅ All models in profile '{profileName}' are already deployed.");
+                    MessageLogger.Write($"✅ All models in profile '{profileName}' are already deployed.");
                     return;
                 }
 
                 SaveProfileFile(profile);
 
-                Console.WriteLine($"✅ Deployment complete. Updated profile '{profileName}'.");
+                MessageLogger.Write($"✅ Deployment complete. Updated profile '{profileName}'.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error deploying models: {ex.Message}");
+                MessageLogger.Error($"❌ Error deploying models: {ex.Message}");
             }
             finally
             {
-                Console.WriteLine("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
+                MessageLogger.Write("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
                 StartW3SVC();
             }
         }
 
         public void UnDeployModel(string profileName, string modelName)
         {
-            Console.WriteLine("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
+            MessageLogger.Write("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
             StopW3SVC();
 
             try
@@ -107,15 +108,15 @@ namespace FODevManager.Services
 
                 if (!Directory.Exists(linkPath))
                 {
-                    Console.WriteLine($"❌ Model '{modelName}' is NOT deployed.");
+                    MessageLogger.Error($"❌ Model '{modelName}' is NOT deployed.");
                     return;
                 }
 
                 try
                 {
-                    Console.WriteLine($"🔄 Removing deployment link for model '{modelName}'...");
+                    MessageLogger.Write($"🔄 Removing deployment link for model '{modelName}'...");
                     Directory.Delete(linkPath, true);
-                    Console.WriteLine($"✅ Model '{modelName}' successfully undeployed.");
+                    MessageLogger.Highlight($"✅ Model '{modelName}' successfully undeployed.");
 
                     // Update profile status
                     environment.IsDeployed = false;
@@ -123,19 +124,19 @@ namespace FODevManager.Services
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"❌ Error undeploying model '{modelName}': {ex.Message}");
+                    MessageLogger.Error($"❌ Error undeploying model '{modelName}': {ex.Message}");
                 }
             }
             finally
             {
-                Console.WriteLine("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
+                MessageLogger.Write("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
                 StartW3SVC();
             }
         }
 
         public void UnDeployAllModels(string profileName)
         {
-            Console.WriteLine("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
+            MessageLogger.Write("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
             StopW3SVC();
 
             try
@@ -149,7 +150,7 @@ namespace FODevManager.Services
 
                     if (Directory.Exists(linkPath))
                     {
-                        Console.WriteLine($"🔄 Removing deployment link for model '{model.ModelName}'...");
+                        MessageLogger.Write($"🔄 Removing deployment link for model '{model.ModelName}'...");
                         Directory.Delete(linkPath, true);
                         model.IsDeployed = false;
                         anyDeployed = true;
@@ -158,20 +159,20 @@ namespace FODevManager.Services
 
                 if (!anyDeployed)
                 {
-                    Console.WriteLine($"✅ All models in profile '{profileName}' are already undeployed.");
+                    MessageLogger.Write($"✅ All models in profile '{profileName}' are already undeployed.");
                     return;
                 }
 
                 SaveProfileFile(profile);
-                Console.WriteLine($"✅ Undeployment complete. Updated profile '{profileName}'.");
+                MessageLogger.Write($"✅ Undeployment complete. Updated profile '{profileName}'.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error undeploying models: {ex.Message}");
+                MessageLogger.Error($"❌ Error undeploying models: {ex.Message}");
             }
             finally
             {
-                Console.WriteLine("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
+                MessageLogger.Write("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
                 StartW3SVC();
             }
         }
@@ -219,22 +220,22 @@ namespace FODevManager.Services
 
                 if (!Directory.Exists(sourcePath))
                 {
-                    Console.WriteLine($"❌ Error: Metadata folder not found at {sourcePath}.");
+                    MessageLogger.Error($"❌ Error: Metadata folder not found at {sourcePath}.");
                     return;
                 }
 
                 if (Directory.Exists(linkPath))
                 {
-                    Console.WriteLine($"Removing existing link: {linkPath}");
+                    MessageLogger.Error($"Removing existing link: {linkPath}");
                     Directory.Delete(linkPath);
                 }
 
                 Directory.CreateSymbolicLink(linkPath, sourcePath);
-                Console.WriteLine($"✅ Model '{modelName}' deployed successfully.");
+                MessageLogger.Write($"✅ Model '{modelName}' deployed successfully.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error deploying model '{modelName}': {ex.Message}");
+                MessageLogger.Error($"❌ Error deploying model '{modelName}': {ex.Message}");
             }
         }
 
@@ -264,20 +265,20 @@ namespace FODevManager.Services
 
             // Save the updated profile
             SaveProfileFile(profile);
-            Console.WriteLine($"✅ Updated model '{updatedEnvironment.ModelName}' in profile '{profileName}'.");
+            MessageLogger.Write($"✅ Updated model '{updatedEnvironment.ModelName}' in profile '{profileName}'.");
         }
 
         public void CheckModelDeployment(string profileName, string modelName)
         {
             var env = GetProfileEnvironment(LoadProfileFile(profileName), modelName);
 
-            Console.WriteLine($"- Model: {env.ModelName}, Source Path Exists: {File.Exists(env.ProjectFilePath)}");
+            MessageLogger.Write($"- Model: {env.ModelName}, Source Path Exists: {File.Exists(env.ProjectFilePath)}");
 
             string linkPath = Path.Combine(_deploymentBasePath, modelName);
 
             if (Directory.Exists(linkPath))
             {
-                Console.WriteLine($"✅ Model '{modelName}' is deployed at {linkPath}.");
+                MessageLogger.Write($"✅ Model '{modelName}' is deployed at {linkPath}.");
                 
                 if (env.IsDeployed == false)
                 {
@@ -287,7 +288,7 @@ namespace FODevManager.Services
             }
             else
             {
-                Console.WriteLine($"❌ Model '{modelName}' is NOT deployed.");
+                MessageLogger.Warning($"❌ Model '{modelName}' is NOT deployed.");
                 if(env.IsDeployed == true)
                 {
                     env.IsDeployed = false;
@@ -318,11 +319,11 @@ namespace FODevManager.Services
                 process.Start();
                 process.WaitForExit();
 
-                Console.WriteLine("✅ W3SVC stopped.");
+                MessageLogger.Write("✅ W3SVC stopped.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Failed to stop W3SVC: {ex.Message}");
+                MessageLogger.Error($"❌ Failed to stop W3SVC: {ex.Message}");
             }
         }
 
@@ -346,11 +347,11 @@ namespace FODevManager.Services
                 process.Start();
                 process.WaitForExit();
 
-                Console.WriteLine("✅ W3SVC restarted.");
+                MessageLogger.Write("✅ W3SVC restarted.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Failed to start W3SVC: {ex.Message}");
+                MessageLogger.Error($"❌ Failed to start W3SVC: {ex.Message}");
             }
         }
 
@@ -361,7 +362,7 @@ namespace FODevManager.Services
 
             if (model == null)
             {
-                Console.WriteLine($"❌ Model '{modelName}' not found in profile '{profileName}'.");
+                MessageLogger.Warning($"❌ Model '{modelName}' not found in profile '{profileName}'.");
                 return false;
             }
 
@@ -369,12 +370,12 @@ namespace FODevManager.Services
 
             if (GitHelper.IsGitRepository(projectRootPath))
             {
-                Console.WriteLine($"✅ '{modelName}' in profile '{profileName}' is a Git repository.");
+                MessageLogger.Write($"✅ '{modelName}' in profile '{profileName}' is a Git repository.");
                 return true;
             }
             else
             {
-                Console.WriteLine($"❌ '{modelName}' in profile '{profileName}' is NOT a Git repository.");
+                MessageLogger.Write($"❌ '{modelName}' in profile '{profileName}' is NOT a Git repository.");
             }
 
             return false;
@@ -388,7 +389,7 @@ namespace FODevManager.Services
 
             if (model == null)
             {
-                Console.WriteLine($"❌ Model '{modelName}' not found in profile '{profileName}'.");
+                MessageLogger.Warning($"❌ Model '{modelName}' not found in profile '{profileName}'.");
                 return;
             }
 
@@ -400,7 +401,7 @@ namespace FODevManager.Services
             }
             else
             {
-                Console.WriteLine($"❌ The model '{modelName}' in profile '{profileName}' is not a Git repository.");
+                MessageLogger.Write($"❌ The model '{modelName}' in profile '{profileName}' is not a Git repository.");
             }
         }
 

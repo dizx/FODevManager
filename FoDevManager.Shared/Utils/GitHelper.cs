@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
+using FoDevManager.Messages;
 
 namespace FODevManager.Utils
 {
@@ -31,19 +32,19 @@ namespace FODevManager.Utils
 
             if (!File.Exists(configPath))
             {
-                Console.WriteLine("❌ .git/config not found.");
+                MessageLogger.Write("❌ .git/config not found.");
                 return;
             }
 
             string remoteUrl = GetGitRemoteUrl(configPath);
             if (string.IsNullOrEmpty(remoteUrl))
             {
-                Console.WriteLine("❌ Could not find remote URL in .git/config.");
+                MessageLogger.Write("❌ Could not find remote URL in .git/config.");
                 return;
             }
 
             remoteUrl = ConvertToHttpsUrl(remoteUrl);
-            Console.WriteLine($"🌐 Opening: {remoteUrl}");
+            MessageLogger.Write($"🌐 Opening: {remoteUrl}");
             OpenUrl(remoteUrl);
         }
 
@@ -85,7 +86,7 @@ namespace FODevManager.Utils
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Failed to open URL: {ex.Message}");
+                MessageLogger.Write($"❌ Failed to open URL: {ex.Message}");
             }
         }
     }

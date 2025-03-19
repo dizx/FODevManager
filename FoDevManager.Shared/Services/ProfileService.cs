@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using FODevManager.Models;
 using FODevManager.Utils;
+using FoDevManager.Messages;
 using Microsoft.Extensions.Configuration;
 
 namespace FODevManager.Services
@@ -33,7 +34,7 @@ namespace FODevManager.Services
 
             if (File.Exists(profilePath))
             {
-                Console.WriteLine("Profile already exists.");
+                MessageLogger.Write("Profile already exists.");
                 return;
             }
 
@@ -47,7 +48,7 @@ namespace FODevManager.Services
             };
 
             FileHelper.SaveJson(profilePath, profile);
-            Console.WriteLine($"✅ Profile '{profileName}' created with solution file: {solutionFilePath}");
+            MessageLogger.Write($"✅ Profile '{profileName}' created with solution file: {solutionFilePath}");
         }
 
         public void AddEnvironment(string profileName, string modelName, string projectFilePath)
@@ -56,8 +57,8 @@ namespace FODevManager.Services
 
             if (!File.Exists(projectFilePath))
             {
-                Console.WriteLine($"{projectFilePath} does not exist.");
-                Console.WriteLine("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" add \"ProjectFilePath\"");
+                MessageLogger.Write($"{projectFilePath} does not exist.");
+                MessageLogger.Write("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" add \"ProjectFilePath\"");
                 return;
             }
 
@@ -65,7 +66,7 @@ namespace FODevManager.Services
             
             if (!Directory.Exists(metaDataFolder))
             {
-                Console.WriteLine($"❌ Error: Metadata folder not found at {metaDataFolder}.");
+                MessageLogger.Write($"❌ Error: Metadata folder not found at {metaDataFolder}.");
                 return;
             }
 
@@ -84,7 +85,7 @@ namespace FODevManager.Services
             // Add project to the solution
             _solutionService.AddProjectToSolution(profileName, modelName, projectFilePath);
 
-            Console.WriteLine($"Model '{modelName}' added to profile '{profileName}' and included in solution.");
+            MessageLogger.Write($"Model '{modelName}' added to profile '{profileName}' and included in solution.");
         }
 
         private string GetProjectFilePath(string profileName, string modelName, string projectFilePath)
@@ -102,7 +103,7 @@ namespace FODevManager.Services
             string profilePath = Path.Combine(_appDataPath, $"{profileName}.json");
             if (!File.Exists(profilePath))
             {
-                Console.WriteLine("Profile does not exist.");
+                MessageLogger.Write("Profile does not exist.");
                 return;
             }
 
@@ -112,7 +113,7 @@ namespace FODevManager.Services
                 throw new Exception($"Profile '{profileName}' is empty");
             }
 
-            Console.WriteLine($"Profile: {profile.ProfileName}");
+            MessageLogger.Write($"Profile: {profile.ProfileName}");
             foreach (var env in profile.Environments)
             {
                 _modelDeploymentService.CheckModelDeployment(profileName, env.ModelName);
@@ -126,7 +127,7 @@ namespace FODevManager.Services
 
             if (!File.Exists(profilePath))
             {
-                Console.WriteLine($"Profile '{profileName}' does not exist.");
+                MessageLogger.Write($"Profile '{profileName}' does not exist.");
                 return;
             }
 
@@ -142,10 +143,10 @@ namespace FODevManager.Services
             if (File.Exists(solutionFilePath))
             {
                 File.Delete(solutionFilePath);
-                Console.WriteLine($"Solution file '{solutionFilePath}' deleted.");
+                MessageLogger.Write($"Solution file '{solutionFilePath}' deleted.");
             }
 
-            Console.WriteLine($"Profile '{profileName}' and all associated models removed.");
+            MessageLogger.Write($"Profile '{profileName}' and all associated models removed.");
         }
 
 
@@ -155,7 +156,7 @@ namespace FODevManager.Services
 
             if (!File.Exists(profilePath))
             {
-                Console.WriteLine($"Profile '{profileName}' does not exist.");
+                MessageLogger.Warning($"Profile '{profileName}' does not exist.");
                 return;
             }
 
@@ -164,21 +165,21 @@ namespace FODevManager.Services
 
             if (model == null)
             {
-                Console.WriteLine($"Model '{modelName}' not found in profile '{profileName}'.");
+                MessageLogger.Warning($"Model '{modelName}' not found in profile '{profileName}'.");
                 return;
             }
 
             profile.Environments.Remove(model);
             FileHelper.SaveJson(profilePath, profile);
 
-            Console.WriteLine($"Model '{modelName}' removed from profile '{profileName}'.");
+            MessageLogger.Write($"Model '{modelName}' removed from profile '{profileName}'.");
         }
 
         public void ListProfiles()
         {
             if (!Directory.Exists(_appDataPath))
             {
-                Console.WriteLine("No profiles found.");
+                MessageLogger.Warning("No profiles found.");
                 return;
             }
 
@@ -186,15 +187,15 @@ namespace FODevManager.Services
 
             if (files.Length == 0)
             {
-                Console.WriteLine("No profiles found.");
+                MessageLogger.Warning("No profiles found.");
                 return;
             }
 
-            Console.WriteLine("Installed Profiles:");
+            MessageLogger.Write("Installed Profiles:");
             foreach (var file in files)
             {
                 string profileName = Path.GetFileNameWithoutExtension(file);
-                Console.WriteLine($"- {profileName}");
+                MessageLogger.Write($"- {profileName}");
             }
         }
 
@@ -204,7 +205,7 @@ namespace FODevManager.Services
 
             if (!File.Exists(profilePath))
             {
-                Console.WriteLine($"Profile '{profileName}' does not exist.");
+                MessageLogger.Write($"Profile '{profileName}' does not exist.");
                 return;
             }
 
@@ -212,15 +213,15 @@ namespace FODevManager.Services
 
             if (profile.Environments.Count == 0)
             {
-                Console.WriteLine($"No models found in profile '{profileName}'.");
+                MessageLogger.Write($"No models found in profile '{profileName}'.");
                 return;
             }
 
-            Console.WriteLine($"Models in Profile '{profileName}':");
+            MessageLogger.Write($"Models in Profile '{profileName}':");
             foreach (var model in profile.Environments)
             {
                 string status = model.IsDeployed ? "✅ Deployed" : "❌ Not Deployed";
-                Console.WriteLine($"   - {model.ModelName} ({status})");
+                MessageLogger.Write($"   - {model.ModelName} ({status})");
             }
         }
 

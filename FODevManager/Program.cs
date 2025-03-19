@@ -5,15 +5,19 @@ using FODevManager.Services;
 using System;
 using System.IO;
 using FODevManager.Utils;
+using FoDevManager.Messages;
 
 class Program
 {
     static void Main(string[] args)
     {
         var commandParser = new CommandParser(args);
+
+        var consoleSubscriber = new ConsoleSubscriber();
+        
         if (!commandParser.IsValid)
         {
-            Console.WriteLine("Usage: fodev.exe -profile \"ProfileName\" <command> [options]");
+            MessageLogger.Write("Usage: fodev.exe -profile \"ProfileName\" <command> [options]");
             return;
         }
 
@@ -44,28 +48,28 @@ class Program
             switch (commandParser.Command)
             {
                 case "create":
-                    profileService.CreateProfile(commandParser.ProfileName);
+                    TryCatch(() => profileService.CreateProfile(commandParser.ProfileName));
                     break;
                 case "delete":
-                    profileService.DeleteProfile(commandParser.ProfileName);
+                    TryCatch(() => profileService.DeleteProfile(commandParser.ProfileName));
                     break;
                 case "check":
-                    profileService.CheckProfile(commandParser.ProfileName);
+                    TryCatch(() => profileService.CheckProfile(commandParser.ProfileName));
                     break;
                 case "list":
                     if (commandParser.ProfileName == null)
-                        profileService.ListProfiles();
+                        TryCatch(() => profileService.ListProfiles());
                     else
-                        profileService.ListModelsInProfile(commandParser.ProfileName);
+                        TryCatch(() => profileService.ListModelsInProfile(commandParser.ProfileName));
                     break;
                 case "deploy":
-                    modelService.DeployAllUndeployedModels(commandParser.ProfileName);
+                    TryCatch(() => modelService.DeployAllUndeployedModels(commandParser.ProfileName));
                     break;
                 case "undeploy":
-                    modelService.UnDeployAllModels(commandParser.ProfileName);
+                    TryCatch(() => modelService.UnDeployAllModels(commandParser.ProfileName));
                     break;
                 default:
-                    Console.WriteLine("Invalid profile command.");
+                    MessageLogger.Error($"Invalid model command: {commandParser.Command}");
                     break;
             }
         }
@@ -74,31 +78,44 @@ class Program
             switch (commandParser.Command) //Commands on Model
             {
                 case "add":                    
-                    profileService.AddEnvironment(commandParser.ProfileName, commandParser.ModelName, commandParser.FilePath);
+                    TryCatch(() => profileService.AddEnvironment(commandParser.ProfileName, commandParser.ModelName, commandParser.FilePath));
                     break;
                 case "remove":
-                    profileService.RemoveModelFromProfile(commandParser.ProfileName, commandParser.ModelName);
+                    TryCatch(() => profileService.RemoveModelFromProfile(commandParser.ProfileName, commandParser.ModelName));
                     break;
                 case "deploy":
-                    modelService.DeployModel(commandParser.ProfileName, commandParser.ModelName);
+                    TryCatch(() => modelService.DeployModel(commandParser.ProfileName, commandParser.ModelName));
                     break;
                 case "undeploy":
-                    modelService.UnDeployModel(commandParser.ProfileName, commandParser.ModelName);
+                    TryCatch(() => modelService.UnDeployModel(commandParser.ProfileName, commandParser.ModelName));
                     break;
                 case "check":
-                    modelService.CheckModelDeployment(commandParser.ProfileName, commandParser.ModelName);
+                    TryCatch(() => modelService.CheckModelDeployment(commandParser.ProfileName, commandParser.ModelName));
                     break;
                 case "git-status":
-                    modelService.CheckIfGitRepository(commandParser.ProfileName, commandParser.ModelName);
+                    TryCatch(() => modelService.CheckIfGitRepository(commandParser.ProfileName, commandParser.ModelName));
                     break;
                 case "git-open":
-                    modelService.OpenGitRepositoryUrl(commandParser.ProfileName, commandParser.ModelName);
+                    TryCatch(() => modelService.OpenGitRepositoryUrl(commandParser.ProfileName, commandParser.ModelName));
                     break;
                 default:
-                    Console.WriteLine("Invalid model command.");
+                    MessageLogger.Error($"Invalid model command: {commandParser.Command}");
                     break;
             }
         }
 
+    }
+    
+
+    private static void TryCatch(Action asyncFunc)
+    {
+        try
+        {
+            asyncFunc();
+        }
+        catch (Exception ex)
+        {
+            MessageLogger.Error(ex.ToString());
+        }
     }
 }

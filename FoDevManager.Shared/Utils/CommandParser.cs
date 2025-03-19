@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using FoDevManager.Messages;
 
 namespace FODevManager.Utils
 {
@@ -23,7 +24,7 @@ namespace FODevManager.Utils
         {
             if (args.Length < 2)
             {
-                Console.WriteLine("Error: Insufficient arguments provided.");
+                MessageLogger.Write("Error: Insufficient arguments provided.");
                 IsValid = false;
                 return;
             }
