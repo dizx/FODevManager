@@ -64,6 +64,44 @@ namespace FODevManager.Utils
             OpenUrl(remoteUrl);
         }
 
+        public static string? GetActiveBranch(string repoPath)
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = "rev-parse --abbrev-ref HEAD",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WorkingDirectory = repoPath
+                };
+
+                using (Process process = new Process { StartInfo = psi })
+                {
+                    process.Start();
+                    string output = process.StandardOutput.ReadLine() ?? string.Empty;
+                    process.WaitForExit();
+
+                    if (string.IsNullOrWhiteSpace(output))
+                    {
+                        MessageLogger.Error("Could not determine the branch.");
+                        return null;
+                    }
+
+                    return output.Trim();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"Error fetching branch: {ex.Message}");
+                return null;
+            }
+        }
+
+
         private static string GetGitRemoteUrl(string configPath)
         {
             string[] lines = File.ReadAllLines(configPath);

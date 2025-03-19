@@ -374,6 +374,8 @@ namespace FODevManager.Services
                 {
                     MessageLogger.Write($"✅ Model '{modelName}' Git repository: {gitRemoteUrl}");
 
+                    MessageLogger.Write($"✅ Model '{modelName}' Git active branch: {GitHelper.GetActiveBranch(projectRootPath)}");
+
                     model.GitUrl = gitRemoteUrl;
                     SaveProfileFile(profile);
 
