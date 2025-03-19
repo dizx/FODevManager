@@ -66,8 +66,12 @@ class Program
                     TryCatch(() => modelService.DeployAllUndeployedModels(commandParser.ProfileName));
                     break;
                 case "undeploy":
-                    TryCatch(() => modelService.UnDeployAllModels(commandParser.ProfileName));
+                    TryCatch(() => modelService.UnDeployAllModels(commandParser.ProfileName));  
                     break;
+                case "open-vs":
+                    TryCatch(() => profileService.OpenVisualStudioSolution(commandParser.ProfileName));
+                    break;
+
                 default:
                     MessageLogger.Error($"Invalid model command: {commandParser.Command}");
                     break;

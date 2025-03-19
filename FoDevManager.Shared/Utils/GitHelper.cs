@@ -8,8 +8,17 @@ namespace FODevManager.Utils
 {
     public static class GitHelper
     {
+
         public static bool IsGitRepository(string repoPath)
         {
+            string noOutput = "";
+            return IsGitRepository(repoPath, out noOutput);
+        }
+
+        public static bool IsGitRepository(string repoPath, out string remoteUrl)
+        {
+            remoteUrl = string.Empty;
+            var isGitRepo = false; ;
             string gitDirPath = Path.Combine(repoPath, ".git");
             string configPath = Path.Combine(gitDirPath, "config");
 
@@ -20,10 +29,17 @@ namespace FODevManager.Utils
             foreach (string line in lines)
             {
                 if (line.Trim().StartsWith("[remote \"origin\"]"))
-                    return true;
+                {
+                    isGitRepo = true;
+                }
             }
 
-            return false;
+            if (isGitRepo)
+            {
+                remoteUrl = GetGitRemoteUrl(configPath);
+            }
+
+            return isGitRepo;
         }
 
         public static void OpenGitRemoteUrl(string repoPath)

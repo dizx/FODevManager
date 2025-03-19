@@ -366,16 +366,27 @@ namespace FODevManager.Services
                 return false;
             }
 
-            string projectRootPath = FileHelper.GetModelRootFolder(model.ProjectFilePath);
+            try
+            {
+                string projectRootPath = FileHelper.GetModelRootFolder(model.ProjectFilePath);
 
-            if (GitHelper.IsGitRepository(projectRootPath))
-            {
-                MessageLogger.Write($"✅ '{modelName}' in profile '{profileName}' is a Git repository.");
-                return true;
+                if (GitHelper.IsGitRepository(projectRootPath, out string gitRemoteUrl))
+                {
+                    MessageLogger.Write($"✅ '{modelName}' in profile '{profileName}' is a Git repository.");
+
+                    model.GitUrl = gitRemoteUrl;
+                    SaveProfileFile(profile);
+
+                    return true;
+                }
+                else
+                {
+                    MessageLogger.Write($"❌ '{modelName}' in profile '{profileName}' is NOT a Git repository.");
+                }
             }
-            else
+            catch
             {
-                MessageLogger.Write($"❌ '{modelName}' in profile '{profileName}' is NOT a Git repository.");
+                MessageLogger.Error($"❌ Eror getting git status for '{modelName}' in profile '{profileName}'");
             }
 
             return false;

@@ -4,6 +4,7 @@ using System;
 using System.IO;
 using System.Text;
 using FoDevManager.Messages;
+using System.Diagnostics;
 
 namespace FODevManager.Services
 {
@@ -81,7 +82,7 @@ namespace FODevManager.Services
 
             if (!File.Exists(solutionFilePath))
             {
-                MessageLogger.Write($"Solution file for profile '{profileName}' does not exist.");
+                MessageLogger.Warning($"Solution file for profile '{profileName}' does not exist.");
                 return;
             }
 
@@ -112,6 +113,30 @@ namespace FODevManager.Services
 
             File.WriteAllText(solutionFilePath, sb.ToString());
             MessageLogger.Write($"Removed project '{modelName}' from solution '{profileName}.sln'.");
+        }
+
+        public void OpenSolution(string solutionPath)
+        {
+            if (string.IsNullOrWhiteSpace(solutionPath) || !File.Exists(solutionPath))
+            {
+                Console.WriteLine("Error: Solution file not found.");
+                return;
+            }
+
+            try
+            {
+                // Use Process.Start to open the solution in Visual Studio
+                Process.Start(new ProcessStartInfo(solutionPath)
+                {
+                    UseShellExecute = true
+                });
+
+                Console.WriteLine($"Opening solution: {solutionPath}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to open solution: {ex.Message}");
+            }
         }
     }
 }

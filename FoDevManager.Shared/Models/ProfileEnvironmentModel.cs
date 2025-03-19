@@ -6,6 +6,11 @@
         public string ProjectFilePath { get; set; } = "";
 
         public string MetadataFolder { get; set; } = "";
+
+        public string GitUrl { get; set; } = "";
+
         public bool IsDeployed { get; set; } = false;
+
+        
     }
 }

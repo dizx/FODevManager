@@ -23,7 +23,7 @@ namespace FODevManager.Services
             _appDataPath = config.ProfileStoragePath;
             _defaultSourceDirectory = config.DefaultSourceDirectory;
             _solutionService = solutionService;
-            //_modelDeploymentService = modelDeploymentService;
+            _modelDeploymentService = modelDeploymentService;
             FileHelper.EnsureDirectoryExists(_appDataPath);
             FileHelper.EnsureDirectoryExists(_defaultSourceDirectory);
         }
@@ -98,6 +98,13 @@ namespace FODevManager.Services
             return FileHelper.GetProjectFilePath(profileName, modelName, projectFilePath);
         }
 
+        public void OpenVisualStudioSolution(string profileName)
+        {
+            var profile = LoadProfileFile(profileName);
+
+            _solutionService.OpenSolution(profile.SolutionFilePath);
+        }
+
         public void CheckProfile(string profileName)
         {
             string profilePath = Path.Combine(_appDataPath, $"{profileName}.json");
@@ -117,6 +124,7 @@ namespace FODevManager.Services
             foreach (var env in profile.Environments)
             {
                 _modelDeploymentService.CheckModelDeployment(profileName, env.ModelName);
+                _modelDeploymentService.CheckIfGitRepository(profileName, env.ModelName);
             }
         }
 
@@ -170,7 +178,8 @@ namespace FODevManager.Services
             }
 
             profile.Environments.Remove(model);
-            FileHelper.SaveJson(profilePath, profile);
+
+            SaveProfileFile(profile);
 
             MessageLogger.Write($"Model '{modelName}' removed from profile '{profileName}'.");
         }
@@ -221,7 +230,8 @@ namespace FODevManager.Services
             foreach (var model in profile.Environments)
             {
                 string status = model.IsDeployed ? "✅ Deployed" : "❌ Not Deployed";
-                MessageLogger.Write($"   - {model.ModelName} ({status})");
+                string gitStatus = string.IsNullOrEmpty(model.GitUrl) ? "" : "✅ Git Repo" ; 
+                MessageLogger.Write($"   - {model.ModelName}\t\t - {status} - { gitStatus }");
             }
         }
 
