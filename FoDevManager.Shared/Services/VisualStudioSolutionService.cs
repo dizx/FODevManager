@@ -65,9 +65,17 @@ namespace FODevManager.Services
                 CreateSolutionFile(profileName);
             }
 
-            string projectGuid = Guid.NewGuid().ToString("B").ToUpper();
             string relativePath = Path.GetRelativePath(solutionDir, projectFilePath);
+            var lines = File.ReadAllLines(solutionFilePath);
 
+            // Check if the project is already in the solution
+            if (lines.Any(line => line.Contains($"\"{relativePath}\"", StringComparison.OrdinalIgnoreCase)))
+            {
+                MessageLogger.Warning($"⚠️ Project '{modelName}' is already included in the solution.");
+                return;
+            }
+
+            string projectGuid = Guid.NewGuid().ToString("B").ToUpper();
             var sb = new StringBuilder(File.ReadAllText(solutionFilePath));
             sb.AppendLine($"Project(\"{projectGuid}\") = \"{modelName}\", \"{relativePath}\", \"{projectGuid}\"");
             sb.AppendLine("EndProject");
@@ -75,6 +83,7 @@ namespace FODevManager.Services
             File.WriteAllText(solutionFilePath, sb.ToString());
             MessageLogger.Info($"✅ Added project '{modelName}' to solution '{profileName}.sln'.");
         }
+
 
         public void RemoveProjectFromSolution(string profileName, string modelName)
         {
