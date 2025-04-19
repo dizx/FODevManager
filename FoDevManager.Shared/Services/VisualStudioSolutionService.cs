@@ -119,7 +119,7 @@ namespace FODevManager.Services
         {
             if (string.IsNullOrWhiteSpace(solutionPath) || !File.Exists(solutionPath))
             {
-                MessageLogger.Error("Error: Solution file not found.");
+                MessageLogger.Error("Solution file not found.");
                 return;
             }
 

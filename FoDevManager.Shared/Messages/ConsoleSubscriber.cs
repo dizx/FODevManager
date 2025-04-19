@@ -23,10 +23,16 @@ namespace FoDevManager.Messages
                 _ => ConsoleColor.White
             };
 
-            if (msg.Type != MessageType.Info && msg.Type != MessageType.Highlight)
-                Console.WriteLine($"[{msg.Type}] {msg.Content}");
-            else
-                Console.WriteLine(msg.Content);
+            var lines = msg.Content.Split(new[] { "\\r\\n", "\\n", "\\r" }, StringSplitOptions.None);
+
+            foreach (var line in lines)
+            {
+                if (msg.Type != MessageType.Info && msg.Type != MessageType.Highlight)
+                    Console.WriteLine($"[{msg.Type}] {line}");
+                else
+                    Console.WriteLine(line);
+            }
+
             Console.ResetColor();
         }
     }

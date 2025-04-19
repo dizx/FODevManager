@@ -11,6 +11,7 @@ using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace FODevManager.Utils
 {
+    
     public class CommandParser
     {
         public string ProfileName { get; private set; }
@@ -23,6 +24,11 @@ namespace FODevManager.Utils
         public CommandParser(string[] args)
         {
             ParseArguments(args);
+        }
+        public static CommandParser Parse(string[] args)
+        {
+            return new CommandParser(args);
+
         }
 
         private void ParseArguments(string[] args)
@@ -42,13 +48,14 @@ namespace FODevManager.Utils
 
             if (args.Length < 2)
             {
-                MessageLogger.Error("Error: Insufficient arguments provided.");
+                MessageLogger.Error("Insufficient arguments provided.");
+                MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" <command> [options]");
                 IsValid = false;
                 return;
             }
 
             for (int i = 0; i < args.Length; i++)
-            {
+            {   
                 switch (args[i])
                 {
                     case "-profile":
@@ -82,6 +89,11 @@ namespace FODevManager.Utils
             // Ensure required arguments are present
             IsValid = (!string.IsNullOrEmpty(Command) && Command.Equals("list"))
                 || (!string.IsNullOrEmpty(ProfileName) && !string.IsNullOrEmpty(Command));
+
+            if (!IsValid)
+            {
+                MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" <command> [options]");
+            }
         }
 
         private static void ShowGeneralHelp()
@@ -93,7 +105,7 @@ namespace FODevManager.Utils
                       fodev.exe -profile ""<ProfileName>"" <command> [options]
 
                     Available Commands:
-                      create        Create a new profile
+                       create        Create a new profile
                       delete        Delete an existing profile
                       check         Validate a profile and its models
                       list          List all profiles or models
@@ -102,6 +114,10 @@ namespace FODevManager.Utils
                       deploy        Deploy a model or all undeployed models
                       git-check     Check if a model is under Git
                       git-open      Open the Git remote URL in the browser
+                      db-set        Set the database name for the profile
+                      db-apply      Applies the db to web.config
+                      switch        Switch from current profile to another
+
 
                     Use 'fodev.exe help <command>' for more information.
                     ");

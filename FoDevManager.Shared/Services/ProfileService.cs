@@ -140,16 +140,18 @@ namespace FODevManager.Services
                 MessageLogger.Warning("ℹ️ No database name configured for this profile.");
                 return;
             }
+            
+            var currentDb = WebConfigHelper.GetCurrentDatabaseName();
+
+            if (string.Equals(currentDb, profile.DatabaseName, StringComparison.OrdinalIgnoreCase))
+            {
+                MessageLogger.Info($"ℹ️ Database is already set to '{currentDb}'. No change needed.");
+                return;
+            }
 
             try
             {
-                var currentDb = WebConfigHelper.GetCurrentDatabaseName();
-
-                if (string.Equals(currentDb, profile.DatabaseName, StringComparison.OrdinalIgnoreCase))
-                {
-                    MessageLogger.Info($"ℹ️ Database is already set to '{currentDb}'. No change needed.");
-                    return;
-                }
+                
 
                 MessageLogger.Info("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
                 ServiceHelper.StopW3SVC();

@@ -9,13 +9,12 @@ class Program
 {
     static void Main(string[] args)
     {
-        var commandParser = new CommandParser(args);
-
         var consoleSubscriber = new ConsoleSubscriber();
+
+        var commandParser = CommandParser.Parse(args);
         
         if (!commandParser.IsValid)
         {
-            MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" <command> [options]");
             return;
         }
 
