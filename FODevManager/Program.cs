@@ -4,12 +4,30 @@ using Microsoft.Extensions.Hosting;
 using FODevManager.Services;
 using FODevManager.Utils;
 using FoDevManager.Messages;
+using Serilog;
+using FODevManager.Logging;
 
 class Program
 {
     static void Main(string[] args)
     {
+        string logDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "FODevManager", "Logs");
+
+        Directory.CreateDirectory(logDirectory);
+
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Information()
+            .WriteTo.File(
+                path: Path.Combine(logDirectory, "fodev-.log"),
+                rollingInterval: RollingInterval.Day,
+                retainedFileCountLimit: 10,
+                outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss}] [{Level:u3}] {Message:lj}{NewLine}")
+            .CreateLogger();
+
         var consoleSubscriber = new ConsoleSubscriber();
+        var serilogSubscriber = new SerilogSubscriber();
 
         var commandParser = CommandParser.Parse(args);
         
@@ -17,6 +35,7 @@ class Program
         {
             return;
         }
+
 
         // Build the Host with Configuration and DI
         using IHost host = Host.CreateDefaultBuilder()

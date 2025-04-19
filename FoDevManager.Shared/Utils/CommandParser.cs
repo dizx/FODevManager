@@ -33,6 +33,8 @@ namespace FODevManager.Utils
 
         private void ParseArguments(string[] args)
         {
+            MessageLogger.LogOnly($"Arguments: {string.Join(" ", args)}");
+
             if (args.Length == 0 || args[0] == "help" || args[0] == "?")
             {
                 if (args.Length == 1)

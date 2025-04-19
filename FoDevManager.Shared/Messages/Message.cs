@@ -23,7 +23,8 @@ namespace FoDevManager.Messages
         Info,
         Warning,
         Error,
-        Highlight
+        Highlight,
+        LogOnly
     }
 
 }

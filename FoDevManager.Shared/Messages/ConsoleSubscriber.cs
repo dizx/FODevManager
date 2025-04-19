@@ -15,6 +15,9 @@ namespace FoDevManager.Messages
 
         private void DisplayMessage(Message msg)
         {
+            if (msg.Type == MessageType.LogOnly)
+                return;
+
             Console.ForegroundColor = msg.Type switch
             {
                 MessageType.Highlight=> ConsoleColor.Cyan,

@@ -438,7 +438,6 @@ namespace FODevManager.Services
             {
                 return new List<ProfileEnvironmentModel>();
             }
-
             
             foreach (var model in profile.Environments)
             {
