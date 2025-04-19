@@ -168,9 +168,25 @@ namespace FODevManager.Services
             }
         }
 
-
         public void AddEnvironment(string profileName, string modelName, string projectFilePath)
         {
+            if (string.IsNullOrEmpty(modelName))
+            {
+                var metadataPath = Path.Combine(projectFilePath, "Metadata");
+                if (!Directory.Exists(metadataPath))
+                    metadataPath = Path.Combine(Path.GetDirectoryName(projectFilePath), "Metadata");
+
+                if (Directory.Exists(metadataPath))
+                {
+                    var subfolder = Directory.GetDirectories(metadataPath).FirstOrDefault();
+                    if (!string.IsNullOrEmpty(subfolder))
+                        modelName = Path.GetFileName(subfolder);
+                }
+
+                if (string.IsNullOrEmpty(modelName))
+                    throw new Exception("❌ Unable to infer model name from Metadata folder.");
+            }
+
             projectFilePath = GetProjectFilePath(profileName, modelName, projectFilePath);
             if (!File.Exists(projectFilePath))
             {
@@ -194,7 +210,13 @@ namespace FODevManager.Services
             }
 
             var profile = LoadProfile(profileName);
-            
+
+            if (profile.Environments.Any(e => e.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase)))
+            {
+                MessageLogger.Warning($"⚠️ Model '{modelName}' is already in the profile '{profileName}'. Skipping add.");
+                return;
+            }
+
             profile.Environments.Add(new ProfileEnvironmentModel
             {
                 ModelName = modelName,
@@ -206,11 +228,10 @@ namespace FODevManager.Services
 
             SaveProfile(profile);
 
-            // Add project to the solution
             _solutionService.AddProjectToSolution(profileName, modelName, projectFilePath);
-
-            MessageLogger.Info($"Model '{modelName}' added to profile '{profileName}' and included in solution.");
+            MessageLogger.Info($"✅ Model '{modelName}' added to profile '{profileName}' and included in solution.");
         }
+
 
         private string GetProjectFilePath(string profileName, string modelName, string projectFilePath)
         {
