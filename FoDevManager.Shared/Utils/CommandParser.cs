@@ -5,6 +5,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using FoDevManager.Messages;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
@@ -139,6 +140,12 @@ namespace FODevManager.Utils
                     break;
                 case "switch":
                     MessageLogger.Info("Usage: fodev.exe switch -profile \"MyProfile\" Switches to the specified profile safely.");
+                    break;
+                case "db-set":
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" db set \"DatabaseName\" Sets the database name to be used by this profile.");
+                    break;
+                case "db-apply":
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" db-apply\\nApplies the database setting from the profile to web.config.");
                     break;
 
                 default:

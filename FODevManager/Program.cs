@@ -83,6 +83,9 @@ class Program
                 case "db-set":
                     TryCatch(() => profileService.SetDatabaseName(commandParser.ProfileName, commandParser.DatabaseName));
                     break;
+                case "db-apply":
+                    TryCatch(() => profileService.ApplyDatabase(commandParser.ProfileName));
+                    break;
                 default:
                     MessageLogger.Error($"Invalid profile command: {commandParser.Command}");
                     break;

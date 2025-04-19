@@ -131,7 +131,7 @@ namespace FODevManager.Services
         }
 
 
-                public void ApplyDatabase(string profileName)
+        public void ApplyDatabase(string profileName)
         {
             var profile = LoadProfile(profileName);
 
