@@ -56,23 +56,75 @@ namespace FODevManager.Utils
                 return;
             }
 
+            if (args.Length == 0 || args[0] == "help" || args[0] == "?")
+            {
+                if (args.Length == 1)
+                {
+                    ShowGeneralHelp();
+                }
+                else
+                {
+                    ShowCommandHelp(args[1]);
+                }
+                return;
+            }
+
+            if (args.Length < 2)
+            {
+                MessageLogger.Error("Error: Insufficient arguments provided.");
+                IsValid = false;
+                return;
+            }
+
             for (int i = 0; i < args.Length; i++)
-            {   
+            {
                 switch (args[i])
                 {
                     case "-profile":
-                        if (args.Length == 2) { Command = args[++i]; break; }
-                        if (i + 1 < args.Length) ProfileName = args[++i];
+                        if (i + 1 < args.Length)
+                        {
+                            string next = args[i + 1];
+
+                            // If it's actually a command, treat it as command not profile name
+                            if (IsCommand(next))
+                            {
+                                Command = next;
+                                i++;
+                            }
+                            else
+                            {
+                                ProfileName = next;
+                                i++;
+                            }
+                        }
                         break;
 
                     case "-model":
-                        if (i + 1 < args.Length) ModelName = args[++i];
+                        if (i + 1 < args.Length)
+                        {
+                            string next = args[i + 1];
+
+                            if (IsCommand(next))
+                            {
+                                Command = next;
+                                i++;
+                            }
+                            else
+                            {
+                                ModelName = next;
+                                i++;
+                            }
+                        }
                         break;
 
                     case "db-set":
                         Command = "db-set";
                         if (i + 1 < args.Length)
                             DatabaseName = args[++i];
+                        break;
+
+                    case "db-apply":
+                        Command = "db-apply";
                         break;
 
                     case "switch":
@@ -88,15 +140,34 @@ namespace FODevManager.Utils
                 }
             }
 
+
+
             // Ensure required arguments are present
             IsValid = (!string.IsNullOrEmpty(Command) && Command.Equals("list"))
                 || (!string.IsNullOrEmpty(ProfileName) && !string.IsNullOrEmpty(Command));
 
             if (!IsValid)
             {
-                MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" <command> [options]");
+                if(!string.IsNullOrEmpty(ModelName))
+                    MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" <command> [options]");
+                else
+                    MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" <command> [options]");
             }
         }
+
+        private bool IsCommand(string value)
+        {
+            var knownCommands = new[] {
+                "create", "delete", "check", "list",
+                "add", "remove", "deploy", "undeploy",
+                "git-check", "git-open", "git-status",
+                "switch", "db-set", "db-apply"
+        };
+
+            return knownCommands.Contains(value.ToLower());
+        }
+
+
 
         private static void ShowGeneralHelp()
         {

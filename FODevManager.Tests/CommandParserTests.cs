@@ -54,6 +54,20 @@ namespace FODevManager.Tests
         }
 
         [Test]
+        public void Should_Parse_Simplified_Model_Add_Command()
+        {
+            string[] args = { "-profile", "MyProfile", "-model", "add", "C:\\source\\mymodule" };
+            var parser = new CommandParser(args);
+
+            Assert.That(parser.IsValid, Is.True);
+            Assert.That(parser.ProfileName, Is.EqualTo("MyProfile"));
+            Assert.That(parser.Command, Is.EqualTo("add"));
+            Assert.That(parser.ModelName, Is.Null); // To be resolved in service
+            Assert.That(parser.FilePath, Is.EqualTo("C:\\source\\mymodule"));
+        }
+
+
+        [Test]
         public void Should_Parse_Switch_Profile_Command()
         {
             string[] args = { "switch", "-profile", "YM" };

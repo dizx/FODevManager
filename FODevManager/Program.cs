@@ -64,7 +64,7 @@ class Program
         var profileService = host.Services.GetRequiredService<ProfileService>();
         var modelService = host.Services.GetRequiredService<ModelDeploymentService>();
 
-        if (commandParser.ModelName == null) // Profile level
+        if (commandParser.ModelName == null && !commandParser.Command.Equals("add")) // Profile level
         {
             switch (commandParser.Command)
             {
