@@ -17,7 +17,7 @@ class Program
         
         if (!commandParser.IsValid)
         {
-            MessageLogger.Write("Usage: fodev.exe -profile \"ProfileName\" <command> [options]");
+            MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" <command> [options]");
             return;
         }
 

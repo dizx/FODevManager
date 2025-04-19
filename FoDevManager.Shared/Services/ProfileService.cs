@@ -7,6 +7,7 @@ using FODevManager.Utils;
 using FoDevManager.Messages;
 using Microsoft.Extensions.Configuration;
 using System.Reflection;
+using FoDevManager.Utils;
 
 namespace FODevManager.Services
 {
@@ -35,7 +36,7 @@ namespace FODevManager.Services
 
             if (File.Exists(profilePath))
             {
-                MessageLogger.Write("Profile already exists.");
+                MessageLogger.Warning("Profile already exists.");
                 return;
             }
 
@@ -49,34 +50,78 @@ namespace FODevManager.Services
             };
 
             FileHelper.SaveJson(profilePath, profile);
-            MessageLogger.Write($"✅ Profile '{profileName}' created with solution file: {solutionFilePath}");
+            MessageLogger.Info($"✅ Profile '{profileName}' created with solution file: {solutionFilePath}");
         }
+
+        public void SetDatabase(string profileName, string dbName)
+        {
+            var profile = LoadProfile(profileName);
+            profile.DatabaseName = dbName;
+            SaveProfile(profile);
+            MessageLogger.Info($"✅ Database name '{dbName}' set for profile '{profileName}'.");
+        }
+
+        public void ApplyDatabase(string profileName)
+        {
+            var profile = LoadProfile(profileName);
+
+            if (string.IsNullOrEmpty(profile.DatabaseName))
+            {
+                MessageLogger.Warning("ℹ️ No database name configured for this profile.");
+                return;
+            }
+
+            try
+            {
+                var currentDb = WebConfigHelper.GetCurrentDatabaseName();
+
+                if (string.Equals(currentDb, profile.DatabaseName, StringComparison.OrdinalIgnoreCase))
+                {
+                    MessageLogger.Info($"ℹ️ Database is already set to '{currentDb}'. No change needed.");
+                    return;
+                }
+
+                MessageLogger.Info("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
+                ServiceHelper.StopW3SVC();
+
+                WebConfigHelper.UpdateWebConfigDatabase(profile.DatabaseName);
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Error applying database '{profile.DatabaseName}': {ex.Message}");
+            }
+            finally
+            {
+                ServiceHelper.StartW3SVC();
+            }
+        }
+
 
         public void AddEnvironment(string profileName, string modelName, string projectFilePath)
         {
             projectFilePath = GetProjectFilePath(profileName, modelName, projectFilePath);
             if (!File.Exists(projectFilePath))
             {
-                MessageLogger.Write($"{projectFilePath} does not exist.");
-                MessageLogger.Write("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" add \"ProjectFilePath\"");
+                MessageLogger.Info($"{projectFilePath} does not exist.");
+                MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" add \"ProjectFilePath\"");
                 return;
             }
 
             var metaDataFolder = FileHelper.GetMetadataFolder(modelName, projectFilePath);
             if (!Directory.Exists(metaDataFolder))
             {
-                MessageLogger.Write($"❌ Error: Metadata folder not found at {metaDataFolder}.");
+                MessageLogger.Error($"❌ Error: Metadata folder not found at {metaDataFolder}.");
                 return;
             }
 
             string modelRootPath = FileHelper.GetModelRootFolder(projectFilePath);
             if (!Directory.Exists(modelRootPath))
             {
-                MessageLogger.Write($"❌ Error: Model root folder not found at {modelRootPath}.");
+                MessageLogger.Error($"❌ Error: Model root folder not found at {modelRootPath}.");
                 return;
             }
 
-            var profile = LoadProfileFile(profileName);
+            var profile = LoadProfile(profileName);
             
             profile.Environments.Add(new ProfileEnvironmentModel
             {
@@ -87,12 +132,12 @@ namespace FODevManager.Services
                 IsDeployed = false
             });
 
-            SaveProfileFile(profile);
+            SaveProfile(profile);
 
             // Add project to the solution
             _solutionService.AddProjectToSolution(profileName, modelName, projectFilePath);
 
-            MessageLogger.Write($"Model '{modelName}' added to profile '{profileName}' and included in solution.");
+            MessageLogger.Info($"Model '{modelName}' added to profile '{profileName}' and included in solution.");
         }
 
         private string GetProjectFilePath(string profileName, string modelName, string projectFilePath)
@@ -107,7 +152,7 @@ namespace FODevManager.Services
 
         public void OpenVisualStudioSolution(string profileName)
         {
-            var profile = LoadProfileFile(profileName);
+            var profile = LoadProfile(profileName);
 
             _solutionService.OpenSolution(profile.SolutionFilePath);
         }
@@ -117,17 +162,17 @@ namespace FODevManager.Services
             string profilePath = Path.Combine(_appDataPath, $"{profileName}.json");
             if (!File.Exists(profilePath))
             {
-                MessageLogger.Write("Profile does not exist.");
+                MessageLogger.Warning("Profile does not exist.");
                 return;
             }
 
-            var profile = LoadProfileFile(profileName);
+            var profile = LoadProfile(profileName);
             if(profile == null)
             {
                 throw new Exception($"Profile '{profileName}' is empty");
             }
 
-            MessageLogger.Write($"Profile: {profile.ProfileName}");
+            MessageLogger.Info($"Profile: {profile.ProfileName}");
             foreach (var env in profile.Environments)
             {
                 _modelDeploymentService.CheckModelDeployment(profileName, env.ModelName);
@@ -137,9 +182,9 @@ namespace FODevManager.Services
 
         public void GitFetchLatest(string profileName)
         {
-            var profile = LoadProfileFile(profileName);
+            var profile = LoadProfile(profileName);
 
-            MessageLogger.Write($"Fetch Git for profile: {profile.ProfileName}");
+            MessageLogger.Info($"Fetch Git for profile: {profile.ProfileName}");
             foreach (var env in profile.Environments)
             {
                 if (!string.IsNullOrEmpty(env.ModelRootFolder))
@@ -158,7 +203,7 @@ namespace FODevManager.Services
 
             if (!File.Exists(profilePath))
             {
-                MessageLogger.Write($"Profile '{profileName}' does not exist.");
+                MessageLogger.Warning($"Profile '{profileName}' does not exist.");
                 return;
             }
 
@@ -174,10 +219,10 @@ namespace FODevManager.Services
             if (File.Exists(solutionFilePath))
             {
                 File.Delete(solutionFilePath);
-                MessageLogger.Write($"Solution file '{solutionFilePath}' deleted.");
+                MessageLogger.Warning($"Solution file '{solutionFilePath}' deleted.");
             }
 
-            MessageLogger.Write($"Profile '{profileName}' and all associated models removed.");
+            MessageLogger.Info($"Profile '{profileName}' and all associated models removed.");
         }
 
 
@@ -202,9 +247,9 @@ namespace FODevManager.Services
 
             profile.Environments.Remove(model);
 
-            SaveProfileFile(profile);
+            SaveProfile(profile);
 
-            MessageLogger.Write($"Model '{modelName}' removed from profile '{profileName}'.");
+            MessageLogger.Info($"Model '{modelName}' removed from profile '{profileName}'.");
         }
 
         public void ListProfiles()
@@ -223,11 +268,11 @@ namespace FODevManager.Services
                 return;
             }
 
-            MessageLogger.Write("Installed Profiles:");
+            MessageLogger.Info("Installed Profiles:");
             foreach (var file in files)
             {
                 string profileName = Path.GetFileNameWithoutExtension(file);
-                MessageLogger.Write($"- {profileName}");
+                MessageLogger.Info($"- {profileName}");
             }
         }
 
@@ -237,7 +282,7 @@ namespace FODevManager.Services
 
             if (!File.Exists(profilePath))
             {
-                MessageLogger.Write($"Profile '{profileName}' does not exist.");
+                MessageLogger.Warning($"Profile '{profileName}' does not exist.");
                 return;
             }
 
@@ -245,16 +290,16 @@ namespace FODevManager.Services
 
             if (profile.Environments.Count == 0)
             {
-                MessageLogger.Write($"No models found in profile '{profileName}'.");
+                MessageLogger.Warning($"No models found in profile '{profileName}'.");
                 return;
             }
 
-            MessageLogger.Write($"Models in Profile '{profileName}':");
+            MessageLogger.Info($"Models in Profile '{profileName}':");
             foreach (var model in profile.Environments)
             {
                 string status = model.IsDeployed ? "✅ Deployed" : "❌ Not Deployed";
                 string gitStatus = string.IsNullOrEmpty(model.GitUrl) ? "" : "✅ Git Repo" ; 
-                MessageLogger.Write($"   - {model.ModelName}\t\t - {status} - { gitStatus }");
+                MessageLogger.Info($"   - {model.ModelName}\t\t - {status} - { gitStatus }");
             }
         }
 
@@ -283,7 +328,7 @@ namespace FODevManager.Services
 
             return profileNames;
         }
-        private ProfileModel LoadProfileFile(string profileName)
+        private ProfileModel LoadProfile(string profileName)
         {
             string profilePath = ProfilePath(profileName);
 
@@ -297,7 +342,7 @@ namespace FODevManager.Services
             return profile == null ? throw new Exception($"Can't load profile '{profileName}'") : profile;
         }
 
-        private void SaveProfileFile(ProfileModel profile)
+        private void SaveProfile(ProfileModel profile)
         {
             var profileName = profile.ProfileName;
 
@@ -315,7 +360,7 @@ namespace FODevManager.Services
         public List<ProfileEnvironmentModel> GetModelsInProfile(string profileName)
         {
             var models = new List<ProfileEnvironmentModel>();
-            var profile = LoadProfileFile(profileName);
+            var profile = LoadProfile(profileName);
 
             if (profile.Environments.Count == 0)
             {

@@ -22,9 +22,22 @@ namespace FODevManager.Utils
 
         private void ParseArguments(string[] args)
         {
+            if (args.Length == 0 || args[0] == "help" || args[0] == "?")
+            {
+                if (args.Length == 1)
+                {
+                    ShowGeneralHelp();
+                }
+                else
+                {
+                    ShowCommandHelp(args[1]);
+                }
+                return;
+            }
+
             if (args.Length < 2)
             {
-                MessageLogger.Write("Error: Insufficient arguments provided.");
+                MessageLogger.Error("Error: Insufficient arguments provided.");
                 IsValid = false;
                 return;
             }
@@ -54,6 +67,66 @@ namespace FODevManager.Utils
             // Ensure required arguments are present
             IsValid = (!string.IsNullOrEmpty(Command) && Command.Equals("list"))
                 || (!string.IsNullOrEmpty(ProfileName) && !string.IsNullOrEmpty(Command));
+        }
+
+        private static void ShowGeneralHelp()
+        {
+            Console.WriteLine(@"
+                    FODevManager - Dynamics 365 FO Developer Profile Manager
+
+                    Usage:
+                      fodev.exe -profile ""<ProfileName>"" <command> [options]
+
+                    Available Commands:
+                      create        Create a new profile
+                      delete        Delete an existing profile
+                      check         Validate a profile and its models
+                      list          List all profiles or models
+                      add           Add a model to a profile
+                      remove        Remove a model from a profile
+                      deploy        Deploy a model or all undeployed models
+                      git-check     Check if a model is under Git
+                      git-open      Open the Git remote URL in the browser
+
+                    Use 'fodev.exe help <command>' for more information.
+                    ");
+        }
+
+        private static void ShowCommandHelp(string command)
+        {
+            switch (command.ToLower())
+            {
+                case "create":
+                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" create\nCreates a new profile JSON and solution.");
+                    break;
+                case "delete":
+                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" delete\nDeletes a profile and its .sln file.");
+                    break;
+                case "add":
+                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" add \"C:\\Path\\project.rnrproj\"\nAdds a model to a profile.");
+                    break;
+                case "remove":
+                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" remove\nRemoves a model from the profile.");
+                    break;
+                case "deploy":
+                    Console.WriteLine("Usage:\n  fodev.exe -profile \"MyProfile\" -model \"MyModel\" deploy\n  fodev.exe -profile \"MyProfile\" deploy\nDeploys model(s) to the FO metadata directory.");
+                    break;
+                case "check":
+                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" check\nValidates existence of models and their files.");
+                    break;
+                case "list":
+                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" list\nLists all models in a profile.");
+                    break;
+                case "git-check":
+                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" git-check\nChecks if the model is in a Git repository.");
+                    break;
+                case "git-open":
+                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" git-open\nOpens the Git remote URL in a browser.");
+                    break;
+                default:
+                    Console.WriteLine("Unknown command. Use 'fodev.exe help' to list all commands.");
+                    break;
+            }
         }
     }
 }

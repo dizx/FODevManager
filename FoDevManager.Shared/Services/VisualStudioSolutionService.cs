@@ -39,7 +39,7 @@ namespace FODevManager.Services
 
             if (File.Exists(solutionFilePath))
             {
-                MessageLogger.Write($"Solution file already exists for profile '{profileName}'.");
+                MessageLogger.Warning($"Solution file already exists for profile '{profileName}'.");
                 return solutionFilePath;
             }
 
@@ -49,7 +49,7 @@ namespace FODevManager.Services
             sb.AppendLine("VisualStudioVersion = 17.12.35527.113");
 
             File.WriteAllText(solutionFilePath, sb.ToString());
-            MessageLogger.Write($"✅ Created solution file: {solutionFilePath}");
+            MessageLogger.Info($"✅ Created solution file: {solutionFilePath}");
 
             return solutionFilePath;
         }
@@ -61,7 +61,7 @@ namespace FODevManager.Services
 
             if (!File.Exists(solutionFilePath))
             {
-                MessageLogger.Write($"Solution file does not exist for profile '{profileName}'. Creating one...");
+                MessageLogger.Info($"Solution file does not exist for profile '{profileName}'. Creating one...");
                 CreateSolutionFile(profileName);
             }
 
@@ -73,7 +73,7 @@ namespace FODevManager.Services
             sb.AppendLine("EndProject");
 
             File.WriteAllText(solutionFilePath, sb.ToString());
-            MessageLogger.Write($"✅ Added project '{modelName}' to solution '{profileName}.sln'.");
+            MessageLogger.Info($"✅ Added project '{modelName}' to solution '{profileName}.sln'.");
         }
 
         public void RemoveProjectFromSolution(string profileName, string modelName)
@@ -112,7 +112,7 @@ namespace FODevManager.Services
             }
 
             File.WriteAllText(solutionFilePath, sb.ToString());
-            MessageLogger.Write($"Removed project '{modelName}' from solution '{profileName}.sln'.");
+            MessageLogger.Info($"Removed project '{modelName}' from solution '{profileName}.sln'.");
         }
 
         public void OpenSolution(string solutionPath)

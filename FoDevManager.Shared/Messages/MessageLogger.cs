@@ -15,7 +15,7 @@ namespace FoDevManager.Messages
 
         public static void Highlight(string message) => Write(message, MessageType.Highlight);
 
-        public static void Write(string message, MessageType type = MessageType.Info)
+        private static void Write(string message, MessageType type = MessageType.Info)
         {
             var msg = new Message(message, type);
             MessageBus.Instance.Publish(msg);

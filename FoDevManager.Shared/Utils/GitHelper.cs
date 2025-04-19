@@ -48,19 +48,19 @@ namespace FODevManager.Utils
 
             if (!File.Exists(configPath))
             {
-                MessageLogger.Write("❌ .git/config not found.");
+                MessageLogger.Error("❌ .git/config not found.");
                 return;
             }
 
             string remoteUrl = GetGitRemoteUrl(configPath);
             if (string.IsNullOrEmpty(remoteUrl))
             {
-                MessageLogger.Write("❌ Could not find remote URL in .git/config.");
+                MessageLogger.Error("❌ Could not find remote URL in .git/config.");
                 return;
             }
 
             remoteUrl = ConvertToHttpsUrl(remoteUrl);
-            MessageLogger.Write($"🌐 Opening: {remoteUrl}");
+            MessageLogger.Info($"🌐 Opening: {remoteUrl}");
             OpenUrl(remoteUrl);
         }
 
@@ -186,7 +186,7 @@ namespace FODevManager.Utils
             }
             catch (Exception ex)
             {
-                MessageLogger.Write($"❌ Failed to open URL: {ex.Message}");
+                MessageLogger.Error($"❌ Failed to open URL: {ex.Message}");
             }
         }
     }
