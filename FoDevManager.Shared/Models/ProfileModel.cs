@@ -9,6 +9,9 @@ namespace FODevManager.Models
         public List<ProfileEnvironmentModel> Environments { get; set; } = new();
 
         public string? DatabaseName { get; set; }
+        
+        public bool IsActive { get; set; } = false;
+
     }
 
 }

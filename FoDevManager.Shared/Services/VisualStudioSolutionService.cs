@@ -119,7 +119,7 @@ namespace FODevManager.Services
         {
             if (string.IsNullOrWhiteSpace(solutionPath) || !File.Exists(solutionPath))
             {
-                Console.WriteLine("Error: Solution file not found.");
+                MessageLogger.Error("Error: Solution file not found.");
                 return;
             }
 
@@ -131,11 +131,11 @@ namespace FODevManager.Services
                     UseShellExecute = true
                 });
 
-                Console.WriteLine($"Opening solution: {solutionPath}");
+                MessageLogger.Info($"Opening solution: {solutionPath}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to open solution: {ex.Message}");
+                MessageLogger.Error($"Failed to open solution: {ex.Message}");
             }
         }
     }

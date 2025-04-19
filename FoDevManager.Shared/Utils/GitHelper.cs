@@ -80,6 +80,26 @@ namespace FODevManager.Utils
             return null;
         }
 
+        public static bool HasUncommittedChanges(string repoPath)
+        {
+            try
+            {
+                string result;
+                if (RunProcess(repoPath, "git", "status --porcelain", out result))
+                {
+                    return !string.IsNullOrWhiteSpace(result);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"Error checking for uncommitted changes: {ex.Message}");
+            }
+
+            return false;
+        }
+
+
+
         private static bool RunProcess(string workingDir, string fileName, string args, string errorMessage = "")
         {
             var result = string.Empty;

@@ -2,8 +2,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using FODevManager.Services;
-using System;
-using System.IO;
 using FODevManager.Utils;
 using FoDevManager.Messages;
 
@@ -38,12 +36,17 @@ class Program
                 services.AddSingleton<VisualStudioSolutionService>();
             })
             .Build();
-        
-        // Resolve services
+
+        RunCommand(commandParser, host);
+
+    }
+
+    private static void RunCommand(CommandParser commandParser, IHost host)
+    {
         var profileService = host.Services.GetRequiredService<ProfileService>();
         var modelService = host.Services.GetRequiredService<ModelDeploymentService>();
 
-        if (commandParser.ModelName == null) //Commands on Profile
+        if (commandParser.ModelName == null) // Profile level
         {
             switch (commandParser.Command)
             {
@@ -66,26 +69,30 @@ class Program
                     TryCatch(() => modelService.DeployAllUndeployedModels(commandParser.ProfileName));
                     break;
                 case "undeploy":
-                    TryCatch(() => modelService.UnDeployAllModels(commandParser.ProfileName));  
+                    TryCatch(() => modelService.UnDeployAllModels(commandParser.ProfileName));
                     break;
                 case "open-vs":
                     TryCatch(() => profileService.OpenVisualStudioSolution(commandParser.ProfileName));
                     break;
-
                 case "git-fetch":
                     TryCatch(() => profileService.GitFetchLatest(commandParser.ProfileName));
                     break;
-
+                case "switch":
+                    TryCatch(() => profileService.SwitchProfile(commandParser.ProfileName));
+                    break;
+                case "db-set":
+                    TryCatch(() => profileService.SetDatabaseName(commandParser.ProfileName, commandParser.DatabaseName));
+                    break;
                 default:
-                    MessageLogger.Error($"Invalid model command: {commandParser.Command}");
+                    MessageLogger.Error($"Invalid profile command: {commandParser.Command}");
                     break;
             }
         }
-        else
+        else // Model level
         {
-            switch (commandParser.Command) //Commands on Model
+            switch (commandParser.Command)
             {
-                case "add":                    
+                case "add":
                     TryCatch(() => profileService.AddEnvironment(commandParser.ProfileName, commandParser.ModelName, commandParser.FilePath));
                     break;
                 case "remove":
@@ -111,9 +118,10 @@ class Program
                     break;
             }
         }
-
     }
-    
+
+
+
 
     private static void TryCatch(Action asyncFunc)
     {

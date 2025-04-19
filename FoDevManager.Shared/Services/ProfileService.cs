@@ -53,7 +53,46 @@ namespace FODevManager.Services
             MessageLogger.Info($"✅ Profile '{profileName}' created with solution file: {solutionFilePath}");
         }
 
-        public void SetDatabase(string profileName, string dbName)
+        public void SwitchProfile(string newProfileName)
+        {
+            var currentProfileName = GetActiveProfileName();
+            if (currentProfileName == newProfileName)
+            {
+                MessageLogger.Info($"ℹ️ Profile '{newProfileName}' is already active.");
+                return;
+            }
+
+            if (string.IsNullOrEmpty(currentProfileName))
+            {
+                MessageLogger.Info("ℹ️ No active profile found. Proceeding to switch.");
+            }
+
+            if (!string.IsNullOrEmpty(currentProfileName))
+            {
+                var currentProfile = LoadProfile(currentProfileName);
+                foreach (var model in currentProfile.Environments)
+                {
+                    var projectPath = Path.GetDirectoryName(model.ProjectFilePath);
+                    if (GitHelper.IsGitRepository(projectPath) && GitHelper.HasUncommittedChanges(projectPath))
+                    {
+                        MessageLogger.Error($"❌ Uncommitted Git changes found in model '{model.ModelName}'. Switch aborted.");
+                        return;
+                    }
+                }
+
+                MessageLogger.Info($"🧹 Undeploying models from '{currentProfileName}'...");
+                _modelDeploymentService.UnDeployAllModels(currentProfileName);
+            }
+
+            MessageLogger.Info($"📂 Switching to profile '{newProfileName}'...");
+            _modelDeploymentService.DeployAllUndeployedModels(newProfileName);
+            ApplyDatabase(newProfileName);
+            SetActiveProfile(newProfileName);
+            MessageLogger.Highlight($"✅ Successfully switched to profile '{newProfileName}'.");
+        }
+
+
+        public void SetDatabaseName(string profileName, string dbName)
         {
             var profile = LoadProfile(profileName);
             profile.DatabaseName = dbName;
@@ -61,7 +100,38 @@ namespace FODevManager.Services
             MessageLogger.Info($"✅ Database name '{dbName}' set for profile '{profileName}'.");
         }
 
-        public void ApplyDatabase(string profileName)
+        public void SetActiveProfile(string profileName)
+        {
+            var allProfiles = GetAllProfiles();
+
+            foreach (var path in allProfiles)
+            {
+                var profile = LoadProfile(profileName);
+                if (profile is null) continue;
+
+                profile.IsActive = string.Equals(profile.ProfileName, profileName, StringComparison.OrdinalIgnoreCase);
+                FileHelper.SaveJson(path, profile);
+            }
+
+            MessageLogger.Highlight($"📌 Profile '{profileName}' marked as active.");
+        }
+
+        public string? GetActiveProfileName()
+        {
+            var allProfiles = GetAllProfiles();
+
+            foreach (var path in allProfiles)
+            {
+                var profile = FileHelper.LoadJson<ProfileModel>(path);
+                if (profile != null && profile.IsActive)
+                    return profile.ProfileName;
+            }
+
+            return null;
+        }
+
+
+                public void ApplyDatabase(string profileName)
         {
             var profile = LoadProfile(profileName);
 

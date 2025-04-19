@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using FoDevManager.Messages;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace FODevManager.Utils
 {
@@ -13,6 +16,7 @@ namespace FODevManager.Utils
         public string ModelName { get; private set; }
         public string Command { get; private set; }
         public string FilePath { get; private set; }
+        public string DatabaseName { get; private set; }
         public bool IsValid { get; private set; }
 
         public CommandParser(string[] args)
@@ -55,6 +59,16 @@ namespace FODevManager.Utils
                         if (i + 1 < args.Length) ModelName = args[++i];
                         break;
 
+                    case "db-set":
+                        Command = "db-set";
+                        if (i + 1 < args.Length)
+                            DatabaseName = args[++i];
+                        break;
+
+                    case "switch":
+                        Command = "switch";
+                        break;
+
                     default:
                         if (Command == null)
                             Command = args[i];
@@ -71,7 +85,7 @@ namespace FODevManager.Utils
 
         private static void ShowGeneralHelp()
         {
-            Console.WriteLine(@"
+            MessageLogger.Info(@"
                     FODevManager - Dynamics 365 FO Developer Profile Manager
 
                     Usage:
@@ -97,34 +111,38 @@ namespace FODevManager.Utils
             switch (command.ToLower())
             {
                 case "create":
-                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" create\nCreates a new profile JSON and solution.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" create\nCreates a new profile JSON and solution.");
                     break;
                 case "delete":
-                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" delete\nDeletes a profile and its .sln file.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" delete\nDeletes a profile and its .sln file.");
                     break;
                 case "add":
-                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" add \"C:\\Path\\project.rnrproj\"\nAdds a model to a profile.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" add \"C:\\Path\\project.rnrproj\"\nAdds a model to a profile.");
                     break;
                 case "remove":
-                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" remove\nRemoves a model from the profile.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" remove\nRemoves a model from the profile.");
                     break;
                 case "deploy":
-                    Console.WriteLine("Usage:\n  fodev.exe -profile \"MyProfile\" -model \"MyModel\" deploy\n  fodev.exe -profile \"MyProfile\" deploy\nDeploys model(s) to the FO metadata directory.");
+                    MessageLogger.Info("Usage:\n  fodev.exe -profile \"MyProfile\" -model \"MyModel\" deploy\n  fodev.exe -profile \"MyProfile\" deploy\nDeploys model(s) to the FO metadata directory.");
                     break;
                 case "check":
-                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" check\nValidates existence of models and their files.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" check\nValidates existence of models and their files.");
                     break;
                 case "list":
-                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" list\nLists all models in a profile.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" list\nLists all models in a profile.");
                     break;
                 case "git-check":
-                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" git-check\nChecks if the model is in a Git repository.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" git-check\nChecks if the model is in a Git repository.");
                     break;
                 case "git-open":
-                    Console.WriteLine("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" git-open\nOpens the Git remote URL in a browser.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" git-open\nOpens the Git remote URL in a browser.");
                     break;
+                case "switch":
+                    MessageLogger.Info("Usage: fodev.exe switch -profile \"MyProfile\" Switches to the specified profile safely.");
+                    break;
+
                 default:
-                    Console.WriteLine("Unknown command. Use 'fodev.exe help' to list all commands.");
+                    MessageLogger.Info("Unknown command. Use 'fodev.exe help' to list all commands.");
                     break;
             }
         }

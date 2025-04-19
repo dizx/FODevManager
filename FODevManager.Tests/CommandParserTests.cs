@@ -1,14 +1,14 @@
 ﻿using FODevManager.Utils;
-using static System.Runtime.InteropServices.JavaScript.JSType;
+using NUnit.Framework;
 
 namespace FODevManager.Tests
-{ 
+{
     [TestFixture]
     public class CommandParserTests
     {
         [Test]
         public void Should_Parse_Profile_Create_Command()
-        {   
+        {
             string[] args = { "-profile", "YM", "create" };
             var parser = new CommandParser(args);
 
@@ -28,7 +28,6 @@ namespace FODevManager.Tests
             Assert.That(parser.Command, Is.EqualTo("list"));
         }
 
-
         [Test]
         public void Should_Parse_Model_Add_Command()
         {
@@ -43,6 +42,29 @@ namespace FODevManager.Tests
         }
 
         [Test]
+        public void Should_Parse_Db_Set_Command()
+        {
+            string[] args = { "-profile", "YM", "db-set", "AxDB_Test" };
+            var parser = new CommandParser(args);
+
+            Assert.That(parser.IsValid, Is.True);
+            Assert.That(parser.Command, Is.EqualTo("db-set"));
+            Assert.That(parser.ProfileName, Is.EqualTo("YM"));
+            Assert.That(parser.DatabaseName, Is.EqualTo("AxDB_Test"));
+        }
+
+        [Test]
+        public void Should_Parse_Switch_Profile_Command()
+        {
+            string[] args = { "switch", "-profile", "YM" };
+            var parser = new CommandParser(args);
+
+            Assert.That(parser.IsValid, Is.True);
+            Assert.That(parser.Command, Is.EqualTo("switch"));
+            Assert.That(parser.ProfileName, Is.EqualTo("YM"));
+        }
+
+        [Test]
         public void Should_Fail_When_Profile_Missing()
         {
             string[] args = { "create" };
@@ -52,13 +74,13 @@ namespace FODevManager.Tests
         }
 
         [Test]
-        public void Should_Pars_Deploy_all()
+        public void Should_Parse_DeployAll_Command()
         {
-            string[] args = { "-profile", "MyProfile", "deploy-all" };
+            string[] args = { "-profile", "MyProfile", "deploy" };
             var parser = new CommandParser(args);
 
             Assert.That(parser.IsValid, Is.True);
-            Assert.That(parser.Command, Is.EqualTo("deploy-all"));
+            Assert.That(parser.Command, Is.EqualTo("deploy"));
         }
 
         [Test]
@@ -70,9 +92,7 @@ namespace FODevManager.Tests
             Assert.That(parser.IsValid, Is.False);
         }
 
-        //[TestCase(new string[] { "-profile", "YM", "-model", "PtsTools", "deploy" }, "YM", "PtsTools", "deploy", null)]
         [TestCase(new string[] { "-profile", "YM", "-model", "PtsTools", "add", "C:\\Path\\to\\project.rnrproj" }, "YM", "PtsTools", "add", "C:\\Path\\to\\project.rnrproj")]
-        //[TestCase(new string[] { "-profile", "DevEnv", "check" }, "DevEnv", null, "check", null)]
         public void Should_Parse_Valid_Commands(string[] args, string expectedProfile, string expectedModel, string expectedCommand, string expectedFilePath)
         {
             var parser = new CommandParser(args);
