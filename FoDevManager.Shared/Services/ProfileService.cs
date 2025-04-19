@@ -15,6 +15,7 @@ namespace FODevManager.Services
     {
         private readonly string _appDataPath;
         private readonly string _defaultSourceDirectory;
+        private readonly string _deploymentBasePath;
         private readonly VisualStudioSolutionService _solutionService;
         private readonly ModelDeploymentService _modelDeploymentService;
 
@@ -24,6 +25,7 @@ namespace FODevManager.Services
         {
             _appDataPath = config.ProfileStoragePath;
             _defaultSourceDirectory = config.DefaultSourceDirectory;
+            _deploymentBasePath = config.DeploymentBasePath;
             _solutionService = solutionService;
             _modelDeploymentService = modelDeploymentService;
             FileHelper.EnsureDirectoryExists(_appDataPath);
@@ -217,19 +219,24 @@ namespace FODevManager.Services
                 return;
             }
 
+            string deploymentLinkPath = Path.Combine(_deploymentBasePath, modelName);
+            bool isAlreadyDeployed = Directory.Exists(deploymentLinkPath);
+
             profile.Environments.Add(new ProfileEnvironmentModel
             {
                 ModelName = modelName,
                 ModelRootFolder = modelRootPath,
                 ProjectFilePath = projectFilePath,
                 MetadataFolder = metaDataFolder,
-                IsDeployed = false
+                IsDeployed = isAlreadyDeployed
             });
 
             SaveProfile(profile);
 
             _solutionService.AddProjectToSolution(profileName, modelName, projectFilePath);
             MessageLogger.Info($"✅ Model '{modelName}' added to profile '{profileName}' and included in solution.");
+
+            _modelDeploymentService.CheckIfGitRepository(profileName, modelName);
         }
 
 
