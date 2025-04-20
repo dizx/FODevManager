@@ -7,7 +7,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FODevManager", "FODevManage
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FODevManager.Tests", "FODevManager.Tests\FODevManager.Tests.csproj", "{5F3CB06E-F54A-456A-9575-BD704A524651}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FoDevManager.Shared", "FoDevManager.Shared\FoDevManager.Shared.csproj", "{6C994939-B512-4D44-8970-2D380F24F493}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FODevManager.Shared", "FoDevManager.Shared\FODevManager.Shared.csproj", "{6C994939-B512-4D44-8970-2D380F24F493}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FODevManager.WinUI", "FODevManager.WinUI\FODevManager.WinUI.csproj", "{6516EF8A-7C4E-47F3-A503-A8311905F8F9}"
 EndProject

@@ -50,6 +50,7 @@ namespace FODevManager.WinUI
 
             services.AddSingleton(config);
             services.AddSingleton<ProfileService>();
+            services.AddSingleton<FileService>();
             services.AddSingleton<ModelDeploymentService>();
             services.AddSingleton<VisualStudioSolutionService>();
             return services.BuildServiceProvider();

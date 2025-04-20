@@ -47,14 +47,20 @@ namespace FODevManager.WinUI
 
         private void LoadProfiles()
         {
-            var profiles = _fileService.GetAllProfileNames();
-            ProfilesDropdown.ItemsSource = profiles;
-
-            // Select the first profile if available
+            var profiles = _fileService.GetAllProfiles();
+            ProfilesDropdown.ItemsSource = profiles.Select(x => x.ProfileName);
+            
             if (profiles.Any())
             {
-                ProfilesDropdown.SelectedIndex = 0;
-                ModelsListView.ItemsSource = _profileService.GetModelsInProfile(profiles.First());
+                var activeProfile = profiles.FirstOrDefault(x => x.IsActive == true);
+                if (activeProfile == null)
+                {
+                    activeProfile = profiles.First();
+                }
+
+                ProfilesDropdown.SelectedItem = activeProfile.ProfileName;
+                ModelsListView.ItemsSource = _profileService.GetModelsInProfile(activeProfile.ProfileName);
+                
             }
         }
 
