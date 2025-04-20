@@ -81,6 +81,8 @@ namespace FODevManager.Services
             }
 
             MessageLogger.Info($"📂 Switching to profile '{newProfileName}'...");
+            UpdateDeploymentStatus(newProfileName);
+
             _modelDeploymentService.DeployAllUndeployedModels(newProfileName);
             ApplyDatabase(newProfileName);
             SetActiveProfile(newProfileName);
@@ -355,19 +357,35 @@ namespace FODevManager.Services
         
         public List<ProfileEnvironmentModel> GetModelsInProfile(string profileName)
         {
-            var models = new List<ProfileEnvironmentModel>();
             var profile = _fileService.LoadProfile(profileName);
-
             if (profile.Environments.Count == 0)
             {
                 return new List<ProfileEnvironmentModel>();
             }
-            
+            return profile.Environments;
+        }
+
+        public void UpdateDeploymentStatus(string profileName)
+        {
+            bool updated = false;
+            var profile = _fileService.LoadProfile(profileName);
+
             foreach (var model in profile.Environments)
             {
-                models.Add(model);
+                bool shouldBeMarkedAsDeployed = _modelDeploymentService.IsModelActuallyDeployed(model);
+                if (model.IsDeployed != shouldBeMarkedAsDeployed)
+                {
+                    model.IsDeployed = shouldBeMarkedAsDeployed;
+                    updated = true;
+                }
             }
-            return models;
+
+            if (updated)
+            {
+                _fileService.SaveProfile(profile);
+                MessageLogger.Info($"🔍 Deployment status updated for profile '{profileName}'");
+            }
         }
+
     }
 }

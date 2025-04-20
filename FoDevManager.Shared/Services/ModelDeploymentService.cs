@@ -6,6 +6,7 @@ using System.Text.Json;
 using FODevManager.Models;
 using FODevManager.Utils;
 using FODevManager.Messages;
+using System.Reflection;
 
 namespace FODevManager.Services
 {
@@ -277,6 +278,15 @@ namespace FODevManager.Services
             }
 
             UpdateProfileFile(profileName, env);
+        }
+
+        public bool IsModelActuallyDeployed(ProfileEnvironmentModel env)
+        {
+            if (string.IsNullOrEmpty(env.ModelRootFolder))
+            {
+                return Directory.Exists(env.ModelRootFolder);
+            }
+            return false;
         }
 
         public bool CheckIfGitRepository(string profileName, string modelName)
