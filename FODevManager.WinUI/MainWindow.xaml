@@ -5,15 +5,20 @@
     xmlns:local="using:FODevManager.WinUI"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:converters="using:FODevManager.WinUI.Converters"
     mc:Ignorable="d"
     Title="FO Dev Manager">
 
     <Window.SystemBackdrop>
         <MicaBackdrop Kind="BaseAlt"/>
     </Window.SystemBackdrop>
-
+    
     <Border Background="{ThemeResource SystemBaseLowColor}">
         <Grid>
+            
+            <Grid.Resources>
+                <converters:MessageTypeToColorConverter x:Key="MessageTypeToColorConverter" />
+            </Grid.Resources>
             <Grid.RowDefinitions>
                 <RowDefinition Height="48"/>
                 <!-- Title Bar -->
@@ -99,17 +104,33 @@
 
 
             <!-- 🔻 Status Bar -->
-            <Border Grid.Row="2" Background="{ThemeResource SystemBaseLowColor}" Padding="6,4" >
+            <Border Grid.Row="2" Background="{ThemeResource SystemBaseLowColor}" Padding="6,4">
                 <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="100" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
-                    <TextBlock x:Name="StatusBar" Text="Ready" FontWeight="Bold" VerticalAlignment="Center" />
-                    <Button Grid.Column="1" Content="View Logs" Click="ViewLogs_Click" />
+                    <!-- Multi-line log list -->
+                    <ItemsControl x:Name="LogPreviewList" Grid.Row="0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Content}"
+                                   TextWrapping="Wrap"
+                                   FontSize="12"
+                                   Margin="2"
+                                   Foreground="{Binding Type, Converter={StaticResource MessageTypeToColorConverter}}" />           
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+
+
+                    <!-- View Logs Button -->
+                    <!--<Button Grid.Row="1" Content="View Logs" HorizontalAlignment="Right" Click="ViewLogs_Click" />-->
                 </Grid>
             </Border>
+
 
         </Grid>
     </Border>

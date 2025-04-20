@@ -1,36 +1,42 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System;
+using System.Collections.ObjectModel;
+using System.Linq;
 using FODevManager.Messages;
 
 namespace FODevManager.WinUI
 {
-    public class UIMessageSubscriber
+    public class UIMessageSubscriber : IMessageSubscriber
     {
-        public event Action<string, MessageType> MessageReceived;
+        public ObservableCollection<Message> RecentMessages { get; } = new();
 
-        private readonly Queue<Message> _recentMessages = new();
-        private const int MaxMessages = 10;
+        private const int MaxMessages = 5;
 
         public UIMessageSubscriber()
         {
-            MessageBus.Instance.OnMessagePublished += DisplayMessage;
+            MessageBus.Instance.OnMessagePublished += OnMessageReceived;
         }
 
-        private void DisplayMessage(Message msg)
+        private void OnMessageReceived(Message msg)
         {
             if (msg.Type == MessageType.LogOnly)
                 return;
 
-            if (_recentMessages.Count >= MaxMessages)
-                _recentMessages.Dequeue();
+            var lines = msg.Content.Split(new[] { "\\r\\n", "\\n", "\\r" }, StringSplitOptions.None);
 
-            _recentMessages.Enqueue(msg);
+            foreach (var line in lines)
+            {
+                var trimmedMsg = new Message(line, msg.Type);
+                Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread().TryEnqueue(() =>
+                {
+                    if (RecentMessages.Count >= MaxMessages)
+                        RecentMessages.RemoveAt(0);
 
-            // Flatten message to one-line for status bar
-            var firstLine = msg.Content.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None)[0];
-            MessageReceived?.Invoke(firstLine, msg.Type);
+                    RecentMessages.Add(trimmedMsg);
+                });
+            }
         }
 
-        public IEnumerable<Message> GetRecentMessages() => _recentMessages;
+        
     }
 }

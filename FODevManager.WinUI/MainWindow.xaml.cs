@@ -14,7 +14,7 @@ using Microsoft.UI;
 using FODevManager.Messages;
 using FODevManager.Shared.Utils;
 using FODevManager.Utils;
-using static System.Runtime.InteropServices.JavaScript.JSType;
+
 
 namespace FODevManager.WinUI
 {
@@ -36,23 +36,9 @@ namespace FODevManager.WinUI
 
             Singleton<Engine>.Instance.EnvironmentType = EnvironmentType.WinUi;
 
-            _uiSubscriber.MessageReceived += (text, type) =>
-            {
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    StatusBar.Text = text;
+            _uiSubscriber = new UIMessageSubscriber();
 
-                    // Optional: Change color based on type
-                    StatusBar.Foreground = type switch
-                    {
-                        MessageType.Error => new SolidColorBrush(Colors.Red),
-                        MessageType.Warning => new SolidColorBrush(Colors.Goldenrod),
-                        MessageType.Highlight => new SolidColorBrush(Colors.DeepSkyBlue),
-                        _ => new SolidColorBrush(Colors.White)
-                    };
-
-                });
-            };
+            LogPreviewList.ItemsSource = _uiSubscriber.RecentMessages;
 
             _profileService = profileService;
             _fileService = fileService;
@@ -70,6 +56,8 @@ namespace FODevManager.WinUI
 
 
             LoadProfiles();
+
+            UIMessageHelper.LogToUI($"READY...");
         }
 
         private void ApplyMicaEffect()
@@ -101,7 +89,20 @@ namespace FODevManager.WinUI
 
             if (profiles.Any())
             {
+                UIMessageHelper.LogToUI($"🔔 {profiles.Count} profiles loaded");
+
                 var activeProfile = profiles.FirstOrDefault(x => x.IsActive) ?? profiles.First();
+                
+                if(activeProfile.IsActive)
+                {
+                    UIMessageHelper.LogToUI($"🔔 Active profile: { activeProfile.ProfileName } ");
+                }
+
+                if (!activeProfile.IsActive)
+                {
+                    UIMessageHelper.LogToUI($"No active profile", MessageType.Warning);
+                }
+
 
                 ProfilesDropdown.SelectedItem = activeProfile.ProfileName;
                 ModelsListView.ItemsSource = _profileService.GetModelsInProfile(activeProfile.ProfileName);
@@ -161,7 +162,7 @@ namespace FODevManager.WinUI
 
         private void UpdateStatus(string message)
         {
-            StatusBar.Text = message;
+            //StatusBar.Text = message;
         }
 
         private async void CreateProfile_Click(object sender, RoutedEventArgs e)
@@ -243,34 +244,6 @@ namespace FODevManager.WinUI
             }
         }
 
-        private async void ViewLogs_Click(object sender, RoutedEventArgs e)
-        {
-            var messageLines = _uiSubscriber.GetRecentMessages()
-                .Select(msg => msg.Type != MessageType.Info && msg.Type != MessageType.Highlight
-                    ? $"[{msg.Type}] {msg.Content}"
-                    : msg.Content);
-
-            var messages = string.Join("\n", messageLines);
-
-            var dialog = new ContentDialog
-            {
-                Title = "Recent Log Messages",
-                Content = new ScrollViewer
-                {
-                    Content = new TextBlock
-                    {
-                        Text = messages,
-                        TextWrapping = TextWrapping.Wrap,
-                        FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas")
-                    }
-                },
-                CloseButtonText = "Close",
-                XamlRoot = this.Content.XamlRoot
-            };
-
-            await dialog.ShowAsync();
-        }
-
-
+        
     }
 }
