@@ -162,7 +162,7 @@ namespace FODevManager.WinUI
 
         private void UpdateStatus(string message)
         {
-            //StatusBar.Text = message;
+            UIMessageHelper.LogToUI(message);
         }
 
         private async void CreateProfile_Click(object sender, RoutedEventArgs e)
@@ -206,6 +206,42 @@ namespace FODevManager.WinUI
                 UpdateStatus($"🧹 Undeployment complete for '{profileName}'.");
             }
         }
+
+        private async void SwitchProfile_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesDropdown.SelectedItem is not string newProfile)
+                return;
+
+            var result = await new ContentDialog
+            {
+                Title = "Switch Profile",
+                Content = "Switching profiles will undeploy the current one and deploy the selected profile. Continue?",
+                PrimaryButtonText = "Switch",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.Content.XamlRoot
+            }.ShowAsync();
+
+            if (result != ContentDialogResult.Primary)
+                return;
+
+            try
+            {
+                //UIMessageHelper.LogToUI($"🔄 Switching to profile '{newProfile}'...");
+                _profileService.SwitchProfile(newProfile);
+
+                ModelsListView.ItemsSource = _profileService.GetModelsInProfile(newProfile);
+                UIMessageHelper.LogToUI($"✅ Switched to profile '{newProfile}'");
+            }
+            catch (Exception ex)
+            {
+                UIMessageHelper.LogToUI($"❌ Failed to switch profile: {ex.Message}", MessageType.Error);
+            }
+        }
+
+
+
+
         private async void BrowseModel_Click(object sender, RoutedEventArgs e)
         {
             var picker = new Windows.Storage.Pickers.FolderPicker();
@@ -231,7 +267,7 @@ namespace FODevManager.WinUI
                 _profileService.AddEnvironment(profileName, string.Empty, path);
                 ModelsListView.ItemsSource = _profileService.GetModelsInProfile(profileName);
                 //UpdateStatus($"➕ Model '{ModelNameTextBox.Text}' added to '{profileName}'.");
-
+                ModelPathTextBox.Text = string.Empty;
             }
         }
         private void RemoveModel_Click(object sender, RoutedEventArgs e)
