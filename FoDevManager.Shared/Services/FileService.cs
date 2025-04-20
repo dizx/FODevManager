@@ -48,7 +48,7 @@ namespace FODevManager.Services
             {
                 try
                 {
-                    profiles.Add(LoadProfile(fileName));
+                    profiles.Add(LoadProfile(Path.GetFileNameWithoutExtension(fileName)));
                 }
                 catch (Exception ex)
                 {
@@ -73,7 +73,7 @@ namespace FODevManager.Services
             {
                 try
                 {
-                    var profile = LoadProfile(fileName);
+                    var profile = LoadProfile(Path.GetFileNameWithoutExtension(fileName));
                     if (profile != null && !string.IsNullOrEmpty(profile.ProfileName))
                     {
                         profileNames.Add(profile.ProfileName);
