@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\FODevManager.Shared\FODevManager.Shared.csproj" />
+    <ProjectReference Include="..\FoDevManager.Shared\FODevManager.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>
