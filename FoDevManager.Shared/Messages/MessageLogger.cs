@@ -8,7 +8,6 @@ namespace FODevManager.Messages
 {
     public static class MessageLogger
     {
-        
         public static void Info(string message) => Write(message);
         public static void Warning(string message) => Write(message, MessageType.Warning);
         public static void Error(string message) => Write(message, MessageType.Error);

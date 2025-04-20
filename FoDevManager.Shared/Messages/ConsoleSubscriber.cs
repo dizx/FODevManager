@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace FODevManager.Messages
 {
-    public class ConsoleSubscriber
+    public class ConsoleSubscriber : IMessageSubscriber
     {
         public ConsoleSubscriber()
         {

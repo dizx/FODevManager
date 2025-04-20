@@ -3,7 +3,7 @@ using FODevManager.Messages;
 
 namespace FODevManager.Logging
 {
-    public class SerilogSubscriber
+    public class SerilogSubscriber : IMessageSubscriber
     {
         public SerilogSubscriber()
         {
