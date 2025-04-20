@@ -63,9 +63,10 @@ namespace FODevManager.WinUI
         protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
             var profileService = _serviceProvider.GetRequiredService<ProfileService>();
+            var fileService = _serviceProvider.GetRequiredService<FileService>();
             var deploymentService = _serviceProvider.GetRequiredService<ModelDeploymentService>();
 
-            var mainWindow = new MainWindow(profileService, deploymentService);
+            var mainWindow = new MainWindow(profileService, fileService, deploymentService);
             mainWindow.Activate();
 
             //m_window = new MainWindow();

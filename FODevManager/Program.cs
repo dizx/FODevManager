@@ -3,9 +3,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using FODevManager.Services;
 using FODevManager.Utils;
-using FoDevManager.Messages;
+using FODevManager.Messages;
 using Serilog;
 using FODevManager.Logging;
+
 
 class Program
 {
@@ -45,11 +46,12 @@ class Program
                 config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
             })
             .ConfigureServices((context, services) =>
-            {
+            {   
                 IConfiguration configuration = context.Configuration;
 
                 services.AddSingleton(new AppConfig(configuration));
                 services.AddSingleton<ProfileService>();
+                services.AddSingleton<FileService>();
                 services.AddSingleton<ModelDeploymentService>();
                 services.AddSingleton<VisualStudioSolutionService>();
             })

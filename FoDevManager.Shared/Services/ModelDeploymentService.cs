@@ -5,22 +5,19 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using FODevManager.Models;
 using FODevManager.Utils;
-using FoDevManager.Messages;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-using FoDevManager.Utils;
+using FODevManager.Messages;
 
 namespace FODevManager.Services
 {
     public class ModelDeploymentService
     {
+        private readonly FileService _fileService;
         private readonly string _deploymentBasePath;
-        private readonly string _appDataPath;
         private readonly string _defaultSourceDirectory;
-        private string ProfilePath(string profileName) => Path.Combine(_appDataPath, $"{profileName}.json");
 
-        public ModelDeploymentService(AppConfig config)
+        public ModelDeploymentService(AppConfig config, FileService fileService)
         {
-            _appDataPath = config.ProfileStoragePath;
+            _fileService = fileService;
             _deploymentBasePath = config.DeploymentBasePath;
             _defaultSourceDirectory = config.DefaultSourceDirectory;
 
@@ -37,7 +34,7 @@ namespace FODevManager.Services
 
             try
             {
-                var profile = LoadProfileFile(profileName);
+                var profile = _fileService.LoadProfile(profileName);
 
                 DeploySingleModel(profile, modelName);
                 UpdateProfileFile(profileName, new ProfileEnvironmentModel { ModelName = modelName, IsDeployed = true });
@@ -56,9 +53,7 @@ namespace FODevManager.Services
 
             try
             {
-                string profilePath = ProfilePath(profileName);
-
-                var profile = LoadProfileFile(profileName);
+                var profile = _fileService.LoadProfile(profileName);
 
                 bool anyUndeployed = false;
 
@@ -81,7 +76,7 @@ namespace FODevManager.Services
                     return;
                 }
 
-                SaveProfileFile(profile);
+                _fileService.SaveProfile(profile);
 
                 MessageLogger.Info($"✅ Deployment complete. Updated profile '{profileName}'.");
             }
@@ -103,7 +98,7 @@ namespace FODevManager.Services
 
             try
             {
-                var profile = LoadProfileFile(profileName);
+                var profile = _fileService.LoadProfile(profileName);
                 var environment = GetProfileEnvironment(profile, modelName);
                 string linkPath = Path.Combine(_deploymentBasePath, modelName);
 
@@ -121,7 +116,7 @@ namespace FODevManager.Services
 
                     // Update profile status
                     environment.IsDeployed = false;
-                    SaveProfileFile(profile);
+                    _fileService.SaveProfile(profile);
                 }
                 catch (Exception ex)
                 {
@@ -142,7 +137,7 @@ namespace FODevManager.Services
 
             try
             {
-                var profile = LoadProfileFile(profileName);
+                var profile = _fileService.LoadProfile(profileName);
                 bool anyDeployed = false;
 
                 foreach (var model in profile.Environments)
@@ -164,7 +159,7 @@ namespace FODevManager.Services
                     return;
                 }
 
-                SaveProfileFile(profile);
+                _fileService.SaveProfile(profile);
                 MessageLogger.Info($"✅ Undeployment complete. Updated profile '{profileName}'.");
             }
             catch (Exception ex)
@@ -176,36 +171,6 @@ namespace FODevManager.Services
                 MessageLogger.Info("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
                 ServiceHelper.StartW3SVC();
             }
-        }
-
-
-        private ProfileModel LoadProfileFile(string profileName)
-        {
-            string profilePath = ProfilePath(profileName);
-
-            if (!File.Exists(profilePath))
-            {
-                throw new Exception($"Profile '{profileName}' does not exist");
-            }
-
-            var profile = FileHelper.LoadJson<ProfileModel>(profilePath);
-
-            return profile == null ? throw new Exception($"Can't load profile '{profileName}'") : profile;
-        }
-
-        private void SaveProfileFile(ProfileModel profile)
-        {
-            var profileName = profile.ProfileName;
-
-            string profilePath = ProfilePath(profileName);
-
-            if (!File.Exists(profilePath))
-            {
-                throw new Exception($"Profile '{profileName}' does not exist");
-            }
-
-            FileHelper.SaveJson(profilePath, profile);
-            
         }
 
         private void DeploySingleModel(ProfileModel profile, string modelName)
@@ -254,7 +219,7 @@ namespace FODevManager.Services
 
         private void UpdateProfileFile(string profileName, ProfileEnvironmentModel updatedEnvironment)
         {
-            var profile = LoadProfileFile(profileName);
+            var profile = _fileService.LoadProfile(profileName);
 
             // Find the model in the profile
             var existingEnvironment = GetProfileEnvironment(profile, updatedEnvironment.ModelName);
@@ -268,13 +233,13 @@ namespace FODevManager.Services
             existingEnvironment.IsDeployed = updatedEnvironment.IsDeployed;
 
             // Save the updated profile
-            SaveProfileFile(profile);
+            _fileService.SaveProfile(profile);
             MessageLogger.Info($"✅ Updated model '{updatedEnvironment.ModelName}' in profile '{profileName}'.");
         }
 
         public void CheckModelDeployment(string profileName, string modelName)
         {
-            var env = GetProfileEnvironment(LoadProfileFile(profileName), modelName);
+            var env = GetProfileEnvironment(_fileService.LoadProfile(profileName), modelName);
 
             if(string.IsNullOrEmpty(env.ModelRootFolder))
             {
@@ -314,11 +279,9 @@ namespace FODevManager.Services
             UpdateProfileFile(profileName, env);
         }
 
-
-       
         public bool CheckIfGitRepository(string profileName, string modelName)
         {
-            var profile = LoadProfileFile(profileName);
+            var profile = _fileService.LoadProfile(profileName);
             var model = GetProfileEnvironment(profile, modelName);
 
             if (model == null)
@@ -338,7 +301,7 @@ namespace FODevManager.Services
                     MessageLogger.Info($"✅ Model '{modelName}' Git active branch: {GitHelper.GetActiveBranch(projectRootPath)}");
 
                     model.GitUrl = gitRemoteUrl;
-                    SaveProfileFile(profile);
+                    _fileService.SaveProfile(profile); 
 
                     return true;
                 }
@@ -358,7 +321,7 @@ namespace FODevManager.Services
 
         public void OpenGitRepositoryUrl(string profileName, string modelName)
         {
-            var profile = LoadProfileFile(profileName);
+            var profile = _fileService.LoadProfile(profileName);
             var model = GetProfileEnvironment(profile, modelName);
 
             if (model == null)
@@ -379,8 +342,6 @@ namespace FODevManager.Services
             }
         }
 
-
     }
-
 }
 

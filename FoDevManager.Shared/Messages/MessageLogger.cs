@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace FoDevManager.Messages
+namespace FODevManager.Messages
 {
     public static class MessageLogger
     {

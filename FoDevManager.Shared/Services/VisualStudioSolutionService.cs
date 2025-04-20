@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 using System;
 using System.IO;
 using System.Text;
-using FoDevManager.Messages;
+using FODevManager.Messages;
 using System.Diagnostics;
 
 namespace FODevManager.Services

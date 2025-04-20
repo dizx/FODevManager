@@ -1,5 +1,5 @@
 ﻿using Serilog;
-using FoDevManager.Messages;
+using FODevManager.Messages;
 
 namespace FODevManager.Logging
 {

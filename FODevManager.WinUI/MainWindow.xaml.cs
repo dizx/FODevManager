@@ -15,16 +15,18 @@ namespace FODevManager.WinUI
     public sealed partial class MainWindow : Window
     {
         private readonly ProfileService _profileService;
+        private readonly FileService _fileService;
         private readonly ModelDeploymentService _deploymentService;
 
         private MicaController _micaController;
         private SystemBackdropConfiguration _backdropConfig;
 
-        public MainWindow(ProfileService profileService, ModelDeploymentService deploymentService)
+        public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService)
         {
             this.InitializeComponent();
             ApplyMicaEffect();
             _profileService = profileService;
+            _fileService = fileService;
             _deploymentService = deploymentService;
             LoadProfiles();
         }
@@ -45,7 +47,7 @@ namespace FODevManager.WinUI
 
         private void LoadProfiles()
         {
-            var profiles = _profileService.GetAllProfiles();
+            var profiles = _fileService.GetAllProfileNames();
             ProfilesDropdown.ItemsSource = profiles;
 
             // Select the first profile if available

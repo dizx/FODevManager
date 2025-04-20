@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace FoDevManager.Messages;
+namespace FODevManager.Messages;
 
 public class MessageBus
 {

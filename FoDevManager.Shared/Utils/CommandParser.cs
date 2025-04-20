@@ -6,8 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
-using FoDevManager.Messages;
-using static System.Runtime.InteropServices.JavaScript.JSType;
+using FODevManager.Messages;
 
 namespace FODevManager.Utils
 {

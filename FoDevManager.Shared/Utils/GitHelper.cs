@@ -2,7 +2,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
-using FoDevManager.Messages;
+using FODevManager.Messages;
 
 namespace FODevManager.Utils
 {

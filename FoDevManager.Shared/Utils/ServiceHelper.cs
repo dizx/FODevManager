@@ -1,4 +1,4 @@
-﻿using FoDevManager.Messages;
+﻿using FODevManager.Messages;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace FoDevManager.Utils
+namespace FODevManager.Utils
 {
     public static class ServiceHelper
     {
