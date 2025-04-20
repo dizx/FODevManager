@@ -9,58 +9,103 @@ using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml.Media;
 using WinRT;
+using Microsoft.UI.Windowing;
+using Microsoft.UI;
+using FODevManager.Messages;
+using FODevManager.Shared.Utils;
+using FODevManager.Utils;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace FODevManager.WinUI
 {
     public sealed partial class MainWindow : Window
     {
+        private readonly UIMessageSubscriber _uiSubscriber = new();
+
         private readonly ProfileService _profileService;
         private readonly FileService _fileService;
         private readonly ModelDeploymentService _deploymentService;
 
-        private MicaController _micaController;
-        private SystemBackdropConfiguration _backdropConfig;
+        private MicaController? _micaController;
+        private SystemBackdropConfiguration? _backdropConfig;
+        private AppWindow _appWindow;
 
         public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService)
         {
             this.InitializeComponent();
-            ApplyMicaEffect();
+
+            Singleton<Engine>.Instance.EnvironmentType = EnvironmentType.WinUi;
+
+            _uiSubscriber.MessageReceived += (text, type) =>
+            {
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    StatusBar.Text = text;
+
+                    // Optional: Change color based on type
+                    StatusBar.Foreground = type switch
+                    {
+                        MessageType.Error => new SolidColorBrush(Colors.Red),
+                        MessageType.Warning => new SolidColorBrush(Colors.Goldenrod),
+                        MessageType.Highlight => new SolidColorBrush(Colors.DeepSkyBlue),
+                        _ => new SolidColorBrush(Colors.White)
+                    };
+
+                });
+            };
+
             _profileService = profileService;
             _fileService = fileService;
             _deploymentService = deploymentService;
+
+            // Initialize Mica + TitleBar
+            ApplyMicaEffect();
+            SetTitleBar(AppTitleBar);
+
+            // Store AppWindow reference
+            _appWindow = GetAppWindowForCurrentWindow();
+
+            var titleBar = _appWindow.TitleBar;
+            titleBar.ExtendsContentIntoTitleBar = true;
+
+
             LoadProfiles();
         }
 
         private void ApplyMicaEffect()
         {
-            if (MicaController.IsSupported())
-            {
-                _backdropConfig = new SystemBackdropConfiguration();
-                _backdropConfig.IsInputActive = true;
-                _backdropConfig.Theme = SystemBackdropTheme.Default;
+            if (!MicaController.IsSupported()) return;
 
-                _micaController = new MicaController();
-                _micaController.AddSystemBackdropTarget(this.As<ICompositionSupportsSystemBackdrop>());
-                _micaController.SetSystemBackdropConfiguration(_backdropConfig);
-            }
+            _backdropConfig = new SystemBackdropConfiguration
+            {
+                IsInputActive = true,
+                Theme = SystemBackdropTheme.Default
+            };
+
+            _micaController = new MicaController();
+            _micaController.AddSystemBackdropTarget(this.As<ICompositionSupportsSystemBackdrop>());
+            _micaController.SetSystemBackdropConfiguration(_backdropConfig);
+        }
+
+        private AppWindow GetAppWindowForCurrentWindow()
+        {
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
+            return AppWindow.GetFromWindowId(windowId);
         }
 
         private void LoadProfiles()
         {
             var profiles = _fileService.GetAllProfiles();
-            ProfilesDropdown.ItemsSource = profiles.Select(x => x.ProfileName);
-            
+            ProfilesDropdown.ItemsSource = profiles.Select(x => x.ProfileName).ToList();
+
             if (profiles.Any())
             {
-                var activeProfile = profiles.FirstOrDefault(x => x.IsActive == true);
-                if (activeProfile == null)
-                {
-                    activeProfile = profiles.First();
-                }
+                var activeProfile = profiles.FirstOrDefault(x => x.IsActive) ?? profiles.First();
 
                 ProfilesDropdown.SelectedItem = activeProfile.ProfileName;
                 ModelsListView.ItemsSource = _profileService.GetModelsInProfile(activeProfile.ProfileName);
-                
+                UpdateProfileFields(activeProfile);
             }
         }
 
@@ -69,8 +114,50 @@ namespace FODevManager.WinUI
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
                 ModelsListView.ItemsSource = _profileService.GetModelsInProfile(profileName);
+
+                var profile = _fileService.LoadProfile(profileName);
+                if (profile != null)
+                {
+                    UpdateProfileFields(profile);
+                }
             }
         }
+
+        private void UpdateProfileFields(ProfileModel profile)
+        {
+            DatabaseNameTextBox.Text = profile.DatabaseName ?? string.Empty;
+            IsActiveCheckBox.IsChecked = profile.IsActive;
+        }
+
+
+        private void OpenSolution_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesDropdown.SelectedItem is string profileName)
+            {
+                var profile = _fileService.LoadProfile(profileName);
+                if (profile == null)
+                    return;
+
+                var solutionPath = profile.SolutionFilePath;
+
+                if (!string.IsNullOrWhiteSpace(solutionPath) && System.IO.File.Exists(solutionPath))
+                {
+                    try
+                    {
+                        System.Diagnostics.Process.Start("explorer.exe", $"\"{solutionPath}\"");
+                    }
+                    catch (Exception ex)
+                    {
+                        UpdateStatus($"❌ Could not open solution: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    UpdateStatus("❗ Solution file not found or path not set.");
+                }
+            }
+        }
+
 
         private void UpdateStatus(string message)
         {
@@ -79,17 +166,17 @@ namespace FODevManager.WinUI
 
         private async void CreateProfile_Click(object sender, RoutedEventArgs e)
         {
+            var inputTextBox = new TextBox { PlaceholderText = "Enter profile name" };
+
             var dialog = new ContentDialog
             {
                 Title = "Create Profile",
                 PrimaryButtonText = "Create",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = this.Content.XamlRoot
+                XamlRoot = this.Content.XamlRoot,
+                Content = inputTextBox
             };
-
-            var inputTextBox = new TextBox { PlaceholderText = "Enter profile name" };
-            dialog.Content = inputTextBox;
 
             var result = await dialog.ShowAsync();
 
@@ -99,7 +186,6 @@ namespace FODevManager.WinUI
                 LoadProfiles();
             }
         }
-
 
         private void DeployProfile_Click(object sender, RoutedEventArgs e)
         {
@@ -116,25 +202,75 @@ namespace FODevManager.WinUI
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
                 _deploymentService.UnDeployAllModels(profileName);
+                UpdateStatus($"🧹 Undeployment complete for '{profileName}'.");
+            }
+        }
+        private async void BrowseModel_Click(object sender, RoutedEventArgs e)
+        {
+            var picker = new Windows.Storage.Pickers.FolderPicker();
+            picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Desktop;
+            picker.FileTypeFilter.Add("*"); // Required for folder picker to work
+
+            // Attach picker to current window
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder != null)
+            {
+                ModelPathTextBox.Text = folder.Path;
             }
         }
 
         private void AddModel_Click(object sender, RoutedEventArgs e)
         {
-            if (ProfilesDropdown.SelectedItem is string profileName && !string.IsNullOrWhiteSpace(ModelNameTextBox.Text))
+            if (ProfilesDropdown.SelectedItem is string profileName && !string.IsNullOrWhiteSpace(ModelPathTextBox.Text))
             {
-                _profileService.AddEnvironment(profileName, ModelNameTextBox.Text, "C:\\Path\\to\\model.rnrproj");
+                var path = ModelPathTextBox.Text;
+                _profileService.AddEnvironment(profileName, string.Empty, path);
                 ModelsListView.ItemsSource = _profileService.GetModelsInProfile(profileName);
+                //UpdateStatus($"➕ Model '{ModelNameTextBox.Text}' added to '{profileName}'.");
+
             }
         }
-
         private void RemoveModel_Click(object sender, RoutedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is string profileName && sender is Button button && button.Tag is string modelName)
             {
                 _profileService.RemoveModelFromProfile(profileName, modelName);
                 ModelsListView.ItemsSource = _profileService.GetModelsInProfile(profileName);
+                UpdateStatus($"🗑️ Model '{modelName}' removed from '{profileName}'.");
             }
         }
+
+        private async void ViewLogs_Click(object sender, RoutedEventArgs e)
+        {
+            var messageLines = _uiSubscriber.GetRecentMessages()
+                .Select(msg => msg.Type != MessageType.Info && msg.Type != MessageType.Highlight
+                    ? $"[{msg.Type}] {msg.Content}"
+                    : msg.Content);
+
+            var messages = string.Join("\n", messageLines);
+
+            var dialog = new ContentDialog
+            {
+                Title = "Recent Log Messages",
+                Content = new ScrollViewer
+                {
+                    Content = new TextBlock
+                    {
+                        Text = messages,
+                        TextWrapping = TextWrapping.Wrap,
+                        FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas")
+                    }
+                },
+                CloseButtonText = "Close",
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            await dialog.ShowAsync();
+        }
+
+
     }
 }

@@ -6,12 +6,15 @@ using FODevManager.Utils;
 using FODevManager.Messages;
 using Serilog;
 using FODevManager.Logging;
+using FODevManager.Shared.Utils;
 
 
 class Program
 {
     static void Main(string[] args)
     {
+        Singleton<Engine>.Instance.EnvironmentType = EnvironmentType.Console;
+
         string logDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "FODevManager", "Logs");

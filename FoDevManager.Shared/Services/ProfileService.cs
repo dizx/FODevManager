@@ -5,6 +5,7 @@ using System.Text.Json;
 using FODevManager.Models;
 using FODevManager.Utils;
 using FODevManager.Messages;
+using FODevManager.Shared.Utils;
 
 namespace FODevManager.Services
 {
@@ -183,7 +184,8 @@ namespace FODevManager.Services
             if (!File.Exists(projectFilePath))
             {
                 MessageLogger.Info($"{projectFilePath} does not exist.");
-                MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" add \"ProjectFilePath\"");
+                if(Singleton<Engine>.Instance.EnvironmentType == EnvironmentType.Console)
+                    MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" add \"ProjectFilePath\"");
                 return;
             }
 

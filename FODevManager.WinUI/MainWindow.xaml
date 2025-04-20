@@ -14,51 +14,93 @@
     </Window.SystemBackdrop>
 
     <Border Background="{ThemeResource SystemBaseLowColor}">
-        <Grid Padding="10">
+        <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="48"/>
+                <!-- Title Bar -->
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- Profile Selection -->
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                <ComboBox x:Name="ProfilesDropdown" Width="300" SelectionChanged="ProfilesDropdown_SelectionChanged"/>
-                <Button Content="Create Profile" Click="CreateProfile_Click" Margin="10,0,0,0"/>
-            </StackPanel>
+            <!-- Custom Title Bar -->
+            <Grid x:Name="AppTitleBar"
+                  Background="Transparent"
+                  Grid.Row="0"
+                  BorderBrush="{ThemeResource SystemBaseLowColor}"
+                  BorderThickness="0,0,0,1"
+                  Padding="12,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-            <!-- Deployment Controls -->
-            <StackPanel Orientation="Horizontal" Grid.Row="1" Margin="0,0,0,10">
-                <Button Content="Deploy Profile" Click="DeployProfile_Click" Width="150"/>
-                <Button Content="UnDeploy Profile" Click="UnDeployProfile_Click" Width="150" Margin="10,0,0,0"/>
-            </StackPanel>
+                <!-- App Title -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
+                    <FontIcon Glyph="&#xE8A5;" FontSize="18" />
+                    <TextBlock Text="FO Dev Manager" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </StackPanel>
 
-            <!-- Models List -->
-            <ListView x:Name="ModelsListView" Grid.Row="2" SelectionMode="Single">
-                <ListView.ItemTemplate>
-                    <DataTemplate >
-                        <StackPanel Orientation="Horizontal" Margin="5">
-                            <TextBlock Text="{Binding ModelName}" Width="200"/>
-                            <TextBlock Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}" Width="100"/>
-                            <Button Content="Remove" Click="RemoveModel_Click" Tag="{Binding ModelName}" Margin="10,0,0,0"/>
-                        </StackPanel>
-                    </DataTemplate>
-                </ListView.ItemTemplate>
-            </ListView>
+                
+            </Grid>
 
-            <!-- Add Model -->
-            <StackPanel Orientation="Horizontal" Grid.Row="3" Margin="0,10,0,0">
-                <TextBox x:Name="ModelNameTextBox" Width="200" PlaceholderText="Enter model name"/>
-                <Button Content="Add Model" Click="AddModel_Click" Margin="10,0,0,0"/>
-            </StackPanel>
+            <!-- Main Content -->
+            <Grid Grid.Row="1" Padding="10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Profile Info -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,10" Spacing="10">
+                    <TextBox x:Name="DatabaseNameTextBox" Width="200" PlaceholderText="Database Name" />
+                    <CheckBox x:Name="IsActiveCheckBox" Content="Is Active" VerticalAlignment="Center" />
+                    <Button Content="Open Solution" Click="OpenSolution_Click" />
+                </StackPanel>
+
+
+                <!-- Profile Selection -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,10" Grid.Row="1">
+                    <ComboBox x:Name="ProfilesDropdown" Width="300" SelectionChanged="ProfilesDropdown_SelectionChanged"/>
+                    <Button Content="Create Profile" Click="CreateProfile_Click" Margin="10,0,0,0"/>
+                </StackPanel>
+
+                <!-- Deployment Controls -->
+                <StackPanel Orientation="Horizontal" Grid.Row="1" Margin="0,0,0,10">
+                    <Button Content="Deploy Profile" Click="DeployProfile_Click" Width="150"/>
+                    <Button Content="UnDeploy Profile" Click="UnDeployProfile_Click" Width="150" Margin="10,0,0,0"/>
+                </StackPanel>
+
+                <!-- Models List -->
+                <ListView x:Name="ModelsListView" Grid.Row="2" SelectionMode="Single">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="5">
+                                <TextBlock Text="{Binding ModelName}" Width="200"/>
+                                <TextBlock Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}" Width="100"/>
+                                <Button Content="Remove" Click="RemoveModel_Click" Tag="{Binding ModelName}" Margin="10,0,0,0"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <!-- Add Model -->
+                <StackPanel Orientation="Horizontal" Grid.Row="3" Margin="0,10,0,0">
+                    <TextBox x:Name="ModelPathTextBox" Width="300" PlaceholderText="Browse model folder..." IsReadOnly="True" />
+                    <Button Content="Browse" Click="BrowseModel_Click" Margin="10,0,0,0" />
+                    <Button Content="Add Model" Click="AddModel_Click" Margin="10,0,0,0" />
+                </StackPanel>
+            </Grid>
 
             <!-- Status Bar -->
-        <Border Grid.Row="4" Background="{ThemeResource SystemBaseLowColor}" Padding="5" Margin="0,10,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Grid.Row="2" Margin="0,5,0,0">
+                <Button Content="View Logs" Click="ViewLogs_Click" />
+            </StackPanel>
+
+            <Border Grid.Row="2" Background="{ThemeResource SystemBaseLowColor}" Padding="5" Margin="0,0,0,0">
                 <TextBlock x:Name="StatusBar" Text="Ready" FontWeight="Bold"/>
             </Border>
         </Grid>
     </Border>
-
-
 </Window>

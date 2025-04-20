@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace FODevManager.Utils
 {
-    internal static class Singleton<T> where T : new()
+    public static class Singleton<T> where T : new()
     {
         private static readonly ConcurrentDictionary<Type, T> Instances = new ConcurrentDictionary<Type, T>();
 
