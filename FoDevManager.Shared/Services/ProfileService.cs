@@ -313,6 +313,8 @@ namespace FODevManager.Services
                 return;
             }
 
+            _solutionService.RemoveProjectFromSolution(profileName, model.ModelName);
+
             profile.Environments.Remove(model);
 
             _fileService.SaveProfile(profile);
