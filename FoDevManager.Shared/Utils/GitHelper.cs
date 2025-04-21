@@ -123,24 +123,29 @@ namespace FODevManager.Utils
             };
 
             using Process process = new Process { StartInfo = psi };
-            
+
             process.Start();
+
             string output = process.StandardOutput.ReadToEnd() ?? string.Empty;
-            string error = process.StandardError.ReadToEnd();
+            string error = process.StandardError.ReadToEnd() ?? string.Empty;
 
             process.WaitForExit();
 
-            if (!string.IsNullOrWhiteSpace(error))
+            result = string.IsNullOrWhiteSpace(output) ? error.Trim() : output.Trim();
+
+            if (process.ExitCode != 0)
             {
-                MessageLogger.Error(error);
+                if (!string.IsNullOrWhiteSpace(error))
+                    MessageLogger.Error(error.Trim());
+                else if (!string.IsNullOrWhiteSpace(errorMessage))
+                    MessageLogger.Error(errorMessage);
+
                 return false;
             }
-            
-            result = output.Trim();
 
-            return process.ExitCode == 0;
-
+            return true;
         }
+
 
         public static bool FetchFromRemote(string profileName, string repoPath)
         {
@@ -167,6 +172,59 @@ namespace FODevManager.Utils
             }
         }
 
+        public static bool ChangeBranch(string repoPath, string branchName)
+        {
+            if (!IsGitRepository(repoPath))
+            {
+                MessageLogger.Error("❌ Not a valid Git repository.");
+                return false;
+            }
+
+            if (HasUncommittedChanges(repoPath))
+            {
+                MessageLogger.Error("❌ Has uncommited changes. Cannot switch");
+                return false;
+            }
+
+            try
+            {
+                MessageLogger.Info($"🔍 Checking if branch '{branchName}' exists...");
+
+                string branchList;
+                if (!RunProcess(repoPath, "git", "branch --list", out branchList))
+                {
+                    MessageLogger.Error("❌ Could not list branches.");
+                    return false;
+                }
+
+                bool branchExists = branchList
+                    .Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Any(line => line.Trim().TrimStart('*').Equals(branchName, StringComparison.OrdinalIgnoreCase));
+
+                string command = branchExists ? $"checkout {branchName}" : $"checkout -b {branchName}";
+                string result;
+
+                if (RunProcess(repoPath, "git", command, out result))
+                {
+                    if (branchExists)
+                        MessageLogger.Highlight($"✅ Switched to existing branch: {branchName}");
+                    else
+                        MessageLogger.Highlight($"✅ Created and switched to new branch: {branchName}");
+
+                    return true;
+                }
+                else
+                {
+                    MessageLogger.Error($"❌ Failed to switch/create branch: {branchName}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Error switching branch: {ex.Message}");
+                return false;
+            }
+        }
 
         private static string GetGitRemoteUrl(string configPath)
         {

@@ -106,6 +106,8 @@
                                     <ColumnDefinition Width="Auto"/> <!-- Git Button -->
                                     <ColumnDefinition Width="Auto"/> <!-- Deploy -->
                                     <ColumnDefinition Width="Auto"/> <!-- Undeploy -->
+                                    <ColumnDefinition Width="Auto"/> <!-- PeriTask -->
+                                    <ColumnDefinition Width="Auto"/> <!-- Open Task -->
                                     <ColumnDefinition Width="*"/> <!-- Spacer -->
                                     <ColumnDefinition Width="Auto"/> <!-- Remove Button -->
                                 </Grid.ColumnDefinitions>
@@ -116,8 +118,11 @@
                                 <Button Grid.Column="3" Content="Git" Click="OpenGit_Click" Tag="{Binding ModelName}" x:Name="GitButton" ToolTipService.ToolTip="Open Git repository URL"/>
                                 <Button Grid.Column="4" Content="Deploy" Tag="{Binding ModelName}" Click="DeployModel_Click" Margin="6,0,0,0" ToolTipService.ToolTip="Deploy this model to the environment" />
                                 <Button Grid.Column="5" Content="Undeploy" Tag="{Binding ModelName}" Click="UnDeployModel_Click" Margin="6,0,0,0" ToolTipService.ToolTip="Remove the deployed model from the environment" />
+                                <Button Grid.Column="6" Content="Task" Tag="{Binding ModelName}" Click="AssignPeriTask_Click" Margin="6,0,0,0" ToolTipService.ToolTip="Assign a PeriTask ID to this model" />
+                                <Button Grid.Column="7" Content="Open" Click="OpenPeriTask_Click" Tag="{Binding PeriTask}" IsEnabled="{Binding HasPeriTask}" Margin="6,0,0,0" ToolTipService.ToolTip="Open the assigned PeriTask in your browser" />
+
                                 <!-- Spacer in Grid.Column=4 -->
-                                <Button Grid.Column="6" Content="Remove" Click="RemoveModel_Click" Tag="{Binding ModelName}" Margin="10,0,0,0" HorizontalAlignment="Right" ToolTipService.ToolTip="Remove this model from the profile (does not delete files)" />
+                                <Button Grid.Column="8" Content="Remove" Click="RemoveModel_Click" Tag="{Binding ModelName}" Margin="10,0,0,0" HorizontalAlignment="Right" ToolTipService.ToolTip="Remove this model from the profile (does not delete files)" />
                             </Grid>
                         </DataTemplate>
                     </ListView.ItemTemplate>

@@ -16,6 +16,8 @@ using FODevManager.Shared.Utils;
 using FODevManager.Utils;
 using System.Reflection;
 using FODevManager.WinUI.ViewModel;
+using System.Diagnostics;
+using System.Threading.Tasks;
 
 
 namespace FODevManager.WinUI
@@ -175,6 +177,72 @@ namespace FODevManager.WinUI
                 }
             }
         }
+        private async void AssignPeriTask_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesDropdown.SelectedItem is not string profileName)
+                return;
+
+            if (sender is Button button && button.Tag is string modelName)
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = $"Assign PeriTask to {modelName}",
+                    PrimaryButtonText = "Assign",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Primary,
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var input = new TextBox
+                {
+                    PlaceholderText = "Enter PeriTask ID (e.g. 1234)"
+                };
+                dialog.Content = input;
+
+                var result = await dialog.ShowAsync();
+                if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(input.Text))
+                {
+                    try
+                    {
+                        _deploymentService.AssignPeriTask(profileName, modelName, input.Text.Trim());
+                        UIMessageHelper.LogToUI($"🔧 Assigned PeriTask '{input.Text.Trim()}' to model '{modelName}'");
+                    }
+                    catch (Exception ex)
+                    {
+                        UIMessageHelper.LogToUI($"❌ Failed to assign PeriTask: {ex.Message}", MessageType.Error);
+                    }
+
+                    // Refresh models to reflect any updates
+                    LoadModelListViewData(profileName);
+                    //ModelsListView.ItemsSource = _profileService.GetModelsInProfile(profileName);
+                }
+            }
+        }
+
+        private void OpenPeriTask_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is string taskId && !string.IsNullOrWhiteSpace(taskId))
+            {
+                try
+                {
+                    ProcessStartInfo psi = new()
+                    {
+                        FileName = $"https://tasks.peritus.no/nb-NO/Case/Details/{taskId}",
+                        UseShellExecute = true
+                    };
+                    Process.Start(psi);
+
+                    UIMessageHelper.LogToUI($"🌐 Opened PeriTask URL for Task: {taskId}");
+                }
+                catch (Exception ex)
+                {
+                    UIMessageHelper.LogToUI($"❌ Failed to open task URL: {ex.Message}", MessageType.Error);
+                }
+            }
+        }
+
+
+
 
         private void DeployModel_Click(object sender, RoutedEventArgs e)
         {

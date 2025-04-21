@@ -103,6 +103,7 @@ namespace FODevManager.Utils
                         {
                             string next = args[i + 1];
 
+
                             if (IsCommand(next))
                             {
                                 Command = next;
@@ -160,7 +161,7 @@ namespace FODevManager.Utils
                 "create", "delete", "check", "list",
                 "add", "remove", "deploy", "undeploy",
                 "git-check", "git-open", "git-status",
-                "switch", "db-set", "db-apply"
+                "switch", "db-set", "db-apply", "peri"
         };
 
             return knownCommands.Contains(value.ToLower());

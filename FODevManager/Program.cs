@@ -139,6 +139,10 @@ class Program
                 case "git-open":
                     TryCatch(() => modelService.OpenGitRepositoryUrl(commandParser.ProfileName, commandParser.ModelName));
                     break;
+                case "peri":
+                    TryCatch(() => modelService.AssignPeriTask(commandParser.ProfileName, commandParser.ModelName, commandParser.FilePath));
+                    break;
+
                 default:
                     MessageLogger.Error($"Invalid model command: {commandParser.Command}");
                     break;

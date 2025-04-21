@@ -28,6 +28,24 @@ namespace FODevManager.Tests
             Assert.That(parser.Command, Is.EqualTo("list"));
         }
 
+        [TestFixture]
+        public class CommandParserPeriTests
+        {
+            [Test]
+            public void Should_Parse_Model_Peri_Command()
+            {
+                string[] args = { "-profile", "MyProfile", "-model", "MyModel", "peri", "Task1234" };
+                var parser = new CommandParser(args);
+
+                Assert.That(parser.IsValid, Is.True);
+                Assert.That(parser.ProfileName, Is.EqualTo("MyProfile"));
+                Assert.That(parser.ModelName, Is.EqualTo("MyModel"));
+                Assert.That(parser.Command, Is.EqualTo("peri"));
+                Assert.That(parser.FilePath, Is.EqualTo("Task1234")); // Reused as PeriTask holder
+            }
+        }
+
+
         [Test]
         public void Should_Parse_Model_Add_Command()
         {

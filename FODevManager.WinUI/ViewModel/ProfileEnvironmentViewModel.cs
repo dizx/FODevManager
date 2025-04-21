@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -19,6 +19,12 @@ namespace FODevManager.WinUI.ViewModel
 
         public string GitUrl { get; set; } = "";
 
+        public string PeriTask { get; set; } = "";
+
+        public bool HasPeriTask => !string.IsNullOrWhiteSpace(PeriTask);
+
+        public bool HasGit => !string.IsNullOrWhiteSpace(GitUrl);
+
         public string GitBranch { get; set; } = "";
 
         public bool IsDeployed { get; set; } = false;
@@ -34,6 +40,7 @@ namespace FODevManager.WinUI.ViewModel
             viewModel.ProjectFilePath = model.ProjectFilePath;
             viewModel.MetadataFolder = model.MetadataFolder;
             viewModel.GitUrl = model.GitUrl;
+            viewModel.PeriTask = model.PeriTask;
             viewModel.GitBranch = gitBranch;
             return viewModel;
         }

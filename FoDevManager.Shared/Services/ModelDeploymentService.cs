@@ -378,6 +378,42 @@ namespace FODevManager.Services
             }
         }
 
+        public bool AssignPeriTask(string profileName, string modelName, string periTask)
+        {
+            var profile = _fileService.LoadProfile(profileName);
+            var model = GetProfileEnvironment(profile, modelName);
+
+            if (string.IsNullOrWhiteSpace(periTask))
+            {
+                MessageLogger.Warning("⚠️ PeriTask cannot be empty.");
+                return false;
+            }
+
+            string featureBranch = $"feature/task{periTask}";
+
+            string repoPath = model.ModelRootFolder;
+            if (!Directory.Exists(repoPath))
+            {
+                MessageLogger.Error($"❌ Model root folder does not exist: {repoPath}");
+                return false;
+            }
+
+            if (GitHelper.ChangeBranch(repoPath, featureBranch))
+            {
+                model.PeriTask = periTask;
+                _fileService.SaveProfile(profile);
+                MessageLogger.Highlight($"✅ Assigned PeriTask '{periTask}' and switched to branch '{featureBranch}'.");
+            }
+            else
+            {
+                MessageLogger.Error($"❌ Failed to switch to branch '{featureBranch}' for model '{modelName}'.");
+                return false;
+            }
+
+            return true;
+        }
+
+
     }
 }
 

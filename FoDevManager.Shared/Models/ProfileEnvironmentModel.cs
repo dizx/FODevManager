@@ -12,8 +12,9 @@
 
         public string GitUrl { get; set; } = "";
 
-        public bool IsDeployed { get; set; } = false;
+        public string PeriTask { get; set; } = "";
 
+        public bool IsDeployed { get; set; } = false;
         
     }
 }
