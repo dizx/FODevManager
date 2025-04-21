@@ -93,6 +93,12 @@
                             <TextBlock Text="Switch" />
                         </StackPanel>
                     </Button>
+                    <Button Click="RefreshProfile_Click" ToolTipService.ToolTip="Refreshes all the information about model deployment etc">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE72C;" FontSize="14" />
+                            <TextBlock Text="Refresh Profile" />
+                        </StackPanel>
+                    </Button>
 
                 </StackPanel>
 
