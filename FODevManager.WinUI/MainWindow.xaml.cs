@@ -18,6 +18,7 @@ using System.Reflection;
 using FODevManager.WinUI.ViewModel;
 using Microsoft.UI.Text;
 using Windows.UI.Text;
+using System.Diagnostics;
 
 
 namespace FODevManager.WinUI
