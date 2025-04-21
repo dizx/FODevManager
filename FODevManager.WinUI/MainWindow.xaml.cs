@@ -36,6 +36,7 @@ namespace FODevManager.WinUI
         public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService)
         {
             this.InitializeComponent();
+            this.Activated += MainWindow_Activated;
 
             Singleton<Engine>.Instance.EnvironmentType = EnvironmentType.WinUi;
 
@@ -60,6 +61,13 @@ namespace FODevManager.WinUI
             LoadProfiles();
 
             UIMessageHelper.LogToUI($"READY...");
+        }
+        private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
+        {
+            IntPtr windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            WindowId windowId = Win32Interop.GetWindowIdFromWindow(windowHandle);
+            AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+            appWindow.SetIcon(@"Assets\FODev.ico");
         }
 
         private void ApplyMicaEffect()
