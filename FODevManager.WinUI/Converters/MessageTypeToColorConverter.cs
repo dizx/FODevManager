@@ -12,7 +12,7 @@ namespace FODevManager.WinUI.Converters
         {
             return value switch
             {
-                MessageType.Error => new SolidColorBrush(Colors.Red),
+                MessageType.Error => new SolidColorBrush(Colors.OrangeRed),
                 MessageType.Warning => new SolidColorBrush(Colors.Goldenrod),
                 MessageType.Highlight => new SolidColorBrush(Colors.DeepSkyBlue),
                 _ => new SolidColorBrush(Colors.White)

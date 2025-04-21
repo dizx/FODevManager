@@ -105,13 +105,35 @@ namespace FODevManager.WinUI
                     UIMessageHelper.LogToUI($"No active profile", MessageType.Warning);
                 }
 
-
-                ProfilesDropdown.SelectedItem = activeProfile.ProfileName;
-                LoadModelListViewData(activeProfile.ProfileName);
-
-
-                UpdateProfileFields(activeProfile);
+                LoadProfile(activeProfile);
+                
             }
+        }
+
+        private ProfileModel? GetActiveProfile()
+        {
+            var profiles = _fileService.GetAllProfiles();
+            if (profiles.Any())
+            {
+                var activeProfile = profiles.FirstOrDefault(x => x.IsActive) ?? profiles.First();
+                return activeProfile;
+            }
+            return null;
+        }
+
+        private void LoadProfile(string profileName)
+        {
+            LoadProfile(_fileService.LoadProfile(profileName));
+        }
+
+        private void LoadProfile(ProfileModel? profile)
+        {
+            if (profile == null)
+                return;
+
+            ProfilesDropdown.SelectedItem = profile.ProfileName;
+            LoadModelListViewData(profile.ProfileName);
+            UpdateProfileFields(profile);
         }
 
         private void LoadModelListViewData(string profileName)
@@ -127,7 +149,6 @@ namespace FODevManager.WinUI
             }
 
             ModelsListView.ItemsSource = profileEnvironmentViewModelList;
-
 
         }
 
@@ -149,12 +170,7 @@ namespace FODevManager.WinUI
         {
             DatabaseNameTextBox.Text = profile.DatabaseName ?? string.Empty;
             IsActiveCheckBox.IsChecked = profile.IsActive;
-            RefreshGitButton();
-        }
-
-        private void ModelsListView_Loaded(object sender, RoutedEventArgs e)
-        {
-            RefreshGitButton();
+            
         }
 
         private void OpenGit_Click(object sender, RoutedEventArgs e)
@@ -202,20 +218,21 @@ namespace FODevManager.WinUI
             }
         }
 
-
         private void RefreshGitButton()
         {
             foreach (var item in ModelsListView.Items)
             {
-                if (ModelsListView.ContainerFromItem(item) is ListViewItem container)
-                {
-                    var gitButton = FindVisualChild<Button>(container, "GitButton");
+                var container = ModelsListView.ContainerFromItem(item) as ListViewItem;
+                if (container == null)
+                    continue;
 
-                    if (item is ProfileEnvironmentModel model && gitButton != null)
-                    {
-                        gitButton.IsEnabled = !model.GitUrl.IsNullOrEmpty();
-                    }
+                var gitButton = FindVisualChild<Button>(container, "GitButton");
+
+                if (item is ProfileEnvironmentViewModel model && gitButton != null)
+                {
+                    gitButton.IsEnabled = !(model.GitUrl.IsNullOrEmpty());
                 }
+               
             }
         }
 
@@ -352,10 +369,17 @@ namespace FODevManager.WinUI
             try
             {
                 //UIMessageHelper.LogToUI($"🔄 Switching to profile '{newProfile}'...");
-                _profileService.SwitchProfile(newProfile);
+                if(_profileService.SwitchProfile(newProfile))
+                {
+                    UIMessageHelper.LogToUI($"✅ Switched to profile '{newProfile}'");
+                    LoadModelListViewData(newProfile);
+                }
+                else
+                {
+                    LoadProfile(GetActiveProfile());
+                }
+                
 
-                LoadModelListViewData(newProfile);
-                UIMessageHelper.LogToUI($"✅ Switched to profile '{newProfile}'");
             }
             catch (Exception ex)
             {

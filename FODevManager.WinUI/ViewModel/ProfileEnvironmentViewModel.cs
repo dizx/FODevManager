@@ -19,6 +19,8 @@ namespace FODevManager.WinUI.ViewModel
 
         public string GitUrl { get; set; } = "";
 
+        public bool HasGit => !string.IsNullOrWhiteSpace(GitUrl);
+
         public string GitBranch { get; set; } = "";
 
         public bool IsDeployed { get; set; } = false;

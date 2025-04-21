@@ -87,7 +87,7 @@
                       Grid.Row="2"
                       Grid.ColumnSpan="2"
                       SelectionMode="Single"
-                      Padding="10" Loaded="ModelsListView_Loaded">
+                      Padding="10" >
                     <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -113,7 +113,7 @@
                                 <TextBlock Grid.Column="0" Text="{Binding ModelName}" VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}" VerticalAlignment="Center" /> 
                                 <TextBlock Grid.Column="2" Text="{Binding GitBranch}" Foreground="Black" FontStyle="Italic" VerticalAlignment="Center" />
-                                <Button Grid.Column="3" Content="Git" Click="OpenGit_Click" Tag="{Binding ModelName}" x:Name="GitButton" ToolTipService.ToolTip="Open Git repository URL"/>
+                                <Button Grid.Column="3" Content="Git" Click="OpenGit_Click" Tag="{Binding ModelName}" IsEnabled="{Binding HasGit}" ToolTipService.ToolTip="Open Git repository URL"/>
                                 <Button Grid.Column="4" Content="Deploy" Tag="{Binding ModelName}" Click="DeployModel_Click" Margin="6,0,0,0" ToolTipService.ToolTip="Deploy this model to the environment" />
                                 <Button Grid.Column="5" Content="Undeploy" Tag="{Binding ModelName}" Click="UnDeployModel_Click" Margin="6,0,0,0" ToolTipService.ToolTip="Remove the deployed model from the environment" />
                                 <!-- Spacer in Grid.Column=4 -->
@@ -138,7 +138,7 @@
             <Border Grid.Row="2" Background="{ThemeResource SystemBaseLowColor}" Padding="6,4">
                 <Grid>
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="100" />
+                        <RowDefinition Height="160" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 

@@ -49,13 +49,13 @@ namespace FODevManager.Services
             MessageLogger.Info($"✅ Profile '{profileName}' created with solution file: {solutionFilePath}");
         }
 
-        public void SwitchProfile(string newProfileName)
+        public bool SwitchProfile(string newProfileName)
         {
             var currentProfileName = GetActiveProfileName();
             if (currentProfileName == newProfileName)
             {
                 MessageLogger.Info($"ℹ️ Profile '{newProfileName}' is already active.");
-                return;
+                return false;
             }
 
             if (string.IsNullOrEmpty(currentProfileName))
@@ -68,11 +68,10 @@ namespace FODevManager.Services
                 var currentProfile = _fileService.LoadProfile(currentProfileName);
                 foreach (var model in currentProfile.Environments)
                 {
-                    var projectPath = Path.GetDirectoryName(model.ProjectFilePath);
-                    if (GitHelper.IsGitRepository(projectPath) && GitHelper.HasUncommittedChanges(projectPath))
+                    if (GitHelper.IsGitRepository(model.ModelRootFolder) && GitHelper.HasUncommittedChanges(model.ModelRootFolder))
                     {
                         MessageLogger.Error($"❌ Uncommitted Git changes found in model '{model.ModelName}'. Switch aborted.");
-                        return;
+                        return false;
                     }
                 }
 
@@ -87,6 +86,8 @@ namespace FODevManager.Services
             ApplyDatabase(newProfileName);
             SetActiveProfile(newProfileName);
             MessageLogger.Highlight($"✅ Successfully switched to profile '{newProfileName}'.");
+
+            return true;
         }
 
 
