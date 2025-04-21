@@ -89,19 +89,26 @@
                       Padding="10" Loaded="ModelsListView_Loaded">
                     <ListView.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel Orientation="Horizontal" Margin="5" Spacing="10">
-                                <TextBlock Text="{Binding ModelName}" Width="200"/>
-                                <TextBlock Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}" Width="100"/>
+                            <Grid Margin="5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="200"/> <!-- Model Name -->
+                                    <ColumnDefinition Width="150"/> <!-- Deployment Status -->
+                                    <ColumnDefinition Width="150"/> <!-- Git Branch -->
+                                    <ColumnDefinition Width="Auto"/> <!-- Git Button -->
+                                    <ColumnDefinition Width="*"/> <!-- Spacer -->
+                                    <ColumnDefinition Width="Auto"/> <!-- Remove Button -->
+                                </Grid.ColumnDefinitions>
 
-                                <!-- ✅ Git button -->
-                                <Button Content="Git" Click="OpenGit_Click" Tag="{Binding ModelName}" x:Name="GitButton" />
-
-                                <Button Content="Remove"
-                            Click="RemoveModel_Click"
-                            Tag="{Binding ModelName}" />
-                            </StackPanel>
+                                <TextBlock Grid.Column="0" Text="{Binding ModelName}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}" VerticalAlignment="Center" /> 
+                                <TextBlock Grid.Column="2" Text="{Binding GitBranch}" Foreground="Black" FontStyle="Italic" VerticalAlignment="Center" />
+                                <Button Grid.Column="3" Content="Git" Click="OpenGit_Click" Tag="{Binding ModelName}" x:Name="GitButton" /> 
+                                <!-- Spacer in Grid.Column=4 -->
+                                <Button Grid.Column="5" Content="Remove" Click="RemoveModel_Click" Tag="{Binding ModelName}" Margin="10,0,0,0"/>
+                            </Grid>
                         </DataTemplate>
-                    </ListView.ItemTemplate>            
+                    </ListView.ItemTemplate>
+
                 </ListView>
 
 

@@ -7,6 +7,8 @@ using FODevManager.Models;
 using FODevManager.Utils;
 using FODevManager.Messages;
 using System.Reflection;
+using System.Dynamic;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace FODevManager.Services
 {
@@ -327,6 +329,30 @@ namespace FODevManager.Services
 
             return false;
 
+        }
+
+        public string? GetActiveGitBranch(string profileName, string modelName)
+        {
+            try
+            {
+                var model = GetProfileEnvironment(_fileService.LoadProfile(profileName), modelName);
+                if (model == null)
+                {
+                    return "";
+                }
+
+                //string projectRootPath = FileHelper.GetModelRootFolder(model.ModelRootFolder);
+
+                if (GitHelper.IsGitRepository(model.ModelRootFolder, out string gitRemoteUrl))
+                {
+                    return GitHelper.GetActiveBranch(model.ModelRootFolder);
+                }
+            }
+            catch
+            {
+                return "";
+            }
+            return "";
         }
 
         public void OpenGitRepositoryUrl(string profileName, string modelName)

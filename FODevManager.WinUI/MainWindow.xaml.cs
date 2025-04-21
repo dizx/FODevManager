@@ -15,6 +15,7 @@ using FODevManager.Messages;
 using FODevManager.Shared.Utils;
 using FODevManager.Utils;
 using System.Reflection;
+using FODevManager.WinUI.ViewModel;
 
 
 namespace FODevManager.WinUI
@@ -106,17 +107,35 @@ namespace FODevManager.WinUI
 
 
                 ProfilesDropdown.SelectedItem = activeProfile.ProfileName;
-                ModelsListView.ItemsSource = _profileService.GetModelsInProfile(activeProfile.ProfileName);
-                
+                LoadModelListViewData(activeProfile.ProfileName);
+
+
                 UpdateProfileFields(activeProfile);
             }
+        }
+
+        private void LoadModelListViewData(string profileName)
+        {
+            var profileEnvironmentViewModelList = new List<ProfileEnvironmentViewModel>();
+
+            var models = _profileService.GetModelsInProfile(profileName);
+
+            foreach (var model in models)
+            {
+                var activeBranch = _deploymentService.GetActiveGitBranch(profileName, model.ModelName);
+                profileEnvironmentViewModelList.Add(model.ToViewModel(activeBranch ?? ""));
+            }
+
+            ModelsListView.ItemsSource = profileEnvironmentViewModelList;
+
+
         }
 
         private void ProfilesDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
-                ModelsListView.ItemsSource = _profileService.GetModelsInProfile(profileName);
+                LoadModelListViewData(profileName);
 
                 var profile = _fileService.LoadProfile(profileName);
                 if (profile != null)
@@ -171,7 +190,6 @@ namespace FODevManager.WinUI
                     }
                 }
             }
-
         }
 
         public static T? FindVisualChild<T>(DependencyObject parent, string? name = null) where T : DependencyObject
@@ -300,7 +318,7 @@ namespace FODevManager.WinUI
                 //UIMessageHelper.LogToUI($"🔄 Switching to profile '{newProfile}'...");
                 _profileService.SwitchProfile(newProfile);
 
-                ModelsListView.ItemsSource = _profileService.GetModelsInProfile(newProfile);
+                LoadModelListViewData(newProfile);
                 UIMessageHelper.LogToUI($"✅ Switched to profile '{newProfile}'");
             }
             catch (Exception ex)
@@ -308,9 +326,6 @@ namespace FODevManager.WinUI
                 UIMessageHelper.LogToUI($"❌ Failed to switch profile: {ex.Message}", MessageType.Error);
             }
         }
-
-
-
 
         private async void BrowseModel_Click(object sender, RoutedEventArgs e)
         {
@@ -335,7 +350,7 @@ namespace FODevManager.WinUI
             {
                 var path = ModelPathTextBox.Text;
                 _profileService.AddEnvironment(profileName, string.Empty, path);
-                ModelsListView.ItemsSource = _profileService.GetModelsInProfile(profileName);
+                LoadModelListViewData(profileName);
                 //UpdateStatus($"➕ Model '{ModelNameTextBox.Text}' added to '{profileName}'.");
                 ModelPathTextBox.Text = string.Empty;
             }
@@ -359,7 +374,7 @@ namespace FODevManager.WinUI
                     return;
 
                 _profileService.RemoveModelFromProfile(profileName, modelName);
-                ModelsListView.ItemsSource = _profileService.GetModelsInProfile(profileName);
+                LoadModelListViewData(profileName);
                 UpdateStatus($"🗑️ Model '{modelName}' removed from '{profileName}'.");
             }
         }
