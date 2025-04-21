@@ -16,6 +16,8 @@ using FODevManager.Shared.Utils;
 using FODevManager.Utils;
 using System.Reflection;
 using FODevManager.WinUI.ViewModel;
+using Microsoft.UI.Text;
+using Windows.UI.Text;
 
 
 namespace FODevManager.WinUI
@@ -446,5 +448,57 @@ namespace FODevManager.WinUI
                 UpdateStatus($"🗑️ Model '{modelName}' removed from '{profileName}'.");
             }
         }
+
+        private async void ShowAboutDialog_Click(object sender, RoutedEventArgs e)
+        {
+            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.0";
+
+            var contentPanel = new StackPanel
+            {
+                Spacing = 8,
+                Margin = new Thickness(4)
+            };
+
+            contentPanel.Children.Add(new TextBlock
+            {
+                Text = "FO Dev Manager",
+                FontSize = 20,
+                FontWeight = FontWeights.Bold
+            });
+
+            contentPanel.Children.Add(new TextBlock
+            {
+                Text = $"Version: {version}"
+            });
+
+            contentPanel.Children.Add(new TextBlock
+            {
+                Text = "Developed by: Morten Aasheim"
+            });
+
+            contentPanel.Children.Add(new TextBlock
+            {
+                Text = "© 2024 ECIT Peritus AS. All rights reserved.",
+                FontStyle = FontStyle.Italic
+            });
+
+            contentPanel.Children.Add(new HyperlinkButton
+            {
+                Content = "Visit peritus.no",
+                NavigateUri = new Uri("https://peritus.no"),
+                HorizontalAlignment = HorizontalAlignment.Left
+            });
+
+            var dialog = new ContentDialog
+            {
+                Title = "About",
+                Content = contentPanel,
+                PrimaryButtonText = "Close",
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            await dialog.ShowAsync();
+        }
+
     }
 }
