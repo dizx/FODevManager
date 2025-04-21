@@ -14,6 +14,7 @@ using Microsoft.UI;
 using FODevManager.Messages;
 using FODevManager.Shared.Utils;
 using FODevManager.Utils;
+using System.Reflection;
 
 
 namespace FODevManager.WinUI
@@ -21,6 +22,7 @@ namespace FODevManager.WinUI
     public sealed partial class MainWindow : Window
     {
         private readonly UIMessageSubscriber _uiSubscriber = new();
+        
 
         private readonly ProfileService _profileService;
         private readonly FileService _fileService;
@@ -53,7 +55,6 @@ namespace FODevManager.WinUI
 
             var titleBar = _appWindow.TitleBar;
             titleBar.ExtendsContentIntoTitleBar = true;
-
 
             LoadProfiles();
 
@@ -106,6 +107,7 @@ namespace FODevManager.WinUI
 
                 ProfilesDropdown.SelectedItem = activeProfile.ProfileName;
                 ModelsListView.ItemsSource = _profileService.GetModelsInProfile(activeProfile.ProfileName);
+                
                 UpdateProfileFields(activeProfile);
             }
         }
@@ -128,6 +130,74 @@ namespace FODevManager.WinUI
         {
             DatabaseNameTextBox.Text = profile.DatabaseName ?? string.Empty;
             IsActiveCheckBox.IsChecked = profile.IsActive;
+            RefreshGitButton();
+        }
+
+        private void ModelsListView_Loaded(object sender, RoutedEventArgs e)
+        {
+            RefreshGitButton();
+        }
+
+        private void OpenGit_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesDropdown.SelectedItem is not string profileName)
+                return;
+
+            if (sender is Button button && button.Tag is string modelName)
+            {
+                var model = _profileService.GetModel(profileName, modelName);
+                if (model != null && _deploymentService.CheckIfGitRepository(profileName, modelName))
+                {
+                    _deploymentService.OpenGitRepositoryUrl(profileName, modelName);
+                }
+                else
+                {
+                    UIMessageHelper.LogToUI($"Git repository not found for model '{modelName}'.", MessageType.Warning);
+                }
+            }
+        }
+
+        private void RefreshGitButton()
+        {
+            foreach (var item in ModelsListView.Items)
+            {
+                if (ModelsListView.ContainerFromItem(item) is ListViewItem container)
+                {
+                    var gitButton = FindVisualChild<Button>(container, "GitButton");
+
+                    if (item is ProfileEnvironmentModel model && gitButton != null)
+                    {
+                        gitButton.IsEnabled = !model.GitUrl.IsNullOrEmpty();
+                    }
+                }
+            }
+
+        }
+
+        public static T? FindVisualChild<T>(DependencyObject parent, string? name = null) where T : DependencyObject
+        {
+            if (parent == null) return null;
+
+            int childCount = VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < childCount; i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+
+                if (child is T typedChild)
+                {
+                    if (name == null)
+                        return typedChild;
+
+                    if (typedChild is FrameworkElement fe && fe.Name == name)
+                        return typedChild;
+                }
+
+                var result = FindVisualChild<T>(child, name);
+                if (result != null)
+                    return result;
+            }
+
+            return null;
         }
 
 
@@ -270,16 +340,28 @@ namespace FODevManager.WinUI
                 ModelPathTextBox.Text = string.Empty;
             }
         }
-        private void RemoveModel_Click(object sender, RoutedEventArgs e)
+        private async void RemoveModel_Click(object sender, RoutedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is string profileName && sender is Button button && button.Tag is string modelName)
             {
+
+                var result = await new ContentDialog
+                {
+                    Title = "Remove model",
+                    Content = "Remove model from the selected profile. Continue?",
+                    PrimaryButtonText = "Remove",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Primary,
+                    XamlRoot = this.Content.XamlRoot
+                }.ShowAsync();
+
+                if (result != ContentDialogResult.Primary)
+                    return;
+
                 _profileService.RemoveModelFromProfile(profileName, modelName);
                 ModelsListView.ItemsSource = _profileService.GetModelsInProfile(profileName);
                 UpdateStatus($"🗑️ Model '{modelName}' removed from '{profileName}'.");
             }
         }
-
-        
     }
 }

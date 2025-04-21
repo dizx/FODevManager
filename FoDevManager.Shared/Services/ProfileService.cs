@@ -365,6 +365,16 @@ namespace FODevManager.Services
             return profile.Environments;
         }
 
+        public ProfileEnvironmentModel GetModel(string profileName, string modelName)
+        {
+            var profile = _fileService.LoadProfile(profileName);
+            if (profile.Environments.Count == 0)
+            {
+                return new ProfileEnvironmentModel();
+            }
+            return profile.Environments.FirstOrDefault(x => x.ModelName == modelName);
+        }
+
         public void UpdateDeploymentStatus(string profileName)
         {
             bool updated = false;
