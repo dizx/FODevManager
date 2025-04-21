@@ -389,7 +389,7 @@ namespace FODevManager.Services
                 return false;
             }
 
-            string featureBranch = $"feature/task{periTask}";
+            string featureBranch = $"feature/task-{periTask}";
 
             string repoPath = model.ModelRootFolder;
             if (!Directory.Exists(repoPath))
