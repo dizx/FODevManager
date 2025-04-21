@@ -10,7 +10,7 @@ namespace FODevManager.WinUI
     {
         public ObservableCollection<Message> RecentMessages { get; } = new();
 
-        private const int MaxMessages = 5;
+        private const int MaxMessages = 8;
 
         public UIMessageSubscriber()
         {

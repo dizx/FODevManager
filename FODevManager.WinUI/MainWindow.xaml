@@ -65,14 +65,43 @@
                 <!-- 🔷 Row 0: Profile Selection + Open Solution -->
                 <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="10">
                     <ComboBox x:Name="ProfilesDropdown" Width="300" SelectionChanged="ProfilesDropdown_SelectionChanged" ToolTipService.ToolTip="Select an existing profile" />
-                    <Button Content="Create Profile" Click="CreateProfile_Click" ToolTipService.ToolTip="Create a new development profile" />
-                    <Button Content="Deploy Profile" Click="DeployProfile_Click" ToolTipService.ToolTip="Deploy all undeployed models in this profile" />
-                    <Button Content="UnDeploy Profile" Click="UnDeployProfile_Click" ToolTipService.ToolTip="Remove all deployed models for this profile" />
-                    <Button Content="Switch Profile" Click="SwitchProfile_Click" ToolTipService.ToolTip="Switch to this profile and redeploy its models" />
-                    <Button Content="Refresh Profile" Click="RefreshProfile_Click" ToolTipService.ToolTip="Refreshes all the information about model deployment etc" />
+
+                    <Button Click="CreateProfile_Click" ToolTipService.ToolTip="Create a new profile">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE710;" FontSize="14" />
+                            <TextBlock Text="Create" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Click="DeployProfile_Click" ToolTipService.ToolTip="Deploy all undeployed models">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE899;" FontSize="14" />
+                            <TextBlock Text="Deploy" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Click="UnDeployProfile_Click" ToolTipService.ToolTip="Remove all deployed models">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE896;" FontSize="14" />
+                            <TextBlock Text="UnDeploy" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Click="SwitchProfile_Click" ToolTipService.ToolTip="Switch to this profile and redeploy">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8AB;" FontSize="14" />
+                            <TextBlock Text="Switch" />
+                        </StackPanel>
+                    </Button>
+
                 </StackPanel>
 
-                <Button Grid.Row="0" Grid.Column="1" Content="Open Solution" Click="OpenSolution_Click" Margin="10,0,0,0" ToolTipService.ToolTip="Open the Visual Studio solution associated with this profile"/>
+                <Button Grid.Row="0" Grid.Column="1" Click="OpenSolution_Click" Margin="10,0,0,0" ToolTipService.ToolTip="Open the Visual Studio solution associated with this profile">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8B7;" FontSize="14" />
+                        <TextBlock Text="Open Solution" />
+                    </StackPanel>
+                </Button>
 
                 <!-- 🔷 Row 1: Database Name & Is Active -->
                 <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="10" Margin="0,10,0,10">
@@ -87,7 +116,7 @@
                       Grid.Row="2"
                       Grid.ColumnSpan="2"
                       SelectionMode="Single"
-                      Padding="10" Loaded="ModelsListView_Loaded">
+                      Padding="10" >
                     <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -115,7 +144,7 @@
                                 <TextBlock Grid.Column="0" Text="{Binding ModelName}" VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}" VerticalAlignment="Center" /> 
                                 <TextBlock Grid.Column="2" Text="{Binding GitBranch}" Foreground="Black" FontStyle="Italic" VerticalAlignment="Center" />
-                                <Button Grid.Column="3" Content="Git" Click="OpenGit_Click" Tag="{Binding ModelName}" x:Name="GitButton" ToolTipService.ToolTip="Open Git repository URL"/>
+                                <Button Grid.Column="3" Content="Git" Click="OpenGit_Click" Tag="{Binding ModelName}" IsEnabled="{Binding HasGit}" ToolTipService.ToolTip="Open Git repository URL"/>
                                 <Button Grid.Column="4" Content="Deploy" Tag="{Binding ModelName}" Click="DeployModel_Click" Margin="6,0,0,0" ToolTipService.ToolTip="Deploy this model to the environment" />
                                 <Button Grid.Column="5" Content="Undeploy" Tag="{Binding ModelName}" Click="UnDeployModel_Click" Margin="6,0,0,0" ToolTipService.ToolTip="Remove the deployed model from the environment" />
                                 <Button Grid.Column="6" Content="Task" Tag="{Binding ModelName}" Click="AssignPeriTask_Click" Margin="6,0,0,0" ToolTipService.ToolTip="Assign a PeriTask ID to this model" />
@@ -138,35 +167,39 @@
                 </StackPanel>
             </Grid>
 
+            <Grid Grid.Row="2" Background="{ThemeResource SystemBaseLowColor}" Padding="10" Height="160">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-            <!-- 🔻 Status Bar -->
-            <Border Grid.Row="2" Background="{ThemeResource SystemBaseLowColor}" Padding="6,4">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="100" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
+                <!-- 🧾 Log Area -->
+                <ItemsControl x:Name="LogPreviewList"
+                  Grid.Column="0"
+                  Margin="0,0,10,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Content}"
+                           TextWrapping="Wrap"
+                           FontSize="12"
+                           Margin="2"
+                           Foreground="{Binding Type, Converter={StaticResource MessageTypeToColorConverter}}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
 
-                    <!-- Multi-line log list -->
-                    <ItemsControl x:Name="LogPreviewList" Grid.Row="0">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding Content}"
-                                   TextWrapping="Wrap"
-                                   FontSize="12"
-                                   Margin="2"
-                                   Foreground="{Binding Type, Converter={StaticResource MessageTypeToColorConverter}}" />           
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-
-
-                    <!-- View Logs Button -->
-                    <!--<Button Grid.Row="1" Content="View Logs" HorizontalAlignment="Right" Click="ViewLogs_Click" />-->
-                </Grid>
-            </Border>
-
+                <!-- ℹ️ About Button (always clickable now) -->
+                <Button Grid.Column="1"
+            VerticalAlignment="Bottom"
+            Margin="0,0,0,0"
+            Click="ShowAboutDialog_Click"
+            ToolTipService.ToolTip="About this app">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE946;" FontSize="14" />
+                        <TextBlock Text="About" />
+                    </StackPanel>
+                </Button>
+            </Grid>
 
         </Grid>
     </Border>

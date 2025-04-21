@@ -1,4 +1,4 @@
-﻿using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using FODevManager.Services;
 using FODevManager.Models;
@@ -16,8 +16,8 @@ using FODevManager.Shared.Utils;
 using FODevManager.Utils;
 using System.Reflection;
 using FODevManager.WinUI.ViewModel;
-using System.Diagnostics;
-using System.Threading.Tasks;
+using Microsoft.UI.Text;
+using Windows.UI.Text;
 
 
 namespace FODevManager.WinUI
@@ -38,6 +38,7 @@ namespace FODevManager.WinUI
         public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService)
         {
             this.InitializeComponent();
+            this.Activated += MainWindow_Activated;
 
             Singleton<Engine>.Instance.EnvironmentType = EnvironmentType.WinUi;
 
@@ -62,6 +63,13 @@ namespace FODevManager.WinUI
             LoadProfiles();
 
             UIMessageHelper.LogToUI($"READY...");
+        }
+        private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
+        {
+            IntPtr windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            WindowId windowId = Win32Interop.GetWindowIdFromWindow(windowHandle);
+            AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+            appWindow.SetIcon(@"Assets\FODev.ico");
         }
 
         private void ApplyMicaEffect()
@@ -107,13 +115,35 @@ namespace FODevManager.WinUI
                     UIMessageHelper.LogToUI($"No active profile", MessageType.Warning);
                 }
 
-
-                ProfilesDropdown.SelectedItem = activeProfile.ProfileName;
-                LoadModelListViewData(activeProfile.ProfileName);
-
-
-                UpdateProfileFields(activeProfile);
+                LoadProfile(activeProfile);
+                
             }
+        }
+
+        private ProfileModel? GetActiveProfile()
+        {
+            var profiles = _fileService.GetAllProfiles();
+            if (profiles.Any())
+            {
+                var activeProfile = profiles.FirstOrDefault(x => x.IsActive) ?? profiles.First();
+                return activeProfile;
+            }
+            return null;
+        }
+
+        private void LoadProfile(string profileName)
+        {
+            LoadProfile(_fileService.LoadProfile(profileName));
+        }
+
+        private void LoadProfile(ProfileModel? profile)
+        {
+            if (profile == null)
+                return;
+
+            ProfilesDropdown.SelectedItem = profile.ProfileName;
+            LoadModelListViewData(profile.ProfileName);
+            UpdateProfileFields(profile);
         }
 
         private void LoadModelListViewData(string profileName)
@@ -129,7 +159,6 @@ namespace FODevManager.WinUI
             }
 
             ModelsListView.ItemsSource = profileEnvironmentViewModelList;
-
 
         }
 
@@ -151,12 +180,7 @@ namespace FODevManager.WinUI
         {
             DatabaseNameTextBox.Text = profile.DatabaseName ?? string.Empty;
             IsActiveCheckBox.IsChecked = profile.IsActive;
-            RefreshGitButton();
-        }
-
-        private void ModelsListView_Loaded(object sender, RoutedEventArgs e)
-        {
-            RefreshGitButton();
+            
         }
 
         private void OpenGit_Click(object sender, RoutedEventArgs e)
@@ -270,20 +294,21 @@ namespace FODevManager.WinUI
             }
         }
 
-
         private void RefreshGitButton()
         {
             foreach (var item in ModelsListView.Items)
             {
-                if (ModelsListView.ContainerFromItem(item) is ListViewItem container)
-                {
-                    var gitButton = FindVisualChild<Button>(container, "GitButton");
+                var container = ModelsListView.ContainerFromItem(item) as ListViewItem;
+                if (container == null)
+                    continue;
 
-                    if (item is ProfileEnvironmentModel model && gitButton != null)
-                    {
-                        gitButton.IsEnabled = !model.GitUrl.IsNullOrEmpty();
-                    }
+                var gitButton = FindVisualChild<Button>(container, "GitButton");
+
+                if (item is ProfileEnvironmentViewModel model && gitButton != null)
+                {
+                    gitButton.IsEnabled = !(model.GitUrl.IsNullOrEmpty());
                 }
+               
             }
         }
 
@@ -420,10 +445,17 @@ namespace FODevManager.WinUI
             try
             {
                 //UIMessageHelper.LogToUI($"🔄 Switching to profile '{newProfile}'...");
-                _profileService.SwitchProfile(newProfile);
+                if(_profileService.SwitchProfile(newProfile))
+                {
+                    UIMessageHelper.LogToUI($"✅ Switched to profile '{newProfile}'");
+                    LoadModelListViewData(newProfile);
+                }
+                else
+                {
+                    LoadProfile(GetActiveProfile());
+                }
+                
 
-                LoadModelListViewData(newProfile);
-                UIMessageHelper.LogToUI($"✅ Switched to profile '{newProfile}'");
             }
             catch (Exception ex)
             {
@@ -482,5 +514,57 @@ namespace FODevManager.WinUI
                 UpdateStatus($"🗑️ Model '{modelName}' removed from '{profileName}'.");
             }
         }
+
+        private async void ShowAboutDialog_Click(object sender, RoutedEventArgs e)
+        {
+            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.0";
+
+            var contentPanel = new StackPanel
+            {
+                Spacing = 8,
+                Margin = new Thickness(4)
+            };
+
+            contentPanel.Children.Add(new TextBlock
+            {
+                Text = "FO Dev Manager",
+                FontSize = 20,
+                FontWeight = FontWeights.Bold
+            });
+
+            contentPanel.Children.Add(new TextBlock
+            {
+                Text = $"Version: {version}"
+            });
+
+            contentPanel.Children.Add(new TextBlock
+            {
+                Text = "Developed by: Morten Aasheim"
+            });
+
+            contentPanel.Children.Add(new TextBlock
+            {
+                Text = "© 2024 ECIT Peritus AS. All rights reserved.",
+                FontStyle = FontStyle.Italic
+            });
+
+            contentPanel.Children.Add(new HyperlinkButton
+            {
+                Content = "Visit peritus.no",
+                NavigateUri = new Uri("https://peritus.no"),
+                HorizontalAlignment = HorizontalAlignment.Left
+            });
+
+            var dialog = new ContentDialog
+            {
+                Title = "About",
+                Content = contentPanel,
+                PrimaryButtonText = "Close",
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            await dialog.ShowAsync();
+        }
+
     }
 }
