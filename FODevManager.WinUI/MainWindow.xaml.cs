@@ -176,6 +176,33 @@ namespace FODevManager.WinUI
             }
         }
 
+        private void DeployModel_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesDropdown.SelectedItem is not string profileName)
+                return;
+
+            if (sender is Button button && button.Tag is string modelName)
+            {
+                _deploymentService.DeployModel(profileName, modelName);
+                LoadModelListViewData(profileName);
+                UIMessageHelper.LogToUI($"🚀 Deployed model '{modelName}'");
+            }
+        }
+
+        private void UnDeployModel_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesDropdown.SelectedItem is not string profileName)
+                return;
+
+            if (sender is Button button && button.Tag is string modelName)
+            {
+                _deploymentService.UnDeployModel(profileName, modelName);
+                LoadModelListViewData(profileName);
+                UIMessageHelper.LogToUI($"🧯 Undeployed model '{modelName}'");
+            }
+        }
+
+
         private void RefreshGitButton()
         {
             foreach (var item in ModelsListView.Items)
@@ -292,6 +319,15 @@ namespace FODevManager.WinUI
             {
                 _deploymentService.UnDeployAllModels(profileName);
                 UpdateStatus($"🧹 Undeployment complete for '{profileName}'.");
+            }
+        }
+
+        private void RefreshProfile_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesDropdown.SelectedItem is string profileName)
+            {
+                _profileService.CheckProfile(profileName);
+                LoadModelListViewData(profileName);
             }
         }
 
