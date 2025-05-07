@@ -173,7 +173,7 @@
                 </StackPanel>
             </Grid>
 
-            <Grid Grid.Row="2" Background="{ThemeResource SystemBaseLowColor}" Padding="10" Height="160">
+            <Grid Grid.Row="2" Background="{ThemeResource SystemBaseLowColor}" Padding="10" Height="170">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
