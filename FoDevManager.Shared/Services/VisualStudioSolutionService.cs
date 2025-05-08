@@ -102,7 +102,7 @@ namespace FODevManager.Services
 
             foreach (var line in lines)
             {
-                if (line.Contains($"= \"{modelName}\""))
+                if (line.Contains($"= \"{modelName}"))
                 {
                     insideProjectBlock = true;
                     continue;
