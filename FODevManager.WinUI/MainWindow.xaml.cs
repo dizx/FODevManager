@@ -18,6 +18,7 @@ using System.Reflection;
 using FODevManager.WinUI.ViewModel;
 using Microsoft.UI.Text;
 using Windows.UI.Text;
+using System.IO;
 
 
 namespace FODevManager.WinUI
@@ -329,6 +330,34 @@ namespace FODevManager.WinUI
                 LoadProfiles();
             }
         }
+
+        private async void ImportProfile_Click(object sender, RoutedEventArgs e)
+        {
+            var picker = new Windows.Storage.Pickers.FileOpenPicker();
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
+            picker.FileTypeFilter.Add(".json");
+
+            var file = await picker.PickSingleFileAsync();
+            if (file != null)
+            {
+                try
+                {
+                    var importPath = file.Path;
+                    _profileService.ImportProfile(importPath);
+
+                    MessageLogger.Highlight($"✅ Profile imported: {Path.GetFileName(importPath)}");
+
+                    // Refresh UI
+                    LoadProfiles();
+                }
+                catch (Exception ex)
+                {
+                    MessageLogger.Error($"❌ Failed to import profile: {ex.Message}");
+                }
+            }
+        }
+
 
         private void DeployProfile_Click(object sender, RoutedEventArgs e)
         {
