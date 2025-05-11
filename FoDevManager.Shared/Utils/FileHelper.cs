@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FODevManager.Messages;
+using System;
 using System.IO;
 using System.Text.Json;
 
@@ -10,6 +11,7 @@ namespace FODevManager.Utils
         {
             if (!Directory.Exists(path))
             {
+                MessageLogger.Info($"📁 Creating folder: {path}");
                 Directory.CreateDirectory(path);
             }
         }
@@ -39,49 +41,65 @@ namespace FODevManager.Utils
             return fullPath.Contains(normalizedDir, StringComparison.OrdinalIgnoreCase);
         }
 
-
-        public static string GetProjectFilePath(string profileName, string modelName, string projectFilePath)
+        public static string GetProjectFilePath(string modelName, string projectFilePath)
         {
-            //if (string.IsNullOrEmpty(projectFilePath))
-            //{
-            //    return Path.Combine(_defaultSourceDirectory, modelName, $"{modelName}.rnrproj");
-            //}
+            var returnPath = string.Empty;
 
             if (!Path.IsPathRooted(projectFilePath))
             {
-                return Path.Combine(projectFilePath, modelName, $"{modelName}.rnrproj");
+                if(TryFilePath(Path.Combine(projectFilePath, modelName, $"{modelName}.rnrproj"), out returnPath))
+                    return returnPath;
             }
 
             if (!Path.HasExtension(projectFilePath))
             {
                 if (PathContainsDirectory(projectFilePath, "project") && PathContainsDirectory(projectFilePath, modelName))
                 {
-                    return projectFilePath = Path.Combine(projectFilePath, $"{modelName}.rnrproj");
+                    if (TryFilePath(Path.Combine(projectFilePath, $"{modelName}.rnrproj"), out returnPath))
+                        return returnPath;
+
                 }
                 if (PathContainsDirectory(projectFilePath, "project") && !PathContainsDirectory(projectFilePath, modelName))
                 {
-                    if (File.Exists(Path.Combine(projectFilePath, modelName, $"{modelName}.rnrproj")))
-                        return projectFilePath = Path.Combine(projectFilePath, modelName, $"{modelName}.rnrproj");
+                    if (TryFilePath(Path.Combine(projectFilePath, modelName, $"{modelName}.rnrproj"), out returnPath))
+                        return returnPath;
+
                 }
-                if (File.Exists(Path.Combine(projectFilePath, modelName, $"{modelName}.rnrproj")))
-                    return projectFilePath = Path.Combine(projectFilePath, modelName, $"{modelName}.rnrproj");
+                if (TryFilePath(Path.Combine(projectFilePath, modelName, $"{modelName}.rnrproj"), out returnPath))
+                    return returnPath;
 
-                if (File.Exists(Path.Combine(projectFilePath, "project", modelName, $"{modelName}.rnrproj")))
-                    return Path.Combine(projectFilePath, "project", modelName, $"{modelName}.rnrproj");
+                if (TryFilePath(Path.Combine(projectFilePath, "project", modelName, $"{modelName}.rnrproj"), out returnPath))
+                    return returnPath;
 
+                if (TryFilePath(Path.Combine(projectFilePath, "project", modelName, modelName, $"{modelName}.rnrproj"), out returnPath))
+                    return returnPath;
             }
-            return Path.Combine(projectFilePath, "project", modelName, modelName, $"{modelName}.rnrproj");
+            throw new FileNotFoundException($"Can't find project file for model {modelName}");
         }
+
+        public static bool TryFilePath(string path, out string existingPath)
+        {
+            if (File.Exists(path))
+            {
+                existingPath = path;
+                return true;
+            }
+
+            existingPath = string.Empty;
+            return false;
+        }
+
 
         public static string GetMetadataFolder(string modelName, string projectFilePath)
         {
-            string currentPath = Path.GetDirectoryName(projectFilePath);
+            string? currentPath = Path.HasExtension(projectFilePath) ? Path.GetDirectoryName(projectFilePath) : projectFilePath;
 
             // Move up to 3 levels and check for Metadata folder
             for (int i = 0; i < 3; i++)
             {
-                if (string.IsNullOrEmpty(currentPath)) break;
-
+                if (currentPath.IsNullOrEmpty()) 
+                    break;
+                
                 string metadataPath = Path.Combine(currentPath, "Metadata", modelName);
                 if (Directory.Exists(metadataPath))
                 {
@@ -98,13 +116,12 @@ namespace FODevManager.Utils
                 currentPath = Directory.GetParent(currentPath)?.FullName;
             }
 
-            // Default: return the highest-level Metadata folder if not found
-            return Path.Combine(currentPath ?? projectFilePath, "Metadata", modelName);
+            throw new DirectoryNotFoundException($"Can't find metadata folder in path {projectFilePath}");
         }
 
         public static string GetModelRootFolder(string projectFilePath)
         {
-            string currentPath = Path.GetDirectoryName(projectFilePath);
+            string? currentPath = Path.GetDirectoryName(projectFilePath);
 
             // Move up to 4 levels and check for Metadata folder
             for (int i = 0; i < 4; i++)
@@ -121,10 +138,8 @@ namespace FODevManager.Utils
                 currentPath = Directory.GetParent(currentPath)?.FullName;
             }
 
-            throw new Exception($"Can't find model root of project {projectFilePath}");
+            throw new DirectoryNotFoundException($"Can't find model root of project {projectFilePath}");
         }
-
-
         static string GetParentDirectory(string path)
         {
             DirectoryInfo parentDir = Directory.GetParent(Path.GetDirectoryName(path));

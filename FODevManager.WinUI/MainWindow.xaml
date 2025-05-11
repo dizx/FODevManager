@@ -73,6 +73,13 @@
                         </StackPanel>
                     </Button>
 
+                    <Button Click="ImportProfile_Click" ToolTipService.ToolTip="Import a profile from a JSON file">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8B5;" FontSize="14" />
+                            <TextBlock Text="Import" />
+                        </StackPanel>
+                    </Button>
+
                     <Button Click="DeployProfile_Click" ToolTipService.ToolTip="Deploy all undeployed models">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE899;" FontSize="14" />

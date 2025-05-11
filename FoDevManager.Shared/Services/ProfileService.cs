@@ -6,6 +6,7 @@ using FODevManager.Models;
 using FODevManager.Utils;
 using FODevManager.Messages;
 using FODevManager.Shared.Utils;
+using System.Text.RegularExpressions;
 
 namespace FODevManager.Services
 {
@@ -13,6 +14,7 @@ namespace FODevManager.Services
     {
         private readonly string _defaultSourceDirectory;
         private readonly string _deploymentBasePath;
+        private readonly string _profileStoragePath;
         private readonly FileService _fileService;
         private readonly VisualStudioSolutionService _solutionService;
         private readonly ModelDeploymentService _modelDeploymentService;
@@ -21,6 +23,7 @@ namespace FODevManager.Services
         {
             _defaultSourceDirectory = config.DefaultSourceDirectory;
             _deploymentBasePath = config.DeploymentBasePath;
+            _profileStoragePath = config.ProfileStoragePath;
             _fileService = fileService;
             _solutionService = solutionService;
             _modelDeploymentService = modelDeploymentService;
@@ -91,6 +94,80 @@ namespace FODevManager.Services
         }
 
 
+        public void ImportProfile(string importPath)
+        {
+            if (!File.Exists(importPath))
+            {
+                MessageLogger.Error($"❌ Profile file not found: {importPath}");
+                return;
+            }
+
+            try
+            {
+                var profile = FileHelper.LoadJson<ProfileModel>(importPath);
+
+                if (profile == null || string.IsNullOrWhiteSpace(profile.ProfileName))
+                {
+                    MessageLogger.Error("❌ Invalid profile file.");
+                    return;
+                }
+
+                string solutionFilePath = _solutionService.CreateSolutionFile(profile.ProfileName);
+
+                profile.SolutionFilePath = solutionFilePath;
+                profile.IsActive = false;
+
+                string profileDestPath = Path.Combine(_profileStoragePath, profile.ProfileName + ".json");
+
+                if (File.Exists(profileDestPath))
+                {
+                    MessageLogger.Warning($"⚠️ Profile '{profile.ProfileName}' already exists. It will be overwritten.");
+                }
+
+                MessageLogger.Info($"📥 Importing profile '{profile.ProfileName}'...");
+
+
+                foreach (var environment in profile.Environments)
+                {
+                    var modelFolderName = environment.GitUrl.IsNullOrEmpty() ? environment.ModelName : ExtractAzureDevOpsRepo(environment.GitUrl);
+                    var modelFolder = Path.Combine(_defaultSourceDirectory, modelFolderName);
+                    FileHelper.EnsureDirectoryExists(modelFolder);
+
+                    if (!environment.GitUrl.IsNullOrEmpty())
+                    {
+                        if (GitHelper.IsGitRepository(modelFolder))
+                        {
+                            MessageLogger.Warning($"⚠️ Git repo already exists at {modelFolder}. Skipping clone.");
+                        }
+                        else if (!GitHelper.CloneRepository(environment.GitUrl, modelFolder))
+                        {
+                            MessageLogger.Error($"❌ Failed to clone repository for {environment.ModelName}.");
+                            continue;
+                        }
+                    }
+
+                    environment.ProjectFilePath = FileHelper.GetProjectFilePath(environment.ModelName, modelFolder); ;
+                    environment.ModelRootFolder = modelFolder;
+                    environment.MetadataFolder = FileHelper.GetMetadataFolder(environment.ModelName, modelFolder);
+
+                    string deploymentLinkPath = Path.Combine(_deploymentBasePath, environment.ModelName);
+                    bool isAlreadyDeployed = Directory.Exists(deploymentLinkPath);
+
+                    environment.IsDeployed = isAlreadyDeployed;
+
+                    _solutionService.AddProjectToSolution(profile.ProfileName, environment.ModelName, environment.ProjectFilePath);
+                }
+
+                FileHelper.SaveJson(profileDestPath, profile);
+                MessageLogger.Highlight($"✅ Profile '{profile.ProfileName}' imported successfully.");
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Failed to import profile: {ex.Message}");
+            }
+        }
+
+        
         public void SetDatabaseName(string profileName, string dbName)
         {
             var profile = _fileService.LoadProfile(profileName);
@@ -166,7 +243,8 @@ namespace FODevManager.Services
 
         public void AddEnvironment(string profileName, string modelName, string projectFilePath)
         {
-            if (string.IsNullOrEmpty(modelName))
+            //Finds model name from path
+            if (modelName.IsNullOrEmpty())
             {
                 var metadataPath = Path.Combine(projectFilePath, "Metadata");
                 if (!Directory.Exists(metadataPath))
@@ -183,7 +261,7 @@ namespace FODevManager.Services
                     throw new Exception("❌ Unable to infer model name from Metadata folder.");
             }
 
-            projectFilePath = GetProjectFilePath(profileName, modelName, projectFilePath);
+            projectFilePath = GetProjectFilePath(modelName, projectFilePath);
             if (!File.Exists(projectFilePath))
             {
                 MessageLogger.Info($"{projectFilePath} does not exist.");
@@ -234,16 +312,38 @@ namespace FODevManager.Services
             _modelDeploymentService.CheckIfGitRepository(profileName, modelName);
         }
 
-
-        private string GetProjectFilePath(string profileName, string modelName, string projectFilePath)
+        private string GetProjectFilePath(string modelName, string projectFilePath)
         {
-            if (string.IsNullOrEmpty(projectFilePath))
+            if (projectFilePath.IsNullOrEmpty())
             {
-                return Path.Combine(_defaultSourceDirectory, modelName, $"{modelName}.rnrproj");
+                if(FileHelper.TryFilePath(Path.Combine(_defaultSourceDirectory, modelName, "Project", $"{modelName}.rnrproj"), out string returnPath))
+                { 
+                    return returnPath; 
+                }
             }
-
-            return FileHelper.GetProjectFilePath(profileName, modelName, projectFilePath);
+            return FileHelper.GetProjectFilePath(modelName, projectFilePath);
         }
+
+        private static string ExtractAzureDevOpsProject(string gitUrl)
+        {
+            var match = Regex.Match(gitUrl, @"visualstudio\.com\/([^\/]+)\/_git\/");
+
+            if (match.Success && match.Groups.Count > 1)
+                return Uri.UnescapeDataString(match.Groups[1].Value);
+
+            return string.Empty;
+        }
+
+        private static string ExtractAzureDevOpsRepo(string gitUrl)
+        {
+            var match = Regex.Match(gitUrl, @"_git\/([^\/]+)$");
+
+            if (match.Success && match.Groups.Count > 1)
+                return Uri.UnescapeDataString(match.Groups[1].Value);
+
+            return string.Empty;
+        }
+
 
         public void OpenVisualStudioSolution(string profileName)
         {

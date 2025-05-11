@@ -8,7 +8,7 @@ namespace FODevManager.Utils
 {
     public static class Helpers
     {
-        public static bool IsNullOrEmpty(this string value)
+        public static bool IsNullOrEmpty(this string? value)
         {
             return string.IsNullOrEmpty(value);
         }
