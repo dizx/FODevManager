@@ -161,7 +161,7 @@ namespace FODevManager.Utils
             var knownCommands = new[] {
                 "create", "delete", "check", "list",
                 "add", "remove", "deploy", "undeploy",
-                "git-check", "git-open", "git-status", "import"
+                "git-check", "git-open", "git-status", "import",
                 "switch", "db-set", "db-apply", "peri"
         };
 
