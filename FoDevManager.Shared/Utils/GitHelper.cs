@@ -69,7 +69,7 @@ namespace FODevManager.Utils
             try
             {
 ;               var result = string.Empty;
-                if (RunProcess(repoPath, "git", "rev-parse --abbrev-ref HEAD", out result, "Could not determine the branch."))
+                if (RunProcess(repoPath, "git", "rev-parse --abbrev-ref HEAD", out result))
                     return result;
             }
             catch (Exception ex)
@@ -100,14 +100,14 @@ namespace FODevManager.Utils
 
 
 
-        private static bool RunProcess(string workingDir, string fileName, string args, string errorMessage = "")
+        private static bool RunProcess(string workingDir, string fileName, string args)
         {
             var result = string.Empty;
-            return RunProcess(workingDir, fileName, args, out result, errorMessage);
+            return RunProcess(workingDir, fileName, args, out result);
 
         }
 
-        private static bool RunProcess(string workingDir, string fileName, string args, out string result, string errorMessage = "")
+        private static bool RunProcess(string workingDir, string fileName, string args, out string result)
         {
             result = string.Empty;
 
@@ -130,13 +130,7 @@ namespace FODevManager.Utils
 
             process.WaitForExit();
 
-            if (!string.IsNullOrWhiteSpace(error))
-            {
-                MessageLogger.Error(error);
-                return false;
-            }
-            
-            result = output.Trim();
+            result = (output + "\n" + error).Trim();
 
             return process.ExitCode == 0;
 
@@ -166,6 +160,36 @@ namespace FODevManager.Utils
                 return false;
             }
         }
+
+        public static bool CloneRepository(string gitUrl, string targetPath)
+        {
+            try
+            {
+                if (Directory.Exists(Path.Combine(targetPath, ".git")))
+                {
+                    MessageLogger.Warning($"⚠️ Git repository already exists at {targetPath}. Skipping clone.");
+                    return false;
+                }
+
+                string result;
+                MessageLogger.Info($"🌀 Cloning '{gitUrl}' into '{targetPath}'...");
+
+                if (RunProcess(Directory.GetParent(targetPath).FullName, "git", $"clone {gitUrl} \"{targetPath}\"", out result))
+                {
+                    MessageLogger.Highlight($"✅ Successfully cloned {gitUrl}");
+                    return true;
+                }
+
+                MessageLogger.Error($"❌ Failed to clone {gitUrl}");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Error during Git clone: {ex.Message}");
+                return false;
+            }
+        }
+
 
 
         private static string GetGitRemoteUrl(string configPath)

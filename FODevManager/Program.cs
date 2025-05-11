@@ -76,6 +76,9 @@ class Program
                 case "create":
                     TryCatch(() => profileService.CreateProfile(commandParser.ProfileName));
                     break;
+                case "import":
+                    TryCatch(() => profileService.ImportProfile(commandParser.FilePath));
+                    break;
                 case "delete":
                     TryCatch(() => profileService.DeleteProfile(commandParser.ProfileName));
                     break;

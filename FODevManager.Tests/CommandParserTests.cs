@@ -19,6 +19,20 @@ namespace FODevManager.Tests
         }
 
         [Test]
+        public void Should_Parse_Profile_Import_Command_With_FilePath()
+        {
+            string[] args = { "-profile", "import", "C:\\path\\to\\profile.json" };
+            var parser = new CommandParser(args);
+
+            Assert.That(parser.IsValid, Is.True);
+            Assert.That(parser.Command, Is.EqualTo("import"));
+            Assert.That(parser.FilePath, Is.EqualTo("C:\\path\\to\\profile.json"));
+            Assert.That(parser.ProfileName, Is.Null);  // Import doesn't set profile name
+            Assert.That(parser.ModelName, Is.Null);
+        }
+
+
+        [Test]
         public void Should_Parse_Profile_List_Command()
         {
             string[] args = { "-profile", "list" };

@@ -20,7 +20,7 @@ namespace FODevManager.Messages
 
             Console.ForegroundColor = msg.Type switch
             {
-                MessageType.Highlight=> ConsoleColor.Cyan,
+                MessageType.Highlight => ConsoleColor.Cyan,
                 MessageType.Warning => ConsoleColor.Yellow,
                 MessageType.Error => ConsoleColor.Red,
                 _ => ConsoleColor.White

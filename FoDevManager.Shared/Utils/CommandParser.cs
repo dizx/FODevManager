@@ -36,7 +36,7 @@ namespace FODevManager.Utils
 
             if (args.Length == 0 || args[0] == "help" || args[0] == "?")
             {
-                if (args.Length == 1)
+                if (args.Length == 0 || args.Length == 1)
                 {
                     ShowGeneralHelp();
                 }
@@ -142,8 +142,9 @@ namespace FODevManager.Utils
 
 
             // Ensure required arguments are present
-            IsValid = (!string.IsNullOrEmpty(Command) && Command.Equals("list"))
-                || (!string.IsNullOrEmpty(ProfileName) && !string.IsNullOrEmpty(Command));
+            IsValid = (!Command.IsNullOrEmpty() && Command.Equals("list"))
+                || (!Command.IsNullOrEmpty() && ProfileName.IsNullOrEmpty())
+                || (!Command.IsNullOrEmpty() && Command.Equals("import") && !FilePath.IsNullOrEmpty());
 
             if (!IsValid)
             {
@@ -160,7 +161,7 @@ namespace FODevManager.Utils
                 "create", "delete", "check", "list",
                 "add", "remove", "deploy", "undeploy",
                 "git-check", "git-open", "git-status",
-                "switch", "db-set", "db-apply"
+                "switch", "db-set", "db-apply", "import"
         };
 
             return knownCommands.Contains(value.ToLower());
@@ -177,8 +178,9 @@ namespace FODevManager.Utils
                       fodev.exe -profile ""<ProfileName>"" <command> [options]
 
                     Available Commands:
-                       create        Create a new profile
+                      create        Create a new profile
                       delete        Delete an existing profile
+                      import        Import an existing json profile file
                       check         Validate a profile and its models
                       list          List all profiles or models
                       add           Add a model to a profile
@@ -201,6 +203,9 @@ namespace FODevManager.Utils
             {
                 case "create":
                     MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" create\nCreates a new profile JSON and solution.");
+                    break;
+                case "import":
+                    MessageLogger.Info("Usage: fodev.exe -profile import  \"C:\\Path\\profile.json\"\n Imports a new JSON profile and repositories");
                     break;
                 case "delete":
                     MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" delete\nDeletes a profile and its .sln file.");
