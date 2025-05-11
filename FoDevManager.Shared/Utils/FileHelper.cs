@@ -121,12 +121,12 @@ namespace FODevManager.Utils
 
         public static string GetModelRootFolder(string projectFilePath)
         {
-            string? currentPath = Path.GetDirectoryName(projectFilePath);
+            string? currentPath = Path.HasExtension(projectFilePath) ? Path.GetDirectoryName(projectFilePath) : projectFilePath;
 
             // Move up to 4 levels and check for Metadata folder
             for (int i = 0; i < 4; i++)
             {
-                if (string.IsNullOrEmpty(currentPath)) break;
+                if (currentPath.IsNullOrEmpty()) break;
 
                 string metadataPath = Path.Combine(currentPath, "Project");
                 if (Directory.Exists(metadataPath))

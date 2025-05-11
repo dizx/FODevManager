@@ -149,7 +149,7 @@ namespace FODevManager.Utils
 
             if (!IsValid)
             {
-                if(!string.IsNullOrEmpty(ModelName))
+                if(!ModelName.IsNullOrEmpty())
                     MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" <command> [options]");
                 else
                     MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" <command> [options]");
@@ -161,7 +161,7 @@ namespace FODevManager.Utils
             var knownCommands = new[] {
                 "create", "delete", "check", "list",
                 "add", "remove", "deploy", "undeploy",
-                "git-check", "git-open", "git-status", "import"
+                "git-check", "git-open", "git-status", "import",
                 "switch", "db-set", "db-apply", "peri"
         };
 

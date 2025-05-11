@@ -74,7 +74,7 @@ namespace FODevManager.Services
                 try
                 {
                     var profile = LoadProfile(Path.GetFileNameWithoutExtension(fileName));
-                    if (profile != null && !string.IsNullOrEmpty(profile.ProfileName))
+                    if (profile != null && !profile.ProfileName.IsNullOrEmpty())
                     {
                         profileNames.Add(profile.ProfileName);
                     }

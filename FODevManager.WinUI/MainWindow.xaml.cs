@@ -20,6 +20,8 @@ using Microsoft.UI.Text;
 using Windows.UI.Text;
 using System.Diagnostics;
 using System.IO;
+using FODevManager.Logging;
+using Serilog;
 
 
 namespace FODevManager.WinUI
@@ -27,7 +29,6 @@ namespace FODevManager.WinUI
     public sealed partial class MainWindow : Window
     {
         private readonly UIMessageSubscriber _uiSubscriber = new();
-        
 
         private readonly ProfileService _profileService;
         private readonly FileService _fileService;
@@ -45,6 +46,7 @@ namespace FODevManager.WinUI
             Singleton<Engine>.Instance.EnvironmentType = EnvironmentType.WinUi;
 
             _uiSubscriber = new UIMessageSubscriber();
+            var serilogSubscriber = new SerilogSubscriber();
 
             LogPreviewList.ItemsSource = _uiSubscriber.RecentMessages;
 
@@ -106,10 +108,10 @@ namespace FODevManager.WinUI
                 UIMessageHelper.LogToUI($"🔔 {profiles.Count} profiles loaded");
 
                 var activeProfile = profiles.FirstOrDefault(x => x.IsActive) ?? profiles.First();
-                
-                if(activeProfile.IsActive)
+
+                if (activeProfile.IsActive)
                 {
-                    UIMessageHelper.LogToUI($"🔔 Active profile: { activeProfile.ProfileName } ");
+                    UIMessageHelper.LogToUI($"🔔 Active profile: {activeProfile.ProfileName} ");
                 }
 
                 if (!activeProfile.IsActive)
@@ -117,14 +119,14 @@ namespace FODevManager.WinUI
                     UIMessageHelper.LogToUI($"No active profile", MessageType.Warning);
                 }
 
-                LoadProfile(activeProfile);
-                
+                SetProfile(activeProfile);
+
             }
         }
 
         private ProfileModel? GetActiveProfile()
         {
-            var profiles = _fileService.GetAllProfiles();
+            var profiles = GetAllProfiles();
             if (profiles.Any())
             {
                 var activeProfile = profiles.FirstOrDefault(x => x.IsActive) ?? profiles.First();
@@ -135,10 +137,10 @@ namespace FODevManager.WinUI
 
         private void LoadProfile(string profileName)
         {
-            LoadProfile(_fileService.LoadProfile(profileName));
+            SetProfile(LoadProfileByName(profileName));
         }
 
-        private void LoadProfile(ProfileModel? profile)
+        private void SetProfile(ProfileModel? profile)
         {
             if (profile == null)
                 return;
@@ -152,11 +154,11 @@ namespace FODevManager.WinUI
         {
             var profileEnvironmentViewModelList = new List<ProfileEnvironmentViewModel>();
 
-            var models = _profileService.GetModelsInProfile(profileName);
+            var models = GetModelsInProfile(profileName);
 
             foreach (var model in models)
             {
-                var activeBranch = _deploymentService.GetActiveGitBranch(profileName, model.ModelName);
+                var activeBranch = GetActiveGitBranch(profileName, model.ModelName);
                 profileEnvironmentViewModelList.Add(model.ToViewModel(activeBranch ?? ""));
             }
 
@@ -182,7 +184,7 @@ namespace FODevManager.WinUI
         {
             DatabaseNameTextBox.Text = profile.DatabaseName ?? string.Empty;
             IsActiveCheckBox.IsChecked = profile.IsActive;
-            
+
         }
 
         private void OpenGit_Click(object sender, RoutedEventArgs e)
@@ -192,10 +194,10 @@ namespace FODevManager.WinUI
 
             if (sender is Button button && button.Tag is string modelName)
             {
-                var model = _profileService.GetModel(profileName, modelName);
-                if (model != null && _deploymentService.CheckIfGitRepository(profileName, modelName))
+                var model = GetModel(profileName, modelName);
+                if (model != null && IsGitRepo(profileName, modelName))
                 {
-                    _deploymentService.OpenGitRepositoryUrl(profileName, modelName);
+                    OpenGitRepo(profileName, modelName);
                 }
                 else
                 {
@@ -230,7 +232,7 @@ namespace FODevManager.WinUI
                 {
                     try
                     {
-                        _deploymentService.AssignPeriTask(profileName, modelName, input.Text.Trim());
+                        AssignPeriTask(profileName, modelName, input.Text.Trim());
                         UIMessageHelper.LogToUI($"🔧 Assigned PeriTask '{input.Text.Trim()}' to model '{modelName}'");
                     }
                     catch (Exception ex)
@@ -277,7 +279,7 @@ namespace FODevManager.WinUI
 
             if (sender is Button button && button.Tag is string modelName)
             {
-                _deploymentService.DeployModel(profileName, modelName);
+                DeployModel(profileName, modelName);
                 LoadModelListViewData(profileName);
                 UIMessageHelper.LogToUI($"🚀 Deployed model '{modelName}'");
             }
@@ -290,7 +292,7 @@ namespace FODevManager.WinUI
 
             if (sender is Button button && button.Tag is string modelName)
             {
-                _deploymentService.UnDeployModel(profileName, modelName);
+                UnDeployModel(profileName, modelName);
                 LoadModelListViewData(profileName);
                 UIMessageHelper.LogToUI($"🧯 Undeployed model '{modelName}'");
             }
@@ -310,7 +312,7 @@ namespace FODevManager.WinUI
                 {
                     gitButton.IsEnabled = !(model.GitUrl.IsNullOrEmpty());
                 }
-               
+
             }
         }
 
@@ -345,7 +347,7 @@ namespace FODevManager.WinUI
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
-                var profile = _fileService.LoadProfile(profileName);
+                var profile = LoadProfileByName(profileName);
                 if (profile == null)
                     return;
 
@@ -393,7 +395,7 @@ namespace FODevManager.WinUI
 
             if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(inputTextBox.Text))
             {
-                _profileService.CreateProfile(inputTextBox.Text);
+                CreateProfile(inputTextBox.Text);
                 LoadProfiles();
             }
         }
@@ -411,7 +413,7 @@ namespace FODevManager.WinUI
                 try
                 {
                     var importPath = file.Path;
-                    _profileService.ImportProfile(importPath);
+                    ImportProfile(importPath);
 
                     MessageLogger.Highlight($"✅ Profile imported: {Path.GetFileName(importPath)}");
 
@@ -431,7 +433,7 @@ namespace FODevManager.WinUI
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
                 UpdateStatus($"Deploying profile '{profileName}'...");
-                _deploymentService.DeployAllUndeployedModels(profileName);
+                DeployAllModels(profileName);
                 UpdateStatus($"✅ Deployment complete for '{profileName}'.");
             }
         }
@@ -440,7 +442,7 @@ namespace FODevManager.WinUI
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
-                _deploymentService.UnDeployAllModels(profileName);
+                UnDeployAllModels(profileName);
                 UpdateStatus($"🧹 Undeployment complete for '{profileName}'.");
             }
         }
@@ -449,7 +451,7 @@ namespace FODevManager.WinUI
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
-                _profileService.CheckProfile(profileName);
+                CheckProfile(profileName);
                 LoadModelListViewData(profileName);
             }
         }
@@ -475,16 +477,16 @@ namespace FODevManager.WinUI
             try
             {
                 //UIMessageHelper.LogToUI($"🔄 Switching to profile '{newProfile}'...");
-                if(_profileService.SwitchProfile(newProfile))
+                if (SwitchProfile(newProfile))
                 {
                     UIMessageHelper.LogToUI($"✅ Switched to profile '{newProfile}'");
                     LoadModelListViewData(newProfile);
                 }
                 else
                 {
-                    LoadProfile(GetActiveProfile());
+                    SetProfile(GetActiveProfile());
                 }
-                
+
 
             }
             catch (Exception ex)
@@ -515,9 +517,8 @@ namespace FODevManager.WinUI
             if (ProfilesDropdown.SelectedItem is string profileName && !string.IsNullOrWhiteSpace(ModelPathTextBox.Text))
             {
                 var path = ModelPathTextBox.Text;
-                _profileService.AddEnvironment(profileName, string.Empty, path);
+                AddEnvironmentToProfile(profileName, path);
                 LoadModelListViewData(profileName);
-                //UpdateStatus($"➕ Model '{ModelNameTextBox.Text}' added to '{profileName}'.");
                 ModelPathTextBox.Text = string.Empty;
             }
         }
@@ -539,15 +540,30 @@ namespace FODevManager.WinUI
                 if (result != ContentDialogResult.Primary)
                     return;
 
-                _profileService.RemoveModelFromProfile(profileName, modelName);
+                RemoveModelFromProfile(profileName, modelName);
                 LoadModelListViewData(profileName);
                 UpdateStatus($"🗑️ Model '{modelName}' removed from '{profileName}'.");
             }
         }
 
+
+
+        private static DateTime GetBuildDate()
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            var filePath = assembly.Location;
+
+            if (!File.Exists(filePath))
+                return DateTime.MinValue;
+
+            return File.GetLastWriteTime(filePath);
+        }
+
+
         private async void ShowAboutDialog_Click(object sender, RoutedEventArgs e)
         {
             var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.0";
+            var buildDate = GetBuildDate().ToString("yyyy-MM-dd HH:mm");
 
             var contentPanel = new StackPanel
             {
@@ -562,10 +578,8 @@ namespace FODevManager.WinUI
                 FontWeight = FontWeights.Bold
             });
 
-            contentPanel.Children.Add(new TextBlock
-            {
-                Text = $"Version: {version}"
-            });
+            contentPanel.Children.Add(new TextBlock { Text = $"Version: {version}" });
+            contentPanel.Children.Add(new TextBlock { Text = $"Build Date: {buildDate}" });
 
             contentPanel.Children.Add(new TextBlock
             {
@@ -574,7 +588,7 @@ namespace FODevManager.WinUI
 
             contentPanel.Children.Add(new TextBlock
             {
-                Text = "© 2024 ECIT Peritus AS. All rights reserved.",
+                Text = "© 2025 ECIT Peritus AS. All rights reserved.",
                 FontStyle = FontStyle.Italic
             });
 
@@ -596,5 +610,126 @@ namespace FODevManager.WinUI
             await dialog.ShowAsync();
         }
 
+        private static void TryCatch(Action asyncFunc)
+        {
+            try
+            {
+                asyncFunc();
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ {ex.Message}");
+                Log.Error(ex.ToString());
+            }
+        }
+
+        // -------- Service Calls --------
+
+        private void RemoveModelFromProfile(string profileName, string modelName)
+        {
+            TryCatch(() => _profileService.RemoveModelFromProfile(profileName, modelName));
+        }
+
+        private void AddEnvironmentToProfile(string profileName, string path)
+        {
+            TryCatch(() => _profileService.AddEnvironment(profileName, string.Empty, path));
+        }
+
+        private void CreateProfile(string profileName)
+        {
+            TryCatch(() => _profileService.CreateProfile(profileName));
+        }
+
+        private void ImportProfile(string importPath)
+        {
+            TryCatch(() => _profileService.ImportProfile(importPath));
+        }
+
+        private void CheckProfile(string profileName)
+        {
+            TryCatch(() => _profileService.CheckProfile(profileName));
+        }
+
+        private List<ProfileEnvironmentModel> GetModelsInProfile(string profileName)
+        {
+            List<ProfileEnvironmentModel> models = new();
+            TryCatch(() => models = _profileService.GetModelsInProfile(profileName));
+            return models;
+        }
+
+        private ProfileEnvironmentModel? GetModel(string profileName, string modelName)
+        {
+            ProfileEnvironmentModel? model = null;
+            TryCatch(() => model = _profileService.GetModel(profileName, modelName));
+            return model;
+        }
+
+        private bool SwitchProfile(string profileName)
+        {
+            bool success = false;
+            TryCatch(() => success = _profileService.SwitchProfile(profileName));
+            return success;
+        }
+
+        private void DeployModel(string profileName, string modelName)
+        {
+            TryCatch(() => _deploymentService.DeployModel(profileName, modelName));
+        }
+
+        private void UnDeployModel(string profileName, string modelName)
+        {
+            TryCatch(() => _deploymentService.UnDeployModel(profileName, modelName));
+        }
+
+        private void DeployAllModels(string profileName)
+        {
+            TryCatch(() => _deploymentService.DeployAllUndeployedModels(profileName));
+        }
+
+        private void UnDeployAllModels(string profileName)
+        {
+            TryCatch(() => _deploymentService.UnDeployAllModels(profileName));
+        }
+
+        private void AssignPeriTask(string profileName, string modelName, string taskId)
+        {
+            TryCatch(() => _deploymentService.AssignPeriTask(profileName, modelName, taskId));
+        }
+
+        private string? GetActiveGitBranch(string profileName, string modelName)
+        {
+            string? branch = null;
+            TryCatch(() => branch = _deploymentService.GetActiveGitBranch(profileName, modelName));
+            return branch;
+        }
+
+        private bool IsGitRepo(string profileName, string modelName)
+        {
+            bool result = false;
+            TryCatch(() => result = _deploymentService.CheckIfGitRepository(profileName, modelName));
+            return result;
+        }
+
+        private void OpenGitRepo(string profileName, string modelName)
+        {
+            TryCatch(() => _deploymentService.OpenGitRepositoryUrl(profileName, modelName));
+        }
+
+        private List<ProfileModel> GetAllProfiles()
+        {
+            List<ProfileModel> profiles = new();
+            TryCatch(() => profiles = _fileService.GetAllProfiles());
+            return profiles;
+        }
+
+        private ProfileModel? LoadProfileByName(string profileName)
+        {
+            ProfileModel? profile = null;
+            TryCatch(() => profile = _fileService.LoadProfile(profileName));
+            return profile;
+        }
+
     }
 }
+
+

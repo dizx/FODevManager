@@ -53,7 +53,7 @@ namespace FODevManager.Utils
             }
 
             string remoteUrl = GetGitRemoteUrl(configPath);
-            if (string.IsNullOrEmpty(remoteUrl))
+            if (remoteUrl.IsNullOrEmpty())
             {
                 MessageLogger.Error("❌ Could not find remote URL in .git/config.");
                 return;
@@ -98,50 +98,88 @@ namespace FODevManager.Utils
             return false;
         }
 
-
-
-        private static bool RunProcess(string workingDir, string fileName, string args)
+        public static bool ChangeBranch(string repoPath, string branchName)
         {
-            var result = string.Empty;
-            return RunProcess(workingDir, fileName, args, out result);
-
-        }
-
-        private static bool RunProcess(string workingDir, string fileName, string args, out string result)
-        {
-            result = string.Empty;
-
-            ProcessStartInfo psi = new()
+            if (!IsGitRepository(repoPath))
             {
-                FileName = fileName,
-                Arguments = args,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WorkingDirectory = workingDir
-            };
-
-            using Process process = new Process { StartInfo = psi };
-
-            process.Start();
-
-            string output = process.StandardOutput.ReadToEnd() ?? string.Empty;
-            string error = process.StandardError.ReadToEnd() ?? string.Empty;
-
-            process.WaitForExit();
-
-            if (!string.IsNullOrWhiteSpace(error))
-            {
-                MessageLogger.Error(error);
+                MessageLogger.Error("❌ Not a valid Git repository.");
                 return false;
             }
-            
-            result = output.Trim();
 
-            return true;
+            if (HasUncommittedChanges(repoPath))
+            {
+                MessageLogger.Error("❌ Has uncommited changes. Cannot switch");
+                return false;
+            }
+
+            try
+            {
+                MessageLogger.Info($"🔍 Checking if branch '{branchName}' exists...");
+
+                string branchList;
+                if (!RunProcess(repoPath, "git", "branch --list", out branchList))
+                {
+                    MessageLogger.Error("❌ Could not list branches.");
+                    return false;
+                }
+
+                bool branchExists = branchList
+                    .Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Any(line => line.Trim().TrimStart('*').Equals(branchName, StringComparison.OrdinalIgnoreCase));
+
+                string command = branchExists ? $"checkout {branchName}" : $"checkout -b {branchName}";
+                string result;
+
+                if (RunProcess(repoPath, "git", command, out result))
+                {
+                    if (branchExists)
+                        MessageLogger.Highlight($"✅ Switched to existing branch: {branchName}");
+                    else
+                        MessageLogger.Highlight($"✅ Created and switched to new branch: {branchName}");
+
+                    return true;
+                }
+                else
+                {
+                    MessageLogger.Error($"❌ Failed to switch/create branch: {branchName}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Error switching branch: {ex.Message}");
+                return false;
+            }
         }
 
+        public static bool CloneRepository(string gitUrl, string targetPath)
+        {
+            try
+            {
+                if (Directory.Exists(Path.Combine(targetPath, ".git")))
+                {
+                    MessageLogger.Warning($"⚠️ Git repository already exists at {targetPath}. Skipping clone.");
+                    return false;
+                }
+
+                string result;
+                MessageLogger.Info($"🌀 Cloning '{gitUrl}' into '{targetPath}'...");
+
+                if (RunProcess(Directory.GetParent(targetPath).FullName, "git", $"clone {gitUrl} \"{targetPath}\"", out result))
+                {
+                    MessageLogger.Highlight($"✅ Successfully cloned {gitUrl}");
+                    return true;
+                }
+
+                MessageLogger.Error($"❌ Failed to clone {gitUrl}");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Error during Git clone: {ex.Message}");
+                return false;
+            }
+        }
 
         public static bool FetchFromRemote(string profileName, string repoPath)
         {
@@ -167,7 +205,6 @@ namespace FODevManager.Utils
                 return false;
             }
         }
-
 
         private static string GetGitRemoteUrl(string configPath)
         {
@@ -210,5 +247,47 @@ namespace FODevManager.Utils
                 MessageLogger.Error($"❌ Failed to open URL: {ex.Message}");
             }
         }
+
+        private static bool RunProcess(string workingDir, string fileName, string args)
+        {
+            var result = string.Empty;
+            return RunProcess(workingDir, fileName, args, out result);
+
+        }
+        private static bool RunProcess(string workingDir, string fileName, string args, out string result)
+        {
+            result = string.Empty;
+
+            ProcessStartInfo psi = new()
+            {
+                FileName = fileName,
+                Arguments = args,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = workingDir
+            };
+
+            using Process process = new Process { StartInfo = psi };
+
+            process.Start();
+
+            string output = process.StandardOutput.ReadToEnd() ?? string.Empty;
+            string error = process.StandardError.ReadToEnd() ?? string.Empty;
+
+            process.WaitForExit();
+
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                MessageLogger.Error(error);
+                return false;
+            }
+
+            result = output.Trim();
+
+            return true;
+        }
+
     }
 }

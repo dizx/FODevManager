@@ -10,6 +10,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
+using Serilog;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -40,7 +41,35 @@ namespace FODevManager.WinUI
         public App()
         {
             this.InitializeComponent();
+
+            ConfigureLogger();
+            UnhandledException += App_UnhandledException;
             _serviceProvider = ConfigureServices();
+        }
+
+        private void ConfigureLogger()
+        {
+            string logDirectory = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "FODevManager", "Logs");
+
+            Directory.CreateDirectory(logDirectory);
+
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Information()
+                .WriteTo.File(
+                    path: System.IO.Path.Combine(logDirectory, "fodev-.log"),
+                    rollingInterval: RollingInterval.Day,
+                    retainedFileCountLimit: 10,
+                    outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss}] [{Level:u3}] {Message:lj}{NewLine}")
+                .CreateLogger();
+
+            Log.Information("Logger initialized.");
+        }
+
+        private void App_UnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+        {
+            Log.Error(e.Exception, "Unhandled exception occurred");
         }
 
         private ServiceProvider ConfigureServices()
@@ -67,13 +96,18 @@ namespace FODevManager.WinUI
             var fileService = _serviceProvider.GetRequiredService<FileService>();
             var deploymentService = _serviceProvider.GetRequiredService<ModelDeploymentService>();
 
-            var mainWindow = new MainWindow(profileService, fileService, deploymentService);
-            mainWindow.Activate();
+            try
+            {
+                var mainWindow = new MainWindow(profileService, fileService, deploymentService);
+                mainWindow.Activate();
+            }
+            catch (Exception ex)
+            {
+                File.WriteAllText("startup-crash.log", ex.ToString());
+                throw;
+            }
 
-            //m_window = new MainWindow();
-            //m_window.Activate();
         }
 
-        //private Window? m_window;
     }
 }
