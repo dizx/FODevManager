@@ -624,10 +624,6 @@ namespace FODevManager.WinUI
             TryCatch(() => _deploymentService.UnDeployAllModels(profileName));
         }
 
-        private void AssignPeriTask(string profileName, string modelName, string taskId)
-        {
-            TryCatch(() => _deploymentService.AssignPeriTask(profileName, modelName, taskId));
-        }
 
         private string? GetActiveGitBranch(string profileName, string modelName)
         {
