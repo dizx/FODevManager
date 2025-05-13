@@ -28,7 +28,6 @@ namespace FODevManager.WinUI
     public sealed partial class MainWindow : Window
     {
         private readonly UIMessageSubscriber _uiSubscriber = new();
-        private readonly SerilogSubscriber _serilogSubscriber = new();
 
         private readonly ProfileService _profileService;
         private readonly FileService _fileService;
@@ -46,7 +45,7 @@ namespace FODevManager.WinUI
             Singleton<Engine>.Instance.EnvironmentType = EnvironmentType.WinUi;
 
             _uiSubscriber = new UIMessageSubscriber();
-            _serilogSubscriber = new SerilogSubscriber();
+            var serilogSubscriber = new SerilogSubscriber();
 
             LogPreviewList.ItemsSource = _uiSubscriber.RecentMessages;
 
