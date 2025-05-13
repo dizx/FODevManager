@@ -61,12 +61,12 @@ namespace FODevManager.Services
                 return false;
             }
 
-            if (string.IsNullOrEmpty(currentProfileName))
+            if (currentProfileName.IsNullOrEmpty())
             {
                 MessageLogger.Info("ℹ️ No active profile found. Proceeding to switch.");
             }
 
-            if (!string.IsNullOrEmpty(currentProfileName))
+            if (!currentProfileName.IsNullOrEmpty())
             {
                 var currentProfile = _fileService.LoadProfile(currentProfileName);
                 foreach (var model in currentProfile.Environments)
@@ -208,7 +208,7 @@ namespace FODevManager.Services
         {
             var profile = _fileService.LoadProfile(profileName);
 
-            if (string.IsNullOrEmpty(profile.DatabaseName))
+            if (profile.DatabaseName.IsNullOrEmpty())
             {
                 MessageLogger.Warning("ℹ️ No database name configured for this profile.");
                 return;
@@ -260,11 +260,11 @@ namespace FODevManager.Services
                 if (Directory.Exists(metadataPath))
                 {
                     var subfolder = Directory.GetDirectories(metadataPath).FirstOrDefault();
-                    if (!string.IsNullOrEmpty(subfolder))
+                    if (!subfolder.IsNullOrEmpty())
                         modelName = Path.GetFileName(subfolder);
                 }
 
-                if (string.IsNullOrEmpty(modelName))
+                if (modelName.IsNullOrEmpty())
                     throw new Exception("❌ Unable to find model name from Metadata folder.");
             }
 
@@ -374,7 +374,7 @@ namespace FODevManager.Services
             MessageLogger.Info($"Fetch Git for profile: {profile.ProfileName}");
             foreach (var env in profile.Environments)
             {
-                if (!string.IsNullOrEmpty(env.ModelRootFolder))
+                if (!env.ModelRootFolder.IsNullOrEmpty())
                 {
                     GitHelper.FetchFromRemote(env.ModelName, env.ModelRootFolder);
                 }    
@@ -450,7 +450,7 @@ namespace FODevManager.Services
             foreach (var model in profile.Environments)
             {
                 string status = model.IsDeployed ? "✅ Deployed" : "❌ Not Deployed";
-                string gitStatus = string.IsNullOrEmpty(model.GitUrl) ? "" : "✅ Git Repo" ; 
+                string gitStatus = model.GitUrl.IsNullOrEmpty() ? "" : "✅ Git Repo" ; 
                 MessageLogger.Info($"   - {model.ModelName}\t\t - {status} - { gitStatus }");
             }
         }

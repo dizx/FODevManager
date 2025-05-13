@@ -53,7 +53,7 @@ namespace FODevManager.Utils
             }
 
             string remoteUrl = GetGitRemoteUrl(configPath);
-            if (string.IsNullOrEmpty(remoteUrl))
+            if (remoteUrl.IsNullOrEmpty())
             {
                 MessageLogger.Error("❌ Could not find remote URL in .git/config.");
                 return;
