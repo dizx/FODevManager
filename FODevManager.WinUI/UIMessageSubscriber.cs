@@ -22,7 +22,7 @@ namespace FODevManager.WinUI
             if (msg.Type == MessageType.LogOnly)
                 return;
 
-            var lines = msg.Content.Split(new[] { "\\r\\n", "\\n", "\\r" }, StringSplitOptions.None);
+            var lines = msg.Content.Split(new[] { "\\r\\n ", "\\n ", "\\r " }, StringSplitOptions.None);
 
             foreach (var line in lines)
             {

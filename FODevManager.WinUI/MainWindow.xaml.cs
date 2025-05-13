@@ -21,6 +21,7 @@ using Windows.UI.Text;
 using System.Diagnostics;
 using System.IO;
 using FODevManager.Logging;
+using Serilog;
 
 
 namespace FODevManager.WinUI
@@ -617,7 +618,8 @@ namespace FODevManager.WinUI
             }
             catch (Exception ex)
             {
-                MessageLogger.Error(ex.ToString());
+                MessageLogger.Error($"❌ {ex.Message}");
+                Log.Error(ex.ToString());
             }
         }
 
