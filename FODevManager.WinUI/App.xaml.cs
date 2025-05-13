@@ -67,13 +67,18 @@ namespace FODevManager.WinUI
             var fileService = _serviceProvider.GetRequiredService<FileService>();
             var deploymentService = _serviceProvider.GetRequiredService<ModelDeploymentService>();
 
-            var mainWindow = new MainWindow(profileService, fileService, deploymentService);
-            mainWindow.Activate();
+            try
+            {
+                var mainWindow = new MainWindow(profileService, fileService, deploymentService);
+                mainWindow.Activate();
+            }
+            catch (Exception ex)
+            {
+                File.WriteAllText("startup-crash.log", ex.ToString());
+                throw;
+            }
 
-            //m_window = new MainWindow();
-            //m_window.Activate();
         }
 
-        //private Window? m_window;
     }
 }

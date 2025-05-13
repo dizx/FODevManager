@@ -545,9 +545,24 @@ namespace FODevManager.WinUI
             }
         }
 
+        
+
+        private static DateTime GetBuildDate()
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            var filePath = assembly.Location;
+
+            if (!File.Exists(filePath))
+                return DateTime.MinValue;
+
+            return File.GetLastWriteTime(filePath);
+        }
+
+
         private async void ShowAboutDialog_Click(object sender, RoutedEventArgs e)
         {
             var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.0";
+            var buildDate = GetBuildDate().ToString("yyyy-MM-dd HH:mm");
 
             var contentPanel = new StackPanel
             {
@@ -562,10 +577,8 @@ namespace FODevManager.WinUI
                 FontWeight = FontWeights.Bold
             });
 
-            contentPanel.Children.Add(new TextBlock
-            {
-                Text = $"Version: {version}"
-            });
+            contentPanel.Children.Add(new TextBlock { Text = $"Version: {version}" });
+            contentPanel.Children.Add(new TextBlock { Text = $"Build Date: {buildDate}" });
 
             contentPanel.Children.Add(new TextBlock
             {
@@ -574,7 +587,7 @@ namespace FODevManager.WinUI
 
             contentPanel.Children.Add(new TextBlock
             {
-                Text = "© 2024 ECIT Peritus AS. All rights reserved.",
+                Text = "© 2025 ECIT Peritus AS. All rights reserved.",
                 FontStyle = FontStyle.Italic
             });
 
@@ -596,5 +609,18 @@ namespace FODevManager.WinUI
             await dialog.ShowAsync();
         }
 
+        private static void TryCatch(Action asyncFunc)
+        {
+            try
+            {
+                asyncFunc();
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error(ex.ToString());
+            }
+        }
     }
 }
+
+    

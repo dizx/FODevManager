@@ -9,8 +9,12 @@
     <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
     <UseWinUI>true</UseWinUI>
+	<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <EnableMsixTooling>true</EnableMsixTooling>
     <Nullable>enable</Nullable>
+	<AssemblyVersion>0.8.0.0</AssemblyVersion>
+	<FileVersion>0.8.0.0</FileVersion>
+	<Version>0.8.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -39,6 +43,7 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250228001" />
 	<PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.3" />
 	<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.3" />
+	<PackageReference Include="Serilog.Sinks.File" Version="5.0" />
 
   </ItemGroup>
   <ItemGroup>
