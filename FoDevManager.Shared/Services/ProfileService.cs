@@ -241,14 +241,21 @@ namespace FODevManager.Services
             }
         }
 
-        public void AddEnvironment(string profileName, string modelName, string projectFilePath)
+        public void AddEnvironment(string profileName, string modelName, string environmentPath)
         {
+            string modelRootPath = FileHelper.GetModelRootFolder(environmentPath);
+            if (!Directory.Exists(modelRootPath))
+            {
+                MessageLogger.Error($"❌ Error: Model root folder not found at {modelRootPath}.");
+                return;
+            }
+
             //Finds model name from path
             if (modelName.IsNullOrEmpty())
             {
-                var metadataPath = Path.Combine(projectFilePath, "Metadata");
+                var metadataPath = Path.Combine(modelRootPath, "Metadata");
                 if (!Directory.Exists(metadataPath))
-                    metadataPath = Path.Combine(Path.GetDirectoryName(projectFilePath), "Metadata");
+                    metadataPath = Path.Combine(Path.GetDirectoryName(modelRootPath), "Metadata");
 
                 if (Directory.Exists(metadataPath))
                 {
@@ -258,10 +265,10 @@ namespace FODevManager.Services
                 }
 
                 if (string.IsNullOrEmpty(modelName))
-                    throw new Exception("❌ Unable to infer model name from Metadata folder.");
+                    throw new Exception("❌ Unable to find model name from Metadata folder.");
             }
 
-            projectFilePath = GetProjectFilePath(modelName, projectFilePath);
+            var projectFilePath = GetProjectFilePath(modelName, modelRootPath);
             if (!File.Exists(projectFilePath))
             {
                 MessageLogger.Info($"{projectFilePath} does not exist.");
@@ -270,17 +277,10 @@ namespace FODevManager.Services
                 return;
             }
 
-            var metaDataFolder = FileHelper.GetMetadataFolder(modelName, projectFilePath);
+            var metaDataFolder = FileHelper.GetMetadataFolder(modelName, modelRootPath);
             if (!Directory.Exists(metaDataFolder))
             {
                 MessageLogger.Error($"❌ Error: Metadata folder not found at {metaDataFolder}.");
-                return;
-            }
-
-            string modelRootPath = FileHelper.GetModelRootFolder(projectFilePath);
-            if (!Directory.Exists(modelRootPath))
-            {
-                MessageLogger.Error($"❌ Error: Model root folder not found at {modelRootPath}.");
                 return;
             }
 
