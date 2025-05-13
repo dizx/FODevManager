@@ -1,66 +1,117 @@
-﻿# FODevManager - Dynamics 365 FO Developer Profile Manager
+# FODevManager – Dynamics 365 FO Developer Profile Manager
 
-## Overview
+## 🚀 Overview
 
-FODevManager is a .NET 9 console application designed to manage **developer profiles** for **Dynamics 365 FO (Finance and Operations)** development environments. It automates the creation of profiles, management of models, and deployment of metadata using **hard links**.
+**FODevManager** is a development utility for managing **Dynamics 365 Finance and Operations** (D365FO) model deployments via customizable **developer profiles**.
 
-## Features
+The system includes:
+- A powerful **.NET 9 console CLI**
+- A modern **WinUI 3 desktop UI**
+- Git-aware model tracking
+- Automated profile switching, PeriTask integration, and structured logging
 
-- **Manage Developer Profiles**: Create, list, and delete profiles.
-- **Manage Models**: Add, remove, and check model deployment status.
-- **Automatic Visual Studio Solution Management**: Each profile has a `.sln` file to manage projects.
-- **Deployment Handling**: Creates hard links for metadata deployment.
-- **Configuration Management**: Uses `appsettings.json` for directory structure customization.
+## ✅ Key Features
 
-## Installation
+### 🧩 Profile Management
+- Create, delete, and switch between multiple isolated developer profiles
+- Each profile has a custom Visual Studio `.sln` and database config
+- Easily import/export profile JSON files
 
-### Prerequisites
+### 📦 Model Management
+- Add and remove models from profiles using CLI or UI
+- View deployment status, Git repo info, and PeriTask assignment
 
-- **.NET 9 SDK** ([Download Here](https://dotnet.microsoft.com/en-us/download/dotnet/9.0))
-- **Windows OS** (with Developer Mode enabled for hard links)
+### 🔗 Deployment Automation
+- Deploy/undeploy models via hard links or junctions to `PackagesLocalDirectory`
+- Automatic update of profile JSON deployment status
+- Git clean-check before switching branches
+
+### 💼 Git Integration
+- Detect if a model is in a Git repository
+- Switch to a PeriTask-based branch (`feature/TASK-1234`)
+- Open remote repo URLs in the browser
+
+### 🖥 WinUI 3 GUI (New!)
+- Modern interface for managing models, profiles, and deployment
+- Inline Git and PeriTask actions
+- Multi-line status logger with message severity
+- Profile import/export, build info, and icon-based buttons
+
+## 🛠 Installation
+
+### ✅ Prerequisites
+- **.NET 9 SDK** ([Download](https://dotnet.microsoft.com/en-us/download/dotnet/9.0))
+- **Windows 11 or 10** (Dev Mode enabled)
 - **Visual Studio 2022**
+- (Optional) **Git CLI**, **PeriTask access**
 
+### 🧱 Build and Run
 
-## **📂 Project Structure**
-```
-/FODevManager
- ├── Program.cs
- ├── Utils
- │    ├── CommandParser.cs                 # Handles command-line arguments
- │    ├── FileHelper.cs                    # Handles file operations
- ├── Config
- │    ├── AppConfig.cs                      # Configuration class for settings
- ├── Models
- │    ├── ProfileModel.cs                   # Represents a developer profile
- │    ├── ProfileEnvironmentModel.cs        # Represents an environment inside a profile
- ├── Services
- │    ├── ProfileService.cs                 # Manages profile operations
- │    ├── ModelDeploymentService.cs         # Handles model deployment
- │    ├── VisualStudioSolutionService.cs    # Manages .sln files
- ├── appsettings.json                        # Configuration file
- ├── Tests
- │    ├── CommandParserTests.cs             # Unit tests for argument parsing
- ├── publish/                                # Compiled executable
-```
-
----
-
-## **📦 Installation**
-### **1. Build the Application**
-```sh
+```bash
 dotnet build
-```
-
-### **2. Publish for Deployment**
-```sh
 dotnet publish -c Release -o publish
 ```
-This creates a **standalone executable** in the `publish/` folder.
 
----
+Then run either:
+- `fodev.exe` (console CLI)
+- `FODevManager.WinUI.exe` (desktop app)
 
-## **⚙ Configuration (`appsettings.json`)**
-Modify this file to set the paths for **profiles, deployments, and model sources**.
+## 📂 Project Structure
+
+```
+/FODevManager
+ ├── Program.cs                      # Console entry point
+ ├── WinUI/                          # GUI project
+ ├── Services/
+ │    ├── ProfileService.cs
+ │    ├── ModelDeploymentService.cs
+ │    └── VisualStudioSolutionService.cs
+ ├── Models/
+ ├── Utils/
+ ├── Config/
+ ├── appsettings.json
+ ├── Tests/
+ ├── publish/
+```
+
+## 🧪 CLI Usage
+
+```sh
+fodev.exe -profile "DevProfile" <command> [options]
+```
+
+### 🔧 Profile Commands
+| Command | Description |
+|--------|-------------|
+| `create` | Creates a new profile |
+| `delete` | Deletes a profile |
+| `check`  | Validates paths/configs |
+| `list`   | Lists available profiles |
+
+### 🧱 Model Commands
+| Command | Description |
+|--------|-------------|
+| `-model "Name" add "path"` | Adds a model to the profile |
+| `-model "Name" remove`     | Removes the model |
+| `-model "Name" check`      | Validates model deployment |
+| `list`                     | Lists all models in the profile |
+
+### 🚀 Deployment Commands
+| Command | Description |
+|--------|-------------|
+| `deploy`             | Deploys all undeployed models |
+| `-model "Name" deploy` | Deploys a specific model |
+
+### 🔀 Git + PeriTask
+| Command | Description |
+|--------|-------------|
+| `git-check`         | Checks if model path is a Git repo |
+| `git-open`          | Opens remote repo in browser |
+| `switch-task 1234`  | Creates & switches to branch `feature/TASK-1234` |
+
+## ⚙ Configuration
+
+Edit `appsettings.json`:
 
 ```json
 {
@@ -69,103 +120,42 @@ Modify this file to set the paths for **profiles, deployments, and model sources
   "DefaultSourceDirectory": "C:/Source/D365FO"
 }
 ```
-- **`ProfileStoragePath`** → Directory where profiles are stored.  
-- **`DeploymentBasePath`** → Directory where models are deployed.  
-- **`DefaultSourceDirectory`** → Default location where model sources are located.
 
----
+## 🪟 GUI Features (WinUI)
 
-## **🚀 Usage (CLI Commands)**
-All commands follow this format:
-```
-fodev.exe -profile "ProfileName" <command> [options]
-```
+| Feature         | Details |
+|----------------|---------|
+| Profile dropdown | Auto-load profiles from config |
+| Model table     | Git-aware, deploy status, task ID |
+| PeriTask assign | Supports branch creation & URL opening |
+| Git repo link   | Button opens remote repo |
+| Deployment      | Model-level and profile-level deploy/undeploy |
+| Logging         | Multi-line status pane with message severity |
+| About dialog    | Shows version + build date |
+| Import profile  | Load profile JSON via folder picker |
 
-### **📌 Profile Management**
-| **Command** | **Description** |
-|------------|----------------|
-| `fodev.exe -profile "MyProfile" create` | Creates a new profile |
-| `fodev.exe -profile "MyProfile" delete` | Deletes a profile |
-| `fodev.exe -profile "MyProfile" check` | Checks if all profile-related files exist |
-| `fodev.exe -profile list` | Lists all profiles |
+## 🧪 Running Unit Tests
 
----
-
-### **📌 Model Management**
-| **Command** | **Description** |
-|------------|----------------|
-| `fodev.exe -profile "MyProfile" -model "MyModel" add "C:\Path\to\project.rnrproj"` | Adds a model to a profile |
-| `fodev.exe -profile "MyProfile" -model "MyModel" remove` | Removes a model from a profile |
-| `fodev.exe -profile "MyProfile" -model "MyModel" check` | Checks if the model is deployed |
-
----
-
-### **📌 Model Deployment**
-| **Command** | **Description** |
-|------------|----------------|
-| `fodev.exe -profile "MyProfile" -model "MyModel" deploy` | Deploys a single model |
-| `fodev.exe -profile "MyProfile" deploy` | Deploys all **undeployed** models in the profile |
-| `fodev.exe -profile "MyProfile" list` | Lists all **models** in profile |
-
----
-
-## **🔍 How Deployment Works**
-1. **When a model is added**, it is stored in the profile JSON file.
-2. **During deployment**, the tool:
-   - Creates a **hard link** between the `Metadata` folder and the `DeploymentBasePath`.
-   - Updates the **profile JSON** to mark the model as deployed.
-3. **`deploy-all`** finds **all undeployed models** and deploys them.
-
----
-
-## **🛠 Git Integration**
-### **Checking if a Model's Project is a Git Repository**
-```sh
-fodev.exe -profile "MyProfile" -model "MyModel" git-check
-```
-- Verifies if the model's project directory is a **Git repository**.
-
-### **Opening Git Remote Repository in Browser**
-```sh
-fodev.exe -profile "MyProfile" -model "MyModel" git-open
-```
-- Opens the **GitHub/GitLab/Bitbucket remote URL** for the model’s project.
-
----
-
-
-## **🧪 Running Unit Tests**
-We use **NUnit** for testing.
-	
-### **📌 Run All Tests**
-```sh
+```bash
 dotnet test
 ```
 
-### **📌 Test Coverage**
-✅ **CommandParserTests** (Ensures correct CLI parsing)  
-✅ **(Upcoming) Tests for ProfileService & ModelDeploymentService**
+Covers `CommandParser`, `ProfileService`, and `ModelDeploymentService`.
 
----
+## 🧭 Roadmap
 
-## **📌 Upcoming Features**
-- ✅ **Deploy all undeployed models** *(Added!)*
-- 🏗 **Logging system** *(Log all operations to a file)*
-- 🏗 **Bulk deletion of profiles**
-- 🏗 **GUI version (future expansion)**
+- ✅ WinUI 3 frontend (v1 complete)
+- ✅ Git branch switch integration
+- 🧪 Logging via Serilog (in progress)
+- 🧱 MSIX packaging or installer (future)
+- 🧊 Multi-user profile sharing (future)
+- 🧪 Test coverage for more services
 
----
+## 🤝 Contributing
 
-## **🤝 Contributions**
-Feel free to **open issues** or **submit pull requests**.  
-For discussions, please use the **GitHub Issues** tab.
+- Open issues or PRs on GitHub
+- Contact **mortenaa@gmail.com** for questions or feature requests
 
----
+## 📜 License
 
-## **📜 License**
-This project is licensed under the **MIT License**.
-
----
-
-### **💡 Need Help?**
-📧 Contact **mortenaa@gmail.com** or create an **issue on GitHub**.
+Licensed under the **MIT License**
