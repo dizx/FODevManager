@@ -227,11 +227,11 @@ namespace FODevManager.Services
             // Find the model in the profile
             var existingEnvironment = GetProfileEnvironment(profile, updatedEnvironment.ModelName);
 
-            if (!string.IsNullOrEmpty(updatedEnvironment.ModelRootFolder))
+            if (!updatedEnvironment.ModelRootFolder.IsNullOrEmpty())
                 existingEnvironment.ModelRootFolder = updatedEnvironment.ModelRootFolder;
 
             // Update the existing model entry
-            if (!string.IsNullOrEmpty(updatedEnvironment.ProjectFilePath))
+            if (!updatedEnvironment.ProjectFilePath.IsNullOrEmpty())
                 existingEnvironment.ProjectFilePath = updatedEnvironment.ProjectFilePath;
             existingEnvironment.IsDeployed = updatedEnvironment.IsDeployed;
 
@@ -244,7 +244,7 @@ namespace FODevManager.Services
         {
             var env = GetProfileEnvironment(_fileService.LoadProfile(profileName), modelName);
 
-            if(string.IsNullOrEmpty(env.ModelRootFolder))
+            if(env.ModelRootFolder.IsNullOrEmpty())
             {
                 string modelRootPath = FileHelper.GetModelRootFolder(env.ProjectFilePath);
                 if (!Directory.Exists(modelRootPath))
@@ -284,7 +284,7 @@ namespace FODevManager.Services
 
         public bool IsModelActuallyDeployed(ProfileEnvironmentModel env)
         {
-            if (string.IsNullOrEmpty(env.ModelRootFolder))
+            if (env.ModelRootFolder.IsNullOrEmpty())
             {
                 return Directory.Exists(env.ModelRootFolder);
             }

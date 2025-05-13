@@ -61,12 +61,12 @@ namespace FODevManager.Services
                 return false;
             }
 
-            if (string.IsNullOrEmpty(currentProfileName))
+            if (currentProfileName.IsNullOrEmpty())
             {
                 MessageLogger.Info("ℹ️ No active profile found. Proceeding to switch.");
             }
 
-            if (!string.IsNullOrEmpty(currentProfileName))
+            if (!currentProfileName.IsNullOrEmpty())
             {
                 var currentProfile = _fileService.LoadProfile(currentProfileName);
                 foreach (var model in currentProfile.Environments)
@@ -208,7 +208,7 @@ namespace FODevManager.Services
         {
             var profile = _fileService.LoadProfile(profileName);
 
-            if (string.IsNullOrEmpty(profile.DatabaseName))
+            if (profile.DatabaseName.IsNullOrEmpty())
             {
                 MessageLogger.Warning("ℹ️ No database name configured for this profile.");
                 return;
@@ -241,27 +241,34 @@ namespace FODevManager.Services
             }
         }
 
-        public void AddEnvironment(string profileName, string modelName, string projectFilePath)
+        public void AddEnvironment(string profileName, string modelName, string environmentPath)
         {
+            string modelRootPath = FileHelper.GetModelRootFolder(environmentPath);
+            if (!Directory.Exists(modelRootPath))
+            {
+                MessageLogger.Error($"❌ Error: Model root folder not found at {modelRootPath}.");
+                return;
+            }
+
             //Finds model name from path
             if (modelName.IsNullOrEmpty())
             {
-                var metadataPath = Path.Combine(projectFilePath, "Metadata");
+                var metadataPath = Path.Combine(modelRootPath, "Metadata");
                 if (!Directory.Exists(metadataPath))
-                    metadataPath = Path.Combine(Path.GetDirectoryName(projectFilePath), "Metadata");
+                    metadataPath = Path.Combine(Path.GetDirectoryName(modelRootPath), "Metadata");
 
                 if (Directory.Exists(metadataPath))
                 {
                     var subfolder = Directory.GetDirectories(metadataPath).FirstOrDefault();
-                    if (!string.IsNullOrEmpty(subfolder))
+                    if (!subfolder.IsNullOrEmpty())
                         modelName = Path.GetFileName(subfolder);
                 }
 
-                if (string.IsNullOrEmpty(modelName))
-                    throw new Exception("❌ Unable to infer model name from Metadata folder.");
+                if (modelName.IsNullOrEmpty())
+                    throw new Exception("❌ Unable to find model name from Metadata folder.");
             }
 
-            projectFilePath = GetProjectFilePath(modelName, projectFilePath);
+            var projectFilePath = GetProjectFilePath(modelName, modelRootPath);
             if (!File.Exists(projectFilePath))
             {
                 MessageLogger.Info($"{projectFilePath} does not exist.");
@@ -270,17 +277,10 @@ namespace FODevManager.Services
                 return;
             }
 
-            var metaDataFolder = FileHelper.GetMetadataFolder(modelName, projectFilePath);
+            var metaDataFolder = FileHelper.GetMetadataFolder(modelName, modelRootPath);
             if (!Directory.Exists(metaDataFolder))
             {
                 MessageLogger.Error($"❌ Error: Metadata folder not found at {metaDataFolder}.");
-                return;
-            }
-
-            string modelRootPath = FileHelper.GetModelRootFolder(projectFilePath);
-            if (!Directory.Exists(modelRootPath))
-            {
-                MessageLogger.Error($"❌ Error: Model root folder not found at {modelRootPath}.");
                 return;
             }
 
@@ -374,7 +374,7 @@ namespace FODevManager.Services
             MessageLogger.Info($"Fetch Git for profile: {profile.ProfileName}");
             foreach (var env in profile.Environments)
             {
-                if (!string.IsNullOrEmpty(env.ModelRootFolder))
+                if (!env.ModelRootFolder.IsNullOrEmpty())
                 {
                     GitHelper.FetchFromRemote(env.ModelName, env.ModelRootFolder);
                 }    
@@ -450,7 +450,7 @@ namespace FODevManager.Services
             foreach (var model in profile.Environments)
             {
                 string status = model.IsDeployed ? "✅ Deployed" : "❌ Not Deployed";
-                string gitStatus = string.IsNullOrEmpty(model.GitUrl) ? "" : "✅ Git Repo" ; 
+                string gitStatus = model.GitUrl.IsNullOrEmpty() ? "" : "✅ Git Repo" ; 
                 MessageLogger.Info($"   - {model.ModelName}\t\t - {status} - { gitStatus }");
             }
         }

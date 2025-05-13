@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -148,7 +148,7 @@ namespace FODevManager.Utils
 
             if (!IsValid)
             {
-                if(!string.IsNullOrEmpty(ModelName))
+                if(!ModelName.IsNullOrEmpty())
                     MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" <command> [options]");
                 else
                     MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" <command> [options]");
