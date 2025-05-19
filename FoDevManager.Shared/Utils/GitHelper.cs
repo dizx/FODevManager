@@ -276,9 +276,16 @@ namespace FODevManager.Utils
             string output = process.StandardOutput.ReadToEnd() ?? string.Empty;
             string error = process.StandardError.ReadToEnd() ?? string.Empty;
 
-            process.WaitForExit();
+            result = (output + "\n" + error).Trim();
 
-            if (!string.IsNullOrWhiteSpace(error))
+            if (process.ExitCode == 0)
+            {
+                if (!error.IsNullOrEmpty())
+                    MessageLogger.Info(error); // not error, just info
+                return true;
+            }
+
+            if (!error.IsNullOrEmpty())
             {
                 MessageLogger.Error(error);
                 return false;
@@ -288,6 +295,7 @@ namespace FODevManager.Utils
 
             return true;
         }
+
 
     }
 }
