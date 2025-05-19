@@ -143,7 +143,7 @@ class Program
                     TryCatch(() => modelService.OpenGitRepositoryUrl(commandParser.ProfileName, commandParser.ModelName));
                     break;
                 case "peri":
-                    TryCatch(() => modelService.AssignPeriTask(commandParser.ProfileName, commandParser.ModelName, commandParser.FilePath));
+                    TryCatch(() => modelService.AssignPeriTask(commandParser.ProfileName, commandParser.ModelName, commandParser.FilePath, ""));
                     break;
 
                 default:

@@ -376,7 +376,7 @@ namespace FODevManager.Services
             }
         }
 
-        public bool AssignPeriTask(string profileName, string modelName, string periTask)
+        public bool AssignPeriTask(string profileName, string modelName, string periTask, string comment)
         {
             var profile = _fileService.LoadProfile(profileName);
             var model = GetProfileEnvironment(profile, modelName);
@@ -387,8 +387,17 @@ namespace FODevManager.Services
                 return false;
             }
 
-            string featureBranch = $"feature/task-{periTask}";
+            model.PeriTask = periTask;
+            model.PeriTaskComment = comment;
+            _fileService.SaveProfile(profile);
 
+            string branchPrefix = $"feature/task-{periTask}";
+            string slug = Slugify(comment, 255, branchPrefix + "-");
+            string fullBranch = string.IsNullOrWhiteSpace(slug)
+                ? branchPrefix
+                : $"{branchPrefix}-{slug}";
+
+            // Attempt Git branch switch
             string repoPath = model.ModelRootFolder;
             if (!Directory.Exists(repoPath))
             {
@@ -396,21 +405,41 @@ namespace FODevManager.Services
                 return false;
             }
 
-            if (GitHelper.ChangeBranch(repoPath, featureBranch))
+            if (GitHelper.ChangeBranch(repoPath, fullBranch))
             {
-                model.PeriTask = periTask;
-                _fileService.SaveProfile(profile);
-                MessageLogger.Highlight($"✅ Assigned PeriTask '{periTask}' and switched to branch '{featureBranch}'.");
+                MessageLogger.Highlight($"✅ Assigned PeriTask '{periTask}' and switched to branch '{fullBranch}'.");
             }
             else
             {
-                MessageLogger.Error($"❌ Failed to switch to branch '{featureBranch}' for model '{modelName}'.");
-                return false;
+                MessageLogger.Warning($"⚠️ Assigned PeriTask '{periTask}', but failed to switch to branch '{fullBranch}'.");
             }
 
             return true;
         }
 
+        private static string Slugify(string input, int maxTotalLength, string branchPrefix)
+        {
+            if (string.IsNullOrWhiteSpace(input))
+                return string.Empty;
+
+            var invalidChars = Path.GetInvalidFileNameChars().ToHashSet();
+
+            // Convert to URL-safe/branch-safe slug
+            var slug = new string(input
+                .ToLowerInvariant()
+                .Replace(" ", "-")
+                .Where(c => !invalidChars.Contains(c))
+                .ToArray());
+
+            int remainingLength = maxTotalLength - branchPrefix.Length;
+
+            if (remainingLength <= 0)
+                return string.Empty;
+
+            return slug.Length > remainingLength
+                ? slug.Substring(0, remainingLength)
+                : slug;
+        }
 
     }
 }

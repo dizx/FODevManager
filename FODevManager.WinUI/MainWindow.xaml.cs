@@ -221,19 +221,34 @@ namespace FODevManager.WinUI
                     XamlRoot = this.Content.XamlRoot
                 };
 
-                var input = new TextBox
+                var taskIdBox = new TextBox
                 {
-                    PlaceholderText = "Enter PeriTask ID (e.g. 1234)"
+                    PlaceholderText = "Enter PeriTask ID (e.g. 2145)"
                 };
-                dialog.Content = input;
+
+                var commentBox = new TextBox
+                {
+                    PlaceholderText = "Enter optional comment (e.g. fix performance)"
+                };
+
+                var stack = new StackPanel
+                {
+                    Spacing = 8,
+                    Children = { taskIdBox, commentBox }
+                };
+
+                dialog.Content = stack;
 
                 var result = await dialog.ShowAsync();
-                if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(input.Text))
+                if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(taskIdBox.Text))
                 {
                     try
                     {
-                        AssignPeriTask(profileName, modelName, input.Text.Trim());
-                        UIMessageHelper.LogToUI($"🔧 Assigned PeriTask '{input.Text.Trim()}' to model '{modelName}'");
+                        var taskId = taskIdBox.Text.Trim();
+                        var comment = commentBox.Text.Trim();
+
+                        AssignPeriTask(profileName, modelName, taskId, comment);
+                        UIMessageHelper.LogToUI($"🔧 Assigned PeriTask '{taskId}' with comment: '{comment}' to model '{modelName}'");
                     }
                     catch (Exception ex)
                     {
@@ -691,9 +706,9 @@ namespace FODevManager.WinUI
             TryCatch(() => _deploymentService.UnDeployAllModels(profileName));
         }
 
-        private void AssignPeriTask(string profileName, string modelName, string taskId)
+        private void AssignPeriTask(string profileName, string modelName, string taskId, string comment)
         {
-            TryCatch(() => _deploymentService.AssignPeriTask(profileName, modelName, taskId));
+            TryCatch(() => _deploymentService.AssignPeriTask(profileName, modelName, taskId, comment));
         }
 
         private string? GetActiveGitBranch(string profileName, string modelName)

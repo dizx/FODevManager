@@ -13,6 +13,8 @@
         public string GitUrl { get; set; } = "";
 
         public string PeriTask { get; set; } = "";
+        public string PeriTaskComment { get; set; } = "";
+
 
         public bool IsDeployed { get; set; } = false;
         
