@@ -243,6 +243,45 @@ namespace FODevManager.Services
 
         public void AddEnvironment(string profileName, string modelName, string environmentPath)
         {
+            if (IsInstalledModel(environmentPath))
+            {
+                HandleInstalledModel(profileName, modelName, environmentPath);
+                return;
+            }
+
+            AddModelToProfileIfNotExists(profileName, modelName, environmentPath);
+        }
+
+        private void HandleInstalledModel(string profileName, string modelName, string environmentPath)
+        {
+            var profile = _fileService.LoadProfile(profileName);
+
+            string targetFolderName = modelName.IsNullOrEmpty()
+                ? Path.GetFileName(environmentPath.TrimEnd(Path.DirectorySeparatorChar))
+                : modelName;
+
+            bool success = _modelDeploymentService.ConvertInstalledModelToProjectModel(targetFolderName, profile);
+            if (!success)
+            {
+                MessageLogger.Error($"❌ Failed to convert installed model at '{environmentPath}'.");
+                return;
+            }
+
+                RegisterConvertedModelToSolution(profileName, targetFolderName);
+        }
+
+        private void RegisterConvertedModelToSolution(string profileName, string modelName)
+        {
+            string projectFilePath = Path.Combine(_defaultSourceDirectory, modelName, "Project", modelName, $"{modelName}.rnrproj");
+
+            _solutionService.AddProjectToSolution(profileName, modelName, projectFilePath);
+            _modelDeploymentService.CheckIfGitRepository(profileName, modelName);
+
+            MessageLogger.Highlight($"✅ Converted model '{modelName}' registered into solution.");
+        }
+
+        private void AddModelToProfileIfNotExists(string profileName, string modelName, string environmentPath)
+        {
             string modelRootPath = FileHelper.GetModelRootFolder(environmentPath);
             if (!Directory.Exists(modelRootPath))
             {
@@ -250,29 +289,20 @@ namespace FODevManager.Services
                 return;
             }
 
-            //Finds model name from path
             if (modelName.IsNullOrEmpty())
             {
-                var metadataPath = Path.Combine(modelRootPath, "Metadata");
-                if (!Directory.Exists(metadataPath))
-                    metadataPath = Path.Combine(Path.GetDirectoryName(modelRootPath), "Metadata");
-
-                if (Directory.Exists(metadataPath))
-                {
-                    var subfolder = Directory.GetDirectories(metadataPath).FirstOrDefault();
-                    if (!subfolder.IsNullOrEmpty())
-                        modelName = Path.GetFileName(subfolder);
-                }
-
+                modelName = DetectModelNameFromMetadata(modelRootPath);
                 if (modelName.IsNullOrEmpty())
+                {
                     throw new Exception("❌ Unable to find model name from Metadata folder.");
+                }
             }
 
             var projectFilePath = GetProjectFilePath(modelName, modelRootPath);
             if (!File.Exists(projectFilePath))
             {
                 MessageLogger.Info($"{projectFilePath} does not exist.");
-                if(Singleton<Engine>.Instance.EnvironmentType == EnvironmentType.Console)
+                if (Singleton<Engine>.Instance.EnvironmentType == EnvironmentType.Console)
                     MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" add \"ProjectFilePath\"");
                 return;
             }
@@ -307,10 +337,30 @@ namespace FODevManager.Services
             _fileService.SaveProfile(profile);
 
             _solutionService.AddProjectToSolution(profileName, modelName, projectFilePath);
-            MessageLogger.Info($"✅ Model '{modelName}' added to profile '{profileName}' and included in solution.");
-
             _modelDeploymentService.CheckIfGitRepository(profileName, modelName);
+
+            MessageLogger.Info($"✅ Model '{modelName}' added to profile '{profileName}' and included in solution.");
         }
+
+        private bool IsInstalledModel(string path) => path.StartsWith(_deploymentBasePath, StringComparison.OrdinalIgnoreCase);
+
+        private string DetectModelNameFromMetadata(string modelRootPath)
+        {
+            string metadataPath = Path.Combine(modelRootPath, "Metadata");
+
+            if (!Directory.Exists(metadataPath))
+                metadataPath = Path.Combine(Path.GetDirectoryName(modelRootPath), "Metadata");
+
+            if (Directory.Exists(metadataPath))
+            {
+                var subfolder = Directory.GetDirectories(metadataPath).FirstOrDefault();
+                if (!subfolder.IsNullOrEmpty())
+                    return Path.GetFileName(subfolder);
+            }
+
+            return string.Empty;
+        }
+
 
         private string GetProjectFilePath(string modelName, string projectFilePath)
         {
@@ -455,7 +505,21 @@ namespace FODevManager.Services
             }
         }
 
-        
+        public ProfileModel? GetActiveProfile()
+        {
+            var profiles = _fileService.GetAllProfiles();
+
+            var activeProfile = profiles.FirstOrDefault(p => p.IsActive);
+
+            if (activeProfile == null)
+            {
+                MessageLogger.Warning("⚠️ No active profile found.");
+                return null;
+            }
+
+            return activeProfile;
+        }
+
         public List<ProfileEnvironmentModel> GetModelsInProfile(string profileName)
         {
             var profile = _fileService.LoadProfile(profileName);
