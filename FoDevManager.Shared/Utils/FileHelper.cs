@@ -16,6 +16,20 @@ namespace FODevManager.Utils
             }
         }
 
+        public static void CopyDirectory(string sourceDir, string targetDir)
+        {
+            foreach (string dirPath in Directory.GetDirectories(sourceDir, "*", SearchOption.AllDirectories))
+            {
+                Directory.CreateDirectory(dirPath.Replace(sourceDir, targetDir));
+            }
+
+            foreach (string filePath in Directory.GetFiles(sourceDir, "*.*", SearchOption.AllDirectories))
+            {
+                string targetFilePath = filePath.Replace(sourceDir, targetDir);
+                File.Copy(filePath, targetFilePath, overwrite: true);
+            }
+        }
+
         public static T LoadJson<T>(string filePath) where T : new()
         {
             if (!File.Exists(filePath))
