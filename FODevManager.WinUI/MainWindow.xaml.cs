@@ -357,6 +357,40 @@ namespace FODevManager.WinUI
             return null;
         }
 
+        private async void CreateModel_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesDropdown.SelectedItem is not string profileName)
+                return;
+
+            var inputDialog = new ContentDialog
+            {
+                Title = "Create New Model",
+                PrimaryButtonText = "Create",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var inputBox = new TextBox
+            {
+                PlaceholderText = "Enter model name (e.g. MyNewModel)"
+            };
+
+            inputDialog.Content = inputBox;
+
+            var result = await inputDialog.ShowAsync();
+            if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(inputBox.Text))
+            {
+                var modelName = inputBox.Text.Trim();
+
+                CreateModel(profileName, modelName);
+
+                UIMessageHelper.LogToUI($"📦 Created new model '{modelName}' under profile '{profileName}'");
+                LoadModelListViewData(profileName);
+            }
+        }
+
+
 
         private void OpenSolution_Click(object sender, RoutedEventArgs e)
         {
@@ -640,6 +674,11 @@ namespace FODevManager.WinUI
 
         // -------- Service Calls --------
 
+        private void CreateModel(string profileName, string modelName)
+        {
+            TryCatch(() => _profileService.CreateModel(profileName, modelName));
+        }
+
         private void RemoveModelFromProfile(string profileName, string modelName)
         {
             TryCatch(() => _profileService.RemoveModelFromProfile(profileName, modelName));
@@ -744,6 +783,7 @@ namespace FODevManager.WinUI
             return profile;
         }
 
+        
     }
 }
 

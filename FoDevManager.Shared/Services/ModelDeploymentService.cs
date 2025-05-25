@@ -18,12 +18,16 @@ namespace FODevManager.Services
         private readonly FileService _fileService;
         private readonly string _deploymentBasePath;
         private readonly string _defaultSourceDirectory;
+        private readonly int _modelIdBegin;
+        private readonly int _modelIdEnd;
 
         public ModelDeploymentService(AppConfig config, FileService fileService)
         {
             _fileService = fileService;
             _deploymentBasePath = config.DeploymentBasePath;
             _defaultSourceDirectory = config.DefaultSourceDirectory;
+            _modelIdBegin = config.ModelIdBegin;
+            _modelIdEnd = config.ModelIdEnd;
             
 
             // Ensure directories exist
@@ -378,6 +382,164 @@ namespace FODevManager.Services
             }
         }
 
+
+        public bool CreateModel(string modelName, ProfileModel profile)
+        {
+            try
+            {
+                string modelRoot = Path.Combine(_defaultSourceDirectory, modelName);
+                string metadataFolder = Path.Combine(modelRoot, "Metadata", modelName);
+                string projectFolder = Path.Combine(modelRoot, "Project", modelName);
+                string metadataSubfolder = Path.Combine(metadataFolder, modelName);
+                string descriptorFolder = Path.Combine(metadataFolder, "Descriptor");
+                string xppMetadataFolder = Path.Combine(metadataFolder, "XppMetadata", modelName);
+
+                // Create required folders
+                FileHelper.EnsureDirectoryExists(metadataFolder);
+                FileHelper.EnsureDirectoryExists(projectFolder);
+                FileHelper.EnsureDirectoryExists(metadataSubfolder);
+                FileHelper.EnsureDirectoryExists(descriptorFolder);
+                FileHelper.EnsureDirectoryExists(xppMetadataFolder);
+
+                // Create .rnrproj
+                string projectFilePath = CreateProjectFile(modelName, projectFolder);
+
+                // Create model descriptor XML
+                int modelId = new Random().Next(_modelIdBegin, _modelIdEnd);
+                string modelXml = GenerateModelXml(modelName, modelId);
+                string descriptorPath = Path.Combine(descriptorFolder, $"{modelName}.xml");
+                File.WriteAllText(descriptorPath, modelXml, Encoding.UTF8);
+
+                // Register in profile
+                if (!profile.Environments.Any(e => e.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    profile.Environments.Add(new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelRootFolder = modelRoot,
+                        ProjectFilePath = projectFilePath,
+                        MetadataFolder = metadataFolder,
+                        IsDeployed = false
+                    });
+
+                    _fileService.SaveProfile(profile);
+                }
+
+                MessageLogger.Highlight($"✅ Model '{modelName}' created successfully at: {modelRoot}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Failed to create model '{modelName}': {ex.Message}");
+                return false;
+            }
+        }
+
+        public bool ConvertInstalledModelToProjectModel(string modelName, ProfileModel profile, string? projectFolderNameOverride = null)
+        {
+            string sourceModelPath = Path.Combine(_deploymentBasePath, modelName);
+
+            if (!Directory.Exists(sourceModelPath))
+            {
+                MessageLogger.Error($"❌ Model not found in DeploymentBasePath: {sourceModelPath}");
+                return false;
+            }
+
+            string projectFolderName = projectFolderNameOverride ?? modelName;
+            string projectRootPath = Path.Combine(_defaultSourceDirectory, projectFolderName);
+            string metadataTargetPath = Path.Combine(projectRootPath, "Metadata", modelName);
+            string projectTargetPath = Path.Combine(projectRootPath, "Project", modelName);
+
+            try
+            {
+                FileHelper.EnsureDirectoryExists(metadataTargetPath);
+
+                FileHelper.CopyDirectory(sourceModelPath, metadataTargetPath);
+
+                string projectFilePath = CreateProjectFile(modelName, projectTargetPath);
+
+                MessageLogger.Info($"📁 Created project structure at: {projectRootPath}");
+
+                // Check if model already exists in profile environments
+                bool alreadyExists = profile.Environments.Any(env =>
+                    env.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
+
+                if (!alreadyExists)
+                {
+                    profile.Environments.Add(new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelRootFolder = projectRootPath,
+                        MetadataFolder = metadataTargetPath,
+                        ProjectFilePath = projectFilePath,
+                        IsDeployed = false
+                    });
+
+                    _fileService.SaveProfile(profile);
+                    MessageLogger.Highlight($"✅ Model '{modelName}' added to profile: {profile.ProfileName}");
+                }
+                else
+                {
+                    MessageLogger.Warning($"⚠️ Model '{modelName}' already exists in profile: {profile.ProfileName}");
+                }
+
+                if (Directory.Exists(sourceModelPath))
+                {
+                    MessageLogger.Info("🛑 Stopping W3SVC to release locks on AOS folder...");
+                    ServiceHelper.StopW3SVC();
+
+                    MessageLogger.Info($"🗑️ Deleting installed model folder: {sourceModelPath}");
+                    Directory.Delete(sourceModelPath, recursive: true);
+
+                    ServiceHelper.StartW3SVC();
+
+                    MessageLogger.Highlight($"✅ Successfully deleted '{modelName}' from deployment path.");
+                }
+
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Failed to convert model: {ex.Message}");
+                return false;
+            }
+        }
+
+        private string CreateProjectFile(string modelName, string projectFolder)
+        {
+            FileHelper.EnsureDirectoryExists(projectFolder);
+
+            string projectGuid = Guid.NewGuid().ToString("D");
+            string projectFilePath = Path.Combine(projectFolder, $"{modelName}.rnrproj");
+
+            string content = GenerateProjectFromTemplate(modelName, projectGuid);
+            File.WriteAllText(projectFilePath, content, Encoding.UTF8);
+
+            MessageLogger.Info($"📄 Created .rnrproj file for model '{modelName}'");
+
+            return projectFilePath;
+        }
+
+        private string GenerateProjectFromTemplate(string modelName, string guid)
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "Templates", "ProjectTemplate.rnrproj");
+            if (!File.Exists(path)) throw new FileNotFoundException("Project template file not found.");
+
+            string template = File.ReadAllText(path);
+            return template
+                .Replace("{{ModelName}}", modelName)
+                .Replace("{{Guid}}", guid);
+        }
+
+        private string GenerateModelXml(string modelName, int modelId)
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "Templates", "ModelTemplate.xml");
+            if (!File.Exists(path)) throw new FileNotFoundException("Missing ModelTemplate.xml");
+
+            string template = File.ReadAllText(path);
+            return template.Replace("{modelName}", modelName).Replace("{modelId}", modelId.ToString());
+        }
         public bool AssignPeriTask(string profileName, string modelName, string periTask, string comment)
         {
             var profile = _fileService.LoadProfile(profileName);
@@ -442,134 +604,6 @@ namespace FODevManager.Services
                 ? slug.Substring(0, remainingLength)
                 : slug;
         }
-
-        public bool ConvertInstalledModelToProjectModel(string modelName, ProfileModel profile, string? projectFolderNameOverride = null)
-        {
-            string sourceModelPath = Path.Combine(_deploymentBasePath, modelName);
-
-            if (!Directory.Exists(sourceModelPath))
-            {
-                MessageLogger.Error($"❌ Model not found in DeploymentBasePath: {sourceModelPath}");
-                return false;
-            }
-
-            string projectFolderName = projectFolderNameOverride ?? modelName;
-            string projectRootPath = Path.Combine(_defaultSourceDirectory, projectFolderName);
-            string metadataTargetPath = Path.Combine(projectRootPath, "Metadata", modelName);
-            string projectTargetPath = Path.Combine(projectRootPath, "Project", modelName);
-
-            try
-            {
-                FileHelper.EnsureDirectoryExists(metadataTargetPath);
-                FileHelper.EnsureDirectoryExists(projectTargetPath);
-
-                FileHelper.CopyDirectory(sourceModelPath, metadataTargetPath);
-
-                string guid = Guid.NewGuid().ToString("D");
-                string projectFilePath = Path.Combine(projectTargetPath, $"{modelName}.rnrproj");
-                File.WriteAllText(projectFilePath, GenerateRnrprojTemplate(modelName, guid), Encoding.UTF8);
-
-                MessageLogger.Info($"📁 Created project structure at: {projectRootPath}");
-
-                // Check if model already exists in profile environments
-                bool alreadyExists = profile.Environments.Any(env =>
-                    env.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
-
-                if (!alreadyExists)
-                {
-                    profile.Environments.Add(new ProfileEnvironmentModel
-                    {
-                        ModelName = modelName,
-                        ModelRootFolder = projectRootPath,
-                        MetadataFolder = metadataTargetPath,
-                        ProjectFilePath = projectFilePath,
-                        IsDeployed = false
-                    });
-
-                    _fileService.SaveProfile(profile);
-                    MessageLogger.Highlight($"✅ Model '{modelName}' added to profile: {profile.ProfileName}");
-                }
-                else
-                {
-                    MessageLogger.Warning($"⚠️ Model '{modelName}' already exists in profile: {profile.ProfileName}");
-                }
-
-                if (Directory.Exists(sourceModelPath))
-                {
-                    MessageLogger.Info("🛑 Stopping W3SVC to release locks on AOS folder...");
-                    ServiceHelper.StopW3SVC();
-
-                    MessageLogger.Info($"🗑️ Deleting installed model folder: {sourceModelPath}");
-                    Directory.Delete(sourceModelPath, recursive: true);
-
-                    ServiceHelper.StartW3SVC();
-
-                    MessageLogger.Highlight($"✅ Successfully deleted '{modelName}' from deployment path.");
-                }
-
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                MessageLogger.Error($"❌ Failed to convert model: {ex.Message}");
-                return false;
-            }
-        }
-
-
-
-        private static void CopyDirectory(string sourceDir, string targetDir)
-        {
-            foreach (string dir in Directory.GetDirectories(sourceDir, "*", SearchOption.AllDirectories))
-            {
-                Directory.CreateDirectory(dir.Replace(sourceDir, targetDir));
-            }
-
-            foreach (string file in Directory.GetFiles(sourceDir, "*.*", SearchOption.AllDirectories))
-            {
-                string destFile = file.Replace(sourceDir, targetDir);
-                File.Copy(file, destFile, true);
-            }
-        }
-
-        private static string GenerateRnrprojTemplate(string modelName, string guid) =>
-        $@"<?xml version=""1.0"" encoding=""utf-8""?>
-        <Project ToolsVersion=""14.0"" DefaultTargets=""Build"" xmlns=""http://schemas.microsoft.com/developer/msbuild/2003"">
-          <PropertyGroup>
-            <Configuration Condition="" '$(Configuration)' == '' "">Debug</Configuration>
-            <Platform Condition="" '$(Platform)' == '' "">AnyCPU</Platform>
-            <BuildTasksDirectory Condition="" '$(BuildTasksDirectory)' == ''"">$(MSBuildProgramFiles32)\MSBuild\Microsoft\Dynamics\AX</BuildTasksDirectory>
-            <Model>{modelName}</Model>
-            <TargetFrameworkVersion>v4.6</TargetFrameworkVersion>
-            <OutputPath>bin</OutputPath>
-            <SchemaVersion>2.0</SchemaVersion>
-            <GenerateCrossReferences>True</GenerateCrossReferences>
-            <RunAppCheckerRules>False</RunAppCheckerRules>
-            <LogAppcheckerDiagsAsErrors>False</LogAppcheckerDiagsAsErrors>
-            <DeployOnline>False</DeployOnline>
-            <ProjectGuid>{{{guid}}}</ProjectGuid>
-            <Name>{modelName}</Name>
-            <RootNamespace>{modelName}</RootNamespace>
-          </PropertyGroup>
-          <PropertyGroup Condition=""'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'"">
-            <Configuration>Debug</Configuration>
-            <DBSyncInBuild>False</DBSyncInBuild>
-            <GenerateFormAdaptors>False</GenerateFormAdaptors>
-            <Company></Company>
-            <Partition>initial</Partition>
-            <PlatformTarget>AnyCPU</PlatformTarget>
-            <DataEntityExpandParentChildRelations>False</DataEntityExpandParentChildRelations>
-            <DataEntityUseLabelTextAsFieldName>False</DataEntityUseLabelTextAsFieldName>
-          </PropertyGroup>
-          <PropertyGroup Condition="" '$(Configuration)' == 'Debug' "">
-            <DebugSymbols>true</DebugSymbols>
-            <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
-          </PropertyGroup>
-          <Import Project=""$(MSBuildBinPath)\Microsoft.Common.targets"" />
-          <Import Project=""$(BuildTasksDirectory)\Microsoft.Dynamics.Framework.Tools.BuildTasks.17.0.targets"" />
-        </Project>";
-
 
     }
 }
