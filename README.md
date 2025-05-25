@@ -21,6 +21,16 @@ The system includes:
 - Add and remove models from profiles using CLI or UI
 - View deployment status, Git repo info, and PeriTask assignment
 
+### 🆕 Create Model From Scratch
+- Automatically creates:
+  - Metadata folder structure
+  - Empty project folder with `.rnrproj`
+  - Model descriptor XML file in `Descriptor/`
+
+### 🔄 Convert Installed Model
+- Converts models from `PackagesLocalDirectory` into a project-ready format under `DefaultSourceDirectory`
+- Registers model in the selected profile
+
 ### 🔗 Deployment Automation
 - Deploy/undeploy models via hard links or junctions to `PackagesLocalDirectory`
 - Automatic update of profile JSON deployment status
