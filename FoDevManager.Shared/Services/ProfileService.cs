@@ -93,7 +93,6 @@ namespace FODevManager.Services
             return true;
         }
 
-
         public void ImportProfile(string importPath)
         {
             if (!File.Exists(importPath))
@@ -224,8 +223,6 @@ namespace FODevManager.Services
 
             try
             {
-                
-
                 MessageLogger.Info("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
                 ServiceHelper.StopW3SVC();
 
@@ -252,6 +249,13 @@ namespace FODevManager.Services
             AddModelToProfileIfNotExists(profileName, modelName, environmentPath);
         }
 
+        public void CreateModel(string profileName, string modelName)
+        {
+            var profile = _fileService.LoadProfile(profileName);
+            _modelDeploymentService.CreateModel(modelName, profile);
+            _solutionService.AddProjectToSolution(profileName, modelName, DefaultProjectFilePath(modelName));
+        }
+
         private void HandleInstalledModel(string profileName, string modelName, string environmentPath)
         {
             var profile = _fileService.LoadProfile(profileName);
@@ -267,18 +271,19 @@ namespace FODevManager.Services
                 return;
             }
 
-                RegisterConvertedModelToSolution(profileName, targetFolderName);
+            RegisterModelToSolution(profileName, targetFolderName);
         }
 
-        private void RegisterConvertedModelToSolution(string profileName, string modelName)
+        private void RegisterModelToSolution(string profileName, string modelName)
         {
-            string projectFilePath = Path.Combine(_defaultSourceDirectory, modelName, "Project", modelName, $"{modelName}.rnrproj");
-
-            _solutionService.AddProjectToSolution(profileName, modelName, projectFilePath);
+            _solutionService.AddProjectToSolution(profileName, modelName, DefaultProjectFilePath(modelName));
             _modelDeploymentService.CheckIfGitRepository(profileName, modelName);
 
             MessageLogger.Highlight($"✅ Converted model '{modelName}' registered into solution.");
         }
+
+        private string DefaultProjectFilePath(string modelName) => Path.Combine(_defaultSourceDirectory, modelName, "Project", modelName, $"{modelName}.rnrproj");
+
 
         private void AddModelToProfileIfNotExists(string profileName, string modelName, string environmentPath)
         {

@@ -170,8 +170,9 @@
                 <!-- 🔷 Row 3: Add Model -->
                 <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="10" Margin="0,10,0,0">
                     <TextBox x:Name="ModelPathTextBox" Width="300" PlaceholderText="Browse model folder..." IsReadOnly="True" />
-                    <Button Content="Browse" Click="BrowseModel_Click" />
-                    <Button Content="Add Model" Click="AddModel_Click" />
+                    <Button Content="Browse" Click="BrowseModel_Click" ToolTipService.ToolTip="Browse for existing models" />
+                    <Button Content="Add Model" Click="AddModel_Click" ToolTipService.ToolTip="Add model in the path to selected profile"  />
+                    <Button Content="+ Create" Click="CreateModel_Click" ToolTipService.ToolTip="Create a new model from scratch in the selected profile" />
                 </StackPanel>
             </Grid>
 

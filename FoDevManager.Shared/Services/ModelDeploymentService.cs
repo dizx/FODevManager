@@ -18,13 +18,16 @@ namespace FODevManager.Services
         private readonly FileService _fileService;
         private readonly string _deploymentBasePath;
         private readonly string _defaultSourceDirectory;
+        private readonly int _modelIdBegin;
+        private readonly int _modelIdEnd;
 
         public ModelDeploymentService(AppConfig config, FileService fileService)
         {
             _fileService = fileService;
             _deploymentBasePath = config.DeploymentBasePath;
             _defaultSourceDirectory = config.DefaultSourceDirectory;
-            
+            _modelIdBegin = config.ModelIdBegin;
+            _modelIdEnd = config.ModelIdEnd;
 
             // Ensure directories exist
             FileHelper.EnsureDirectoryExists(_deploymentBasePath);
@@ -378,6 +381,59 @@ namespace FODevManager.Services
             }
         }
 
+
+        public bool CreateModel(string modelName, ProfileModel profile)
+        {
+            try
+            {
+                string modelRoot = Path.Combine(_defaultSourceDirectory, modelName);
+                string metadataFolder = Path.Combine(modelRoot, "Metadata", modelName);
+                string projectFolder = Path.Combine(modelRoot, "Project", modelName);
+                string metadataSubfolder = Path.Combine(metadataFolder, modelName);
+                string descriptorFolder = Path.Combine(metadataFolder, "Descriptor");
+                string xppMetadataFolder = Path.Combine(metadataFolder, "XppMetadata", modelName);
+
+                // Create required folders
+                FileHelper.EnsureDirectoryExists(metadataFolder);
+                FileHelper.EnsureDirectoryExists(projectFolder);
+                FileHelper.EnsureDirectoryExists(metadataSubfolder);
+                FileHelper.EnsureDirectoryExists(descriptorFolder);
+                FileHelper.EnsureDirectoryExists(xppMetadataFolder);
+
+                // Create .rnrproj
+                string projectFilePath = CreateProjectFile(modelName, projectFolder);
+
+                // Create model descriptor XML
+                int modelId = new Random().Next(_modelIdBegin, _modelIdEnd);
+                string modelXml = GenerateModelXml(modelName, modelId);
+                string descriptorPath = Path.Combine(descriptorFolder, $"{modelName}.xml");
+                File.WriteAllText(descriptorPath, modelXml, Encoding.UTF8);
+
+                // Register in profile
+                if (!profile.Environments.Any(e => e.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    profile.Environments.Add(new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelRootFolder = modelRoot,
+                        ProjectFilePath = projectFilePath,
+                        MetadataFolder = metadataFolder,
+                        IsDeployed = false
+                    });
+
+                    _fileService.SaveProfile(profile);
+                }
+
+                MessageLogger.Highlight($"✅ Model '{modelName}' created successfully at: {modelRoot}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Failed to create model '{modelName}': {ex.Message}");
+                return false;
+            }
+        }
+
         public bool ConvertInstalledModelToProjectModel(string modelName, ProfileModel profile, string? projectFolderNameOverride = null)
         {
             string sourceModelPath = Path.Combine(_deploymentBasePath, modelName);
@@ -396,13 +452,10 @@ namespace FODevManager.Services
             try
             {
                 FileHelper.EnsureDirectoryExists(metadataTargetPath);
-                FileHelper.EnsureDirectoryExists(projectTargetPath);
 
                 FileHelper.CopyDirectory(sourceModelPath, metadataTargetPath);
 
-                string guid = Guid.NewGuid().ToString("D");
-                string projectFilePath = Path.Combine(projectTargetPath, $"{modelName}.rnrproj");
-                File.WriteAllText(projectFilePath, GenerateRnrprojTemplate(modelName, guid), Encoding.UTF8);
+                string projectFilePath = CreateProjectFile(modelName, projectTargetPath);
 
                 MessageLogger.Info($"📁 Created project structure at: {projectRootPath}");
 
@@ -452,84 +505,40 @@ namespace FODevManager.Services
             }
         }
 
-
-
-        private static void CopyDirectory(string sourceDir, string targetDir)
+        private string CreateProjectFile(string modelName, string projectFolder)
         {
-            foreach (string dir in Directory.GetDirectories(sourceDir, "*", SearchOption.AllDirectories))
-            {
-                Directory.CreateDirectory(dir.Replace(sourceDir, targetDir));
-            }
+            FileHelper.EnsureDirectoryExists(projectFolder);
 
-            foreach (string file in Directory.GetFiles(sourceDir, "*.*", SearchOption.AllDirectories))
-            {
-                string destFile = file.Replace(sourceDir, targetDir);
-                File.Copy(file, destFile, true);
-            }
+            string projectGuid = Guid.NewGuid().ToString("D");
+            string projectFilePath = Path.Combine(projectFolder, $"{modelName}.rnrproj");
+
+            string content = GenerateProjectFromTemplate(modelName, projectGuid);
+            File.WriteAllText(projectFilePath, content, Encoding.UTF8);
+
+            MessageLogger.Info($"📄 Created .rnrproj file for model '{modelName}'");
+
+            return projectFilePath;
         }
 
-        private static string GenerateRnrprojTemplate(string modelName, string guid) =>
-        $@"<?xml version=""1.0"" encoding=""utf-8""?>
-        <Project ToolsVersion=""14.0"" DefaultTargets=""Build"" xmlns=""http://schemas.microsoft.com/developer/msbuild/2003"">
-          <PropertyGroup>
-            <Configuration Condition="" '$(Configuration)' == '' "">Debug</Configuration>
-            <Platform Condition="" '$(Platform)' == '' "">AnyCPU</Platform>
-            <BuildTasksDirectory Condition="" '$(BuildTasksDirectory)' == ''"">$(MSBuildProgramFiles32)\MSBuild\Microsoft\Dynamics\AX</BuildTasksDirectory>
-            <Model>{modelName}</Model>
-            <TargetFrameworkVersion>v4.6</TargetFrameworkVersion>
-            <OutputPath>bin</OutputPath>
-            <SchemaVersion>2.0</SchemaVersion>
-            <GenerateCrossReferences>True</GenerateCrossReferences>
-            <RunAppCheckerRules>False</RunAppCheckerRules>
-            <LogAppcheckerDiagsAsErrors>False</LogAppcheckerDiagsAsErrors>
-            <DeployOnline>False</DeployOnline>
-            <ProjectGuid>{{{guid}}}</ProjectGuid>
-            <Name>{modelName}</Name>
-            <RootNamespace>{modelName}</RootNamespace>
-          </PropertyGroup>
-          <PropertyGroup Condition=""'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'"">
-            <Configuration>Debug</Configuration>
-            <DBSyncInBuild>False</DBSyncInBuild>
-            <GenerateFormAdaptors>False</GenerateFormAdaptors>
-            <Company></Company>
-            <Partition>initial</Partition>
-            <PlatformTarget>AnyCPU</PlatformTarget>
-            <DataEntityExpandParentChildRelations>False</DataEntityExpandParentChildRelations>
-            <DataEntityUseLabelTextAsFieldName>False</DataEntityUseLabelTextAsFieldName>
-          </PropertyGroup>
-          <PropertyGroup Condition="" '$(Configuration)' == 'Debug' "">
-            <DebugSymbols>true</DebugSymbols>
-            <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
-          </PropertyGroup>
-          <Import Project=""$(MSBuildBinPath)\Microsoft.Common.targets"" />
-          <Import Project=""$(BuildTasksDirectory)\Microsoft.Dynamics.Framework.Tools.BuildTasks.17.0.targets"" />
-        </Project>";
-
-
-        private static string Slugify(string input, int maxTotalLength, string branchPrefix)
+        private string GenerateProjectFromTemplate(string modelName, string guid)
         {
-            if (string.IsNullOrWhiteSpace(input))
-                return string.Empty;
+            string path = Path.Combine(AppContext.BaseDirectory, "Templates", "ProjectTemplate.rnrproj");
+            if (!File.Exists(path)) throw new FileNotFoundException("Project template file not found.");
 
-            var invalidChars = Path.GetInvalidFileNameChars().ToHashSet();
-
-            // Convert to URL-safe/branch-safe slug
-            var slug = new string(input
-                .ToLowerInvariant()
-                .Replace(" ", "-")
-                .Where(c => !invalidChars.Contains(c))
-                .ToArray());
-
-            int remainingLength = maxTotalLength - branchPrefix.Length;
-
-            if (remainingLength <= 0)
-                return string.Empty;
-
-            return slug.Length > remainingLength
-                ? slug.Substring(0, remainingLength)
-                : slug;
+            string template = File.ReadAllText(path);
+            return template
+                .Replace("{{ModelName}}", modelName)
+                .Replace("{{Guid}}", guid);
         }
 
+        private string GenerateModelXml(string modelName, int modelId)
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "Templates", "ModelTemplate.xml");
+            if (!File.Exists(path)) throw new FileNotFoundException("Missing ModelTemplate.xml");
+
+            string template = File.ReadAllText(path);
+            return template.Replace("{modelName}", modelName).Replace("{modelId}", modelId.ToString());
+        }
     }
 }
 
