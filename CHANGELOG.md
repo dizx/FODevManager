@@ -2,6 +2,17 @@
 
 ---
 
+### [0.8.5] – 2025-05-13
+
+#### ✨ Added
+- **Create Model from Scratch**  
+  Added a `+ Create` button in the UI to generate a new model structure directly from the app.
+  - Prompts for model name
+  - Automatically generates folders, `.rnrproj`, and metadata
+- **New `CreateModelFromScratch` service function** for profile-based model scaffolding
+- **New UI integration**: "Create" button next to "Browse" and "Add Model"
+
+
 ## [0.8.4] – 2025-05-22
 
 ### Added
