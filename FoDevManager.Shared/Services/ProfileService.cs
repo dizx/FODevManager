@@ -246,7 +246,43 @@ namespace FODevManager.Services
                 return;
             }
 
+            if (HasSeveralModelsInEnvironment(environmentPath, out var modelFolders))
+            {
+                MessageLogger.Highlight($"📦 Detected multiple models under metadata/. Adding all valid models...");
+
+                foreach (var metadataPath in modelFolders)
+                {
+                    var detectedModelName = Path.GetFileName(metadataPath);
+                    try
+                    {
+                        AddModelToProfileIfNotExists(profileName, detectedModelName, environmentPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageLogger.Warning($"⚠️ Skipping model '{detectedModelName}': {ex.Message}");
+                    }
+                }
+
+                return;
+            }
+
             AddModelToProfileIfNotExists(profileName, modelName, environmentPath);
+        }
+
+        private static bool HasSeveralModelsInEnvironment(string environmentPath, out string[] modelFolders)
+        {
+            modelFolders = new string[] { };
+            var metadataRoot = Path.Combine(environmentPath, "metadata");
+
+            if (Directory.Exists(metadataRoot))
+            {
+                modelFolders = Directory.GetDirectories(metadataRoot);
+
+                return modelFolders.Length > 1;
+            }
+
+            
+            return false;
         }
 
         public void CreateModel(string profileName, string modelName)
