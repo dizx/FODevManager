@@ -2,6 +2,14 @@
 
 ---
 
+## [0.8.6] - 2025-07-03
+
+### Added
+- ✨ Support for multi-model repositories in `AddEnvironment`:
+  - When adding a repository containing multiple models under `metadata/`, each valid model is now automatically added to the profile.
+  - Matching `.rnrproj` files under `project/<model>/<model>.rnrproj` are detected per model.  
+
+
 ### [0.8.5] – 2025-05-13
 
 #### ✨ Added
