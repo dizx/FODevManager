@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="FODevManager.WinUI.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:FODevManager.WinUI"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <StackPanel Spacing="16" Padding="16">
+        <ToggleSwitch
+            Header="Check uncommitted changes on profile switch"
+            IsOn="{Binding CheckUncommittedBeforeSwitch, Mode=TwoWay}"/>
+
+        <TextBlock Text="Default source folder" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBox Width="480" Text="{Binding DefaultSourceDirectory, Mode=TwoWay}" />
+            <Button Content="Browse…" Click="OnBrowseClick"/>
+        </StackPanel>
+
+        <Button Content="Save" Click="OnSaveClick" />
+    </StackPanel>
+</Page>

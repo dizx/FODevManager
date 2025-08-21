@@ -68,7 +68,7 @@ namespace FODevManager.Services
 
                 foreach (var model in profile.Environments)
                 {
-                    string linkPath = Path.Combine(_deploymentBasePath, profileName);
+                    string linkPath = Path.Combine(_deploymentBasePath, model.ModelName);
 
                     if (!model.IsDeployed && !Directory.Exists(linkPath))
                     {

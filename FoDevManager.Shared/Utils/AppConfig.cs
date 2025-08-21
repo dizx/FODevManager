@@ -17,6 +17,8 @@ namespace FODevManager.Utils
 
         public int ModelIdEnd { get; set; }
 
+        public bool CheckUncommittedBeforeSwitch { get; set; } = true;
+
         public AppConfig(IConfiguration configuration)
         {
             ProfileStoragePath = Environment.ExpandEnvironmentVariables(configuration["ProfileStoragePath"]);
@@ -24,6 +26,9 @@ namespace FODevManager.Utils
             DefaultSourceDirectory = Environment.ExpandEnvironmentVariables(configuration["DefaultSourceDirectory"]);
             ModelIdBegin = int.Parse(Environment.ExpandEnvironmentVariables(configuration["ModelIdBegin"] ?? "896001001"));
             ModelIdEnd = int.Parse(Environment.ExpandEnvironmentVariables(configuration["ModelIdEnd"] ?? "896009999"));
+
+            var toggle = Environment.ExpandEnvironmentVariables(configuration["CheckUncommittedBeforeSwitch"]);
+            if (bool.TryParse(toggle, out var onOff)) CheckUncommittedBeforeSwitch = onOff;
 
         }
     }

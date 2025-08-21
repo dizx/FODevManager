@@ -15,6 +15,7 @@ namespace FODevManager.Services
         private readonly string _defaultSourceDirectory;
         private readonly string _deploymentBasePath;
         private readonly string _profileStoragePath;
+        private readonly bool _checkUncommittedBeforeSwitch;
         private readonly FileService _fileService;
         private readonly VisualStudioSolutionService _solutionService;
         private readonly ModelDeploymentService _modelDeploymentService;
@@ -24,10 +25,13 @@ namespace FODevManager.Services
             _defaultSourceDirectory = config.DefaultSourceDirectory;
             _deploymentBasePath = config.DeploymentBasePath;
             _profileStoragePath = config.ProfileStoragePath;
+            _checkUncommittedBeforeSwitch = config.CheckUncommittedBeforeSwitch;
             _fileService = fileService;
             _solutionService = solutionService;
             _modelDeploymentService = modelDeploymentService;
             FileHelper.EnsureDirectoryExists(_defaultSourceDirectory);
+            
+
         }
 
         public void CreateProfile(string profileName)
@@ -71,7 +75,7 @@ namespace FODevManager.Services
                 var currentProfile = _fileService.LoadProfile(currentProfileName);
                 foreach (var model in currentProfile.Environments)
                 {
-                    if (GitHelper.IsGitRepository(model.ModelRootFolder) && GitHelper.HasUncommittedChanges(model.ModelRootFolder))
+                    if (_checkUncommittedBeforeSwitch && GitHelper.IsGitRepository(model.ModelRootFolder) && GitHelper.HasUncommittedChanges(model.ModelRootFolder))
                     {
                         MessageLogger.Error($"❌ Uncommitted Git changes found in model '{model.ModelName}'. Switch aborted.");
                         return false;
@@ -476,7 +480,7 @@ namespace FODevManager.Services
         {
             string solutionFilePath = _solutionService.GetSolutionFilePath(profileName);
             
-            var profile = _fileService.LoadProfile(solutionFilePath);
+            var profile = _fileService.LoadProfile(profileName);
 
             // Remove each project from the solution before deleting the profile
             foreach (var model in profile.Environments)

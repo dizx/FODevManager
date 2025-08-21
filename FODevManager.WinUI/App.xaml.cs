@@ -1,4 +1,5 @@
-﻿using FODevManager.Services;
+using FODevManager.Services;
+using FODevManager.Shared.Utils;
 using FODevManager.Utils;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -75,6 +76,8 @@ namespace FODevManager.WinUI
         private ServiceProvider ConfigureServices()
         {
             var services = new ServiceCollection();
+
+
             var config = new AppConfig(new ConfigurationBuilder().AddJsonFile("appsettings.json").Build());
 
             services.AddSingleton(config);
@@ -82,6 +85,7 @@ namespace FODevManager.WinUI
             services.AddSingleton<FileService>();
             services.AddSingleton<ModelDeploymentService>();
             services.AddSingleton<VisualStudioSolutionService>();
+            services.AddSingleton<AppConfigWriter>();
             return services.BuildServiceProvider();
         }
 

@@ -26,7 +26,7 @@ namespace FODevManager.Messages
                 _ => ConsoleColor.White
             };
 
-            var lines = msg.Content.Split(new[] { "\\r\\n", "\\n", "\\r" }, StringSplitOptions.None);
+            var lines = msg.Content.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
 
             foreach (var line in lines)
             {

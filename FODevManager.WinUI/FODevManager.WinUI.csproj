@@ -16,6 +16,9 @@
 	<FileVersion>0.8.6.0</FileVersion>
 	<Version>0.8.6</Version>
   </PropertyGroup>
+  <ItemGroup>
+    <None Remove="SettingsPage.xaml" />
+  </ItemGroup>
 
   <ItemGroup>
     <Content Include="Assets\SplashScreen.scale-200.png" />
@@ -63,6 +66,9 @@
     <None Update="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <Page Update="SettingsPage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <None Update="Templates\ModelTemplate.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
