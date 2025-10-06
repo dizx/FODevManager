@@ -201,7 +201,7 @@ namespace FODevManager.Services
 
                 if (Directory.Exists(linkPath))
                 {
-                    MessageLogger.Error($"Removing existing link: {linkPath}");
+                    MessageLogger.Highlight($"Removing existing link: {linkPath}");
                     Directory.Delete(linkPath);
                 }
 

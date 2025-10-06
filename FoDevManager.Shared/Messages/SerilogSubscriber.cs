@@ -3,11 +3,13 @@ using FODevManager.Messages;
 
 namespace FODevManager.Logging
 {
-    public class SerilogSubscriber : IMessageSubscriber
+    public class SerilogSubscriber : IMessageSubscriber, IDisposable
     {
+        private readonly IDisposable _busSub;
+
         public SerilogSubscriber()
         {
-            MessageBus.Instance.OnMessagePublished += LogWithSerilog;
+            _busSub = MessageBus.Subscribe(LogWithSerilog);
         }
 
         private void LogWithSerilog(Message msg)
@@ -33,6 +35,11 @@ namespace FODevManager.Logging
                     Log.Debug(msg.Content);
                     break;
             }
+        }
+
+        public void Dispose()
+        {
+            _busSub.Dispose(); // unsubscribe
         }
     }
 }
