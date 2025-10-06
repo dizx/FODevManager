@@ -17,6 +17,7 @@
 	<Version>0.8.6</Version>
   </PropertyGroup>
   <ItemGroup>
+    <None Remove="BusyOverlay.xaml" />
     <None Remove="SettingsPage.xaml" />
   </ItemGroup>
 
@@ -66,6 +67,9 @@
     <None Update="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <Page Update="BusyOverlay.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Update="SettingsPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>

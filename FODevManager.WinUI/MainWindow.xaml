@@ -215,6 +215,10 @@
                 </Button>
             </Grid>
 
+            <Frame x:Name="RootFrame"/>
+            <local:BusyOverlay Grid.RowSpan="3" 
+                DataContext="{x:Bind BusyOverlayVm, Mode=OneWay}"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
         </Grid>
     </Border>
 </Window>

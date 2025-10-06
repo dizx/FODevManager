@@ -1,51 +1,58 @@
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using FODevManager.Services;
-using FODevManager.Models;
-using System.Collections.Generic;
-using System.Linq;
-using System;
-using Microsoft.UI.Composition.SystemBackdrops;
-using Microsoft.UI.Composition;
-using Microsoft.UI.Xaml.Media;
-using WinRT;
-using Microsoft.UI.Windowing;
-using Microsoft.UI;
+using FODevManager.Logging;
 using FODevManager.Messages;
+using FODevManager.Models;
+using FODevManager.Services;
 using FODevManager.Shared.Utils;
 using FODevManager.Utils;
-using System.Reflection;
+using FODevManager.WinUI.Framework;
 using FODevManager.WinUI.ViewModel;
+using Microsoft.UI;
+using Microsoft.UI.Composition;
+using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Text;
-using Windows.UI.Text;
+using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Serilog;
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using FODevManager.Logging;
-using Serilog;
+using System.Linq;
+using System.Reflection;
+using System.Threading.Tasks;
+using Windows.UI.Text;
+using WinRT;
 
 
 namespace FODevManager.WinUI
 {
     public sealed partial class MainWindow : Window
     {
-        private readonly UIMessageSubscriber _uiSubscriber = new();
+        private readonly UIMessageSubscriber _uiSubscriber;
 
         private readonly ProfileService _profileService;
         private readonly FileService _fileService;
         private readonly ModelDeploymentService _deploymentService;
-
         private MicaController? _micaController;
         private SystemBackdropConfiguration? _backdropConfig;
         private AppWindow _appWindow;
+        public BusyOverlayViewModel BusyOverlayVm { get; }
+
 
         public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService)
         {
             this.InitializeComponent();
             this.Activated += MainWindow_Activated;
 
+            BusyOverlayVm = new BusyOverlayViewModel();
+            this.Activated += MainWindow_Activated;
+
+
             Singleton<Engine>.Instance.EnvironmentType = EnvironmentType.WinUi;
 
-            _uiSubscriber = new UIMessageSubscriber();
+            _uiSubscriber = new UIMessageSubscriber(this.DispatcherQueue);
             var serilogSubscriber = new SerilogSubscriber();
 
             LogPreviewList.ItemsSource = _uiSubscriber.RecentMessages;
@@ -53,6 +60,7 @@ namespace FODevManager.WinUI
             _profileService = profileService;
             _fileService = fileService;
             _deploymentService = deploymentService;
+
 
             // Initialize Mica + TitleBar
             ApplyMicaEffect();
@@ -67,6 +75,8 @@ namespace FODevManager.WinUI
             LoadProfiles();
 
             UIMessageHelper.LogToUI($"READY...");
+
+            this.Closed += (_, __) => BusyOverlayVm.Dispose();
         }
         private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
         {
@@ -285,31 +295,33 @@ namespace FODevManager.WinUI
         }
 
 
-
-
-        private void DeployModel_Click(object sender, RoutedEventArgs e)
+        private async void DeployModel_Click(object sender, RoutedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is not string profileName)
                 return;
 
             if (sender is Button button && button.Tag is string modelName)
             {
-                DeployModel(profileName, modelName);
-                LoadModelListViewData(profileName);
-                UIMessageHelper.LogToUI($"🚀 Deployed model '{modelName}'");
+                if(await DeployModel(profileName, modelName))
+                {
+                    LoadModelListViewData(profileName);
+                    UIMessageHelper.LogToUI($"🚀 Deployed model '{modelName}'");
+                }                
             }
         }
 
-        private void UnDeployModel_Click(object sender, RoutedEventArgs e)
+        private async void UnDeployModel_Click(object sender, RoutedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is not string profileName)
                 return;
 
             if (sender is Button button && button.Tag is string modelName)
             {
-                UnDeployModel(profileName, modelName);
-                LoadModelListViewData(profileName);
-                UIMessageHelper.LogToUI($"🧯 Undeployed model '{modelName}'");
+                if(await UnDeployModel(profileName, modelName))
+                {
+                    LoadModelListViewData(profileName);
+                    UIMessageHelper.LogToUI($"🧯 Undeployed model '{modelName}'");
+                }                
             }
         }
 
@@ -725,14 +737,17 @@ namespace FODevManager.WinUI
             return success;
         }
 
-        private void DeployModel(string profileName, string modelName)
+        private async Task<bool> DeployModel(string profileName, string modelName)
         {
-            TryCatch(() => _deploymentService.DeployModel(profileName, modelName));
+            return await BusyOps.TryCatchAsync(() => Task.Run(() => _deploymentService.DeployModel(profileName, modelName)), "Deploy models");
+
+            //TryCatch(() => _deploymentService.DeployModel(profileName, modelName), "Deploy Model");
         }
 
-        private void UnDeployModel(string profileName, string modelName)
+        private async Task<bool> UnDeployModel(string profileName, string modelName)
         {
-            TryCatch(() => _deploymentService.UnDeployModel(profileName, modelName));
+            return await BusyOps.TryCatchAsync(() => Task.Run(() => _deploymentService.UnDeployModel(profileName, modelName)), "Undeploy models");
+            
         }
 
         private void DeployAllModels(string profileName)
