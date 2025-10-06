@@ -188,26 +188,31 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- 🧾 Log Area -->
-                <ItemsControl x:Name="LogPreviewList"
-                  Grid.Column="0"
-                  Margin="0,0,10,0">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding Content}"
-                           TextWrapping="Wrap"
-                           FontSize="12"
-                           Margin="2"
-                           Foreground="{Binding Type, Converter={StaticResource MessageTypeToColorConverter}}" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <ListView x:Name="LogPreviewList"
+                    Grid.Column="0" Margin="0,0,10,0" SelectionMode="None" ScrollViewer.VerticalScrollBarVisibility="Visible">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <!-- kill extra space -->
+                            <Setter Property="MinHeight" Value="0"/>
+                            <Setter Property="Padding" Value="1"/>
+                            <Setter Property="Margin" Value="1"/>
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="VerticalContentAlignment" Value="Top"/>
+                            
+                        </Style>
+                    </ListView.ItemContainerStyle>
 
+                    <!-- keep the item content tight too -->
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Content}" TextWrapping="Wrap" FontSize="12" Margin="1" Foreground="{Binding Type, Converter={StaticResource MessageTypeToColorConverter}}" />
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+
+                   
+                </ListView>
                 <!-- ℹ️ About Button (always clickable now) -->
-                <Button Grid.Column="1"
-            VerticalAlignment="Bottom"
-            Margin="0,0,0,0"
-            Click="ShowAboutDialog_Click"
-            ToolTipService.ToolTip="About this app">
+                <Button Grid.Column="1" VerticalAlignment="Bottom" Margin="0,0,0,0" Click="ShowAboutDialog_Click" ToolTipService.ToolTip="About this app">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE946;" FontSize="14" />
                         <TextBlock Text="About" />

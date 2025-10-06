@@ -2,6 +2,7 @@
 using System.Collections.ObjectModel;
 using Microsoft.UI.Dispatching;
 using FODevManager.Messages;
+using Microsoft.UI.Xaml.Controls;
 
 namespace FODevManager.WinUI.Framework
 {
@@ -9,7 +10,7 @@ namespace FODevManager.WinUI.Framework
     {
         public ObservableCollection<Message> RecentMessages { get; } = new();
 
-        private const int MaxMessages = 8;
+        private const int MaxMessages = 2000;
         private readonly DispatcherQueue _dispatcher;
         private readonly IDisposable _subscription;
 
@@ -39,8 +40,14 @@ namespace FODevManager.WinUI.Framework
 
                     RecentMessages.Add(new Message(text, msg.Type));
                 }
+                if (RecentMessages.Count > 0)
+                    LogPreviewList?.ScrollIntoView(RecentMessages[RecentMessages.Count - 1]);
+
             });
         }
+
+        public ListView? LogPreviewList {  get; set; }
+
 
         public void Dispose() => _subscription.Dispose();
     }

@@ -52,10 +52,15 @@ namespace FODevManager.WinUI
 
             Singleton<Engine>.Instance.EnvironmentType = EnvironmentType.WinUi;
 
-            _uiSubscriber = new UIMessageSubscriber(this.DispatcherQueue);
+            _uiSubscriber = new UIMessageSubscriber(this.DispatcherQueue)
+            {
+                LogPreviewList = this.LogPreviewList
+            };
+            LogPreviewList.ItemsSource = _uiSubscriber.RecentMessages;
+
             var serilogSubscriber = new SerilogSubscriber();
 
-            LogPreviewList.ItemsSource = _uiSubscriber.RecentMessages;
+
 
             _profileService = profileService;
             _fileService = fileService;
