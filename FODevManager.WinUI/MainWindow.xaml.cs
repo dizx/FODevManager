@@ -616,7 +616,28 @@ namespace FODevManager.WinUI
 
             return File.GetLastWriteTime(filePath);
         }
+            
 
+        private async void OpenSettings_Click(object sender, RoutedEventArgs e)
+        {
+            var settingsPage = new SettingsPage
+            {
+                MinWidth = 800,   
+                MinHeight = 500
+            };
+            var dialog = new ContentDialog
+            {
+                Title = "Settings",
+                Content = settingsPage,
+                PrimaryButtonText = "Close",
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            dialog.MaxWidth = 1200;
+            dialog.MinWidth = 800; 
+
+            await dialog.ShowAsync();
+        }
 
         private async void ShowAboutDialog_Click(object sender, RoutedEventArgs e)
         {

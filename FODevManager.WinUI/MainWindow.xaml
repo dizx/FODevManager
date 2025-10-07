@@ -211,6 +211,13 @@
 
                    
                 </ListView>
+                <Button Grid.Column="2" VerticalAlignment="Bottom" Margin="0,0,0,0" Click="OpenSettings_Click" ToolTipService.ToolTip="Settings">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE946;" FontSize="14" />
+                        <TextBlock Text="Settings" />
+                    </StackPanel>
+                </Button>
+
                 <!-- ℹ️ About Button (always clickable now) -->
                 <Button Grid.Column="1" VerticalAlignment="Bottom" Margin="0,0,0,0" Click="ShowAboutDialog_Click" ToolTipService.ToolTip="About this app">
                     <StackPanel Orientation="Horizontal" Spacing="4">
