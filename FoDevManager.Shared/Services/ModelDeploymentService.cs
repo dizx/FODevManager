@@ -55,7 +55,7 @@ namespace FODevManager.Services
             }
         }
 
-        public void DeployAllUndeployedModels(string profileName)
+        public bool DeployAllUndeployedModels(string profileName)
         {
             MessageLogger.Info("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
             ServiceHelper.StopW3SVC();
@@ -82,7 +82,7 @@ namespace FODevManager.Services
                 if (!anyUndeployed)
                 {
                     MessageLogger.Info($"✅ All models in profile '{profileName}' are already deployed.");
-                    return;
+                    return false;
                 }
 
                 _fileService.SaveProfile(profile);
@@ -97,7 +97,9 @@ namespace FODevManager.Services
             {
                 MessageLogger.Info("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
                 ServiceHelper.StartW3SVC();
+                
             }
+            return true;
         }
 
         public void UnDeployModel(string profileName, string modelName)
