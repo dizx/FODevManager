@@ -22,6 +22,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using Windows.System;
 using Windows.UI.Text;
 using WinRT;
 
@@ -39,7 +40,7 @@ namespace FODevManager.WinUI
         private SystemBackdropConfiguration? _backdropConfig;
         private AppWindow _appWindow;
         public BusyOverlayViewModel BusyOverlayVm { get; }
-
+        public ProfileModel ActiveProfile { get; set; }
 
         public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService)
         {
@@ -159,6 +160,8 @@ namespace FODevManager.WinUI
         {
             if (profile == null)
                 return;
+
+            ActiveProfile = profile;
 
             ProfilesDropdown.SelectedItem = profile.ProfileName;
             LoadModelListViewData(profile.ProfileName);
@@ -803,7 +806,60 @@ namespace FODevManager.WinUI
             return profile;
         }
 
-        
+        private void DatabaseNameTextBox_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
+        {
+            DatabaseNameTextBox.IsReadOnly = false;
+        }
+
+        private async void DatabaseNameTextBox_KeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+        {
+            if (e.Key != VirtualKey.Enter) return;
+
+            if(ActiveProfile == null) return;
+
+            var newDbString = (DatabaseNameTextBox.Text ?? string.Empty).Trim();
+            if (newDbString.Equals(ActiveProfile.DatabaseName, StringComparison.Ordinal))
+            {
+                // nothing changed—do nothing
+                MessageLogger.Info("Database name unchanged.");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(newDbString))
+            {
+                MessageLogger.Warning("Database name cannot be empty.");
+                DatabaseNameTextBox.Text = ActiveProfile.DatabaseName;
+                return;
+            }
+
+            var dialog = new ContentDialog
+            {
+                Title = "Apply database change?",
+                Content = $"Change database for profile '{ActiveProfile.ProfileName}' to:\n\n“{newDbString}”\n\nApply now?",
+                PrimaryButtonText = "Yes",
+                CloseButtonText = "No",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result != ContentDialogResult.Primary)
+            {
+                // revert if user says No
+                DatabaseNameTextBox.Text = ActiveProfile.DatabaseName;
+                DatabaseNameTextBox.IsReadOnly = true;
+                MessageLogger.Info("Database change cancelled.");
+                return;
+            }
+
+            TryCatch(() =>
+            {
+                _profileService.SetDatabaseName(ActiveProfile.ProfileName, newDbString);
+                ActiveProfile.DatabaseName = newDbString;
+                DatabaseNameTextBox.IsReadOnly = true;
+                MessageLogger.Highlight($"✅ Database name updated to: {newDbString}");
+            });
+        }
     }
 }
 
