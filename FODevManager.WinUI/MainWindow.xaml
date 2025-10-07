@@ -136,7 +136,7 @@
                             <Setter Property="VerticalContentAlignment" Value="Center"/>
                             <Setter Property="MinHeight" Value="40"/>
                             <Setter Property="Padding" Value="4"/>
-                        </Style>
+                        </Style>    
                     </ListView.ItemContainerStyle>
                     <ListView.ItemTemplate>
                         <DataTemplate>

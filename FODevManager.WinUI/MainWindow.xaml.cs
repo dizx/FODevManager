@@ -32,7 +32,6 @@ namespace FODevManager.WinUI
     public sealed partial class MainWindow : Window
     {
         private readonly UIMessageSubscriber _uiSubscriber;
-
         private readonly ProfileService _profileService;
         private readonly FileService _fileService;
         private readonly ModelDeploymentService _deploymentService;
