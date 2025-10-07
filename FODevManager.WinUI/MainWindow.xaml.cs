@@ -497,12 +497,12 @@ namespace FODevManager.WinUI
         }
 
 
-        private void DeployProfile_Click(object sender, RoutedEventArgs e)
+        private async void DeployProfile_Click(object sender, RoutedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
                 UpdateStatus($"Deploying profile '{profileName}'...");
-                DeployAllModels(profileName);
+                await DeployAllModels(profileName);
                 UpdateStatus($"✅ Deployment complete for '{profileName}'.");
             }
         }
@@ -516,17 +516,17 @@ namespace FODevManager.WinUI
             }
         }
 
-        private void RefreshProfile_Click(object sender, RoutedEventArgs e)
+        private async void RefreshProfile_Click(object sender, RoutedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
-                CheckProfile(profileName);
+                await CheckProfile(profileName);
                 LoadModelListViewData(profileName);
             }
         }
 
         private async void SwitchProfile_Click(object sender, RoutedEventArgs e)
-        {
+        {   
             if (ProfilesDropdown.SelectedItem is not string newProfile)
                 return;
 
@@ -541,26 +541,16 @@ namespace FODevManager.WinUI
             }.ShowAsync();
 
             if (result != ContentDialogResult.Primary)
-                return;
+                return; 
 
-            try
+            if (await SwitchProfile(newProfile))
             {
-                //UIMessageHelper.LogToUI($"🔄 Switching to profile '{newProfile}'...");
-                if (SwitchProfile(newProfile))
-                {
-                    UIMessageHelper.LogToUI($"✅ Switched to profile '{newProfile}'");
-                    LoadModelListViewData(newProfile);
-                }
-                else
-                {
-                    SetProfile(GetActiveProfile());
-                }
-
-
+                UIMessageHelper.LogToUI($"✅ Switched to profile '{newProfile}'");
+                LoadModelListViewData(newProfile);
             }
-            catch (Exception ex)
+            else
             {
-                UIMessageHelper.LogToUI($"❌ Failed to switch profile: {ex.Message}", MessageType.Error);
+                SetProfile(GetActiveProfile());
             }
         }
 
@@ -679,11 +669,17 @@ namespace FODevManager.WinUI
             await dialog.ShowAsync();
         }
 
-        private static void TryCatch(Action asyncFunc)
+        private static async Task<bool> RunOperationAsync(Action action, string operationName)
+        {
+            return await BusyOps.TrySyncAsAsync(action, operationName);
+
+        }
+
+        private static void TryCatch(Action action)
         {
             try
             {
-                asyncFunc();
+                action();
             }
             catch (Exception ex)
             {
@@ -694,34 +690,34 @@ namespace FODevManager.WinUI
 
         // -------- Service Calls --------
 
-        private void CreateModel(string profileName, string modelName)
+        private async Task<bool> CreateModel(string profileName, string modelName)
         {
-            TryCatch(() => _profileService.CreateModel(profileName, modelName));
+            return await RunOperationAsync(() => _profileService.CreateModel(profileName, modelName), "Create model");
         }
 
-        private void RemoveModelFromProfile(string profileName, string modelName)
+        private async Task<bool> RemoveModelFromProfile(string profileName, string modelName)
         {
-            TryCatch(() => _profileService.RemoveModelFromProfile(profileName, modelName));
+            return await RunOperationAsync(() => _profileService.RemoveModelFromProfile(profileName, modelName), "Remove Model From Profile");
         }
 
-        private void AddEnvironmentToProfile(string profileName, string path)
+        private async Task<bool> AddEnvironmentToProfile(string profileName, string path)
         {
-            TryCatch(() => _profileService.AddEnvironment(profileName, string.Empty, path));
+            return await RunOperationAsync(() => _profileService.AddEnvironment(profileName, string.Empty, path), "Add Environment to profile");
         }
 
-        private void CreateProfile(string profileName)
+        private async Task<bool> CreateProfile(string profileName)
         {
-            TryCatch(() => _profileService.CreateProfile(profileName));
+            return await RunOperationAsync(() => _profileService.CreateProfile(profileName), "Create profile");
         }
 
-        private void ImportProfile(string importPath)
+        private async Task<bool> ImportProfile(string importPath)
         {
-            TryCatch(() => _profileService.ImportProfile(importPath));
+            return await RunOperationAsync(() => _profileService.ImportProfile(importPath), "Import profile");
         }
 
-        private void CheckProfile(string profileName)
+        private async Task<bool> CheckProfile(string profileName)
         {
-            TryCatch(() => _profileService.CheckProfile(profileName));
+            return await RunOperationAsync(() => _profileService.CheckProfile(profileName), "Check profile");
         }
 
         private List<ProfileEnvironmentModel> GetModelsInProfile(string profileName)
@@ -738,39 +734,36 @@ namespace FODevManager.WinUI
             return model;
         }
 
-        private bool SwitchProfile(string profileName)
+        private async Task<bool> SwitchProfile(string profileName)
         {
-            bool success = false;
-            TryCatch(() => success = _profileService.SwitchProfile(profileName));
-            return success;
+            var (ok, success) = await BusyOps.TrySyncAsAsync(() => _profileService.SwitchProfile(profileName), "Switch profile");
+            return ok && success;
         }
 
         private async Task<bool> DeployModel(string profileName, string modelName)
         {
-            return await BusyOps.TryCatchAsync(() => Task.Run(() => _deploymentService.DeployModel(profileName, modelName)), "Deploy models");
-
-            //TryCatch(() => _deploymentService.DeployModel(profileName, modelName), "Deploy Model");
+            return await RunOperationAsync(() => _deploymentService.DeployModel(profileName, modelName), "Deploy models");
         }
 
         private async Task<bool> UnDeployModel(string profileName, string modelName)
         {
-            return await BusyOps.TryCatchAsync(() => Task.Run(() => _deploymentService.UnDeployModel(profileName, modelName)), "Undeploy models");
-            
+            return await BusyOps.TrySyncAsAsync(() => _deploymentService.UnDeployModel(profileName, modelName), "Undeploy models");
         }
 
-        private void DeployAllModels(string profileName)
+        private async Task<bool> DeployAllModels(string profileName)
         {
-            TryCatch(() => _deploymentService.DeployAllUndeployedModels(profileName));
+            var (ok, success) = await BusyOps.TrySyncAsAsync(() => _deploymentService.DeployAllUndeployedModels(profileName), "Deploy all models");
+            return ok && success;
         }
 
-        private void UnDeployAllModels(string profileName)
+        private async Task<bool> UnDeployAllModels(string profileName)
         {
-            TryCatch(() => _deploymentService.UnDeployAllModels(profileName));
+            return await RunOperationAsync(() => _deploymentService.UnDeployAllModels(profileName), "Undeploy all models");
         }
 
-        private void AssignPeriTask(string profileName, string modelName, string taskId, string comment)
+        private async Task<bool> AssignPeriTask(string profileName, string modelName, string taskId, string comment)
         {
-            TryCatch(() => _deploymentService.AssignPeriTask(profileName, modelName, taskId, comment));
+            return await RunOperationAsync(() => _deploymentService.AssignPeriTask(profileName, modelName, taskId, comment), "Assign PeriTask");
         }
 
         private string? GetActiveGitBranch(string profileName, string modelName)
