@@ -1,12 +1,10 @@
 ﻿using FODevManager.Messages;
 using FODevManager.Utils;
-using Microsoft.Extensions.Configuration;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.IO;
 using System.Text.Json;
-using System.Threading.Tasks;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 
 namespace FODevManager.Shared.Utils
 {
@@ -14,10 +12,11 @@ namespace FODevManager.Shared.Utils
     {
         private readonly string _configFilePath;
         private readonly AppConfig _config;
+        private readonly object _writeLock = new();
 
-        public AppConfigWriter(IConfiguration configuration)
+        public AppConfigWriter(AppConfig appConfig)
         {
-            _config = new AppConfig(configuration);
+            _config = appConfig ?? throw new ArgumentNullException(nameof(appConfig));
             _configFilePath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
         }
 
@@ -25,16 +24,56 @@ namespace FODevManager.Shared.Utils
 
         public void UpdateSetting(string key, object value)
         {
-            var json = File.ReadAllText(_configFilePath);
-            var doc = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+            if (string.IsNullOrWhiteSpace(key))
+                throw new ArgumentException("Key cannot be empty.", nameof(key));
 
-            if (doc.ContainsKey(key))
-                doc[key] = value;
-            else
-                doc.Add(key, value);
+            try
+            {
+                lock (_writeLock)
+                {
+                    var doc = FileHelper.LoadJson<Dictionary<string, object>>(_configFilePath)
+                      ?? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
-            File.WriteAllText(_configFilePath, JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true }));
+                    // Upsert the key
+                    doc[key] = value;
+
+                    // Save back via your FileHelper
+                    FileHelper.SaveJson(_configFilePath, doc);
+
+                    // Keep in-memory AppConfig aligned
+                    switch (key)
+                    {
+                        case nameof(AppConfig.DefaultSourceDirectory):
+                            _config.DefaultSourceDirectory = Convert.ToString(value) ?? string.Empty;
+                            break;
+                        case nameof(AppConfig.CheckUncommittedBeforeSwitch):
+                             _config.CheckUncommittedBeforeSwitch = Convert.ToBoolean(value);
+                            break;
+                        case nameof(AppConfig.ProfileStoragePath):
+                            _config.ProfileStoragePath = Convert.ToString(value) ?? _config.ProfileStoragePath;
+                            break;
+                        case nameof(AppConfig.DeploymentBasePath):
+                            _config.DeploymentBasePath = Convert.ToString(value) ?? _config.DeploymentBasePath;
+                            break;
+                        case nameof(AppConfig.ModelIdBegin):
+                            _config.ModelIdBegin = Convert.ToInt32(value);
+                            break;
+                        case nameof(AppConfig.ModelIdEnd):
+                            _config.ModelIdEnd = Convert.ToInt32(value);
+                            break;
+                        default:
+                            // unknown key: JSON updated; no in-memory mapping
+                            break;
+                    }
+
+                    MessageLogger.Info($"Config updated: {key} = {value}");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"Failed to update config '{key}': {ex.Message}");
+                throw;
+            }
         }
     }
-
 }

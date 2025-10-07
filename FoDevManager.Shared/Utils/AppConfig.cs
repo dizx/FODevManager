@@ -19,6 +19,11 @@ namespace FODevManager.Utils
 
         public bool CheckUncommittedBeforeSwitch { get; set; } = true;
 
+        public AppConfig()
+        {
+
+        }
+
         public AppConfig(IConfiguration configuration)
         {
             ProfileStoragePath = Environment.ExpandEnvironmentVariables(configuration["ProfileStoragePath"]);
