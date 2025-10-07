@@ -873,6 +873,11 @@ namespace FODevManager.WinUI
                 MessageLogger.Highlight($"✅ Database name updated to: {newDbString}");
             });
         }
+
+        private void Button_Click(object sender, RoutedEventArgs e)
+        {
+
+        }
     }
 }
 
