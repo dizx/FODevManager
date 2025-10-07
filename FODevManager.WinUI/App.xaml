@@ -3,21 +3,31 @@
     x:Class="FODevManager.WinUI.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:FODevManager.WinUI.Converters" xmlns:controls="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+    xmlns:local="using:FODevManager.WinUI.Converters"
+    xmlns:controls="using:Microsoft.UI.Xaml.Controls">
+
     <Application.Resources>
         <ResourceDictionary>
+
+            <!-- Property elements FIRST -->
             <ResourceDictionary.MergedDictionaries>
-                <!-- ✅ Required to get Fluent tokens/brushes in WinUI 3 -->
                 <controls:XamlControlsResources />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- Force accent button foreground to stay white in all states -->
+            <ResourceDictionary.ThemeDictionaries>
+                
+            </ResourceDictionary.ThemeDictionaries>
+
+            <!-- Converters -->
             <local:BoolToStatusConverter x:Key="BoolToStatusConverter"/>
-            <!-- Button Style -->
-            <Style TargetType="Button">
+
+            <!-- Button style -->
+            <Style TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
                 <Setter Property="Padding" Value="12,6"/>
                 <Setter Property="CornerRadius" Value="8"/>
-                <Setter Property="Background" Value="{ThemeResource SystemAccentColor}"/>
-                <Setter Property="Foreground" Value="White"/>
                 <Setter Property="FontSize" Value="16"/>
+               
             </Style>
 
             <!-- TextBox Style -->
@@ -34,6 +44,7 @@
                 <Setter Property="Background" Value="{ThemeResource SystemBaseLowColor}"/>
                 <Setter Property="CornerRadius" Value="8"/>
             </Style>
+
         </ResourceDictionary>
     </Application.Resources>
 </Application>
