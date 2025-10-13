@@ -64,5 +64,28 @@ namespace FODevManager.Utils
                 MessageLogger.Error($"❌ Failed to start W3SVC: {ex.Message}");
             }
         }
+
+        public static void OpenUrl(string url)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    MessageLogger.Warning("⚠ No URL specified.");
+                    return;
+                }
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+                MessageLogger.Info($"🌐 Opening: {url}");
+            }
+            catch (System.Exception ex)
+            {
+                MessageLogger.Error($"❌ Failed to open URL: {ex.Message}");
+            }
+        }
     }
 }
