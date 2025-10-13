@@ -206,7 +206,7 @@ namespace FODevManager.Utils
             }
         }
 
-        private static string GetGitRemoteUrl(string configPath)
+        public static string GetGitRemoteUrl(string configPath)
         {
             string[] lines = File.ReadAllLines(configPath);
             bool inRemoteSection = false;
