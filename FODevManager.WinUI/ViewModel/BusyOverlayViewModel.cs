@@ -8,7 +8,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace FODevManager.WinUI
+namespace FODevManager.WinUI.ViewModel
 {
     public sealed class BusyOverlayViewModel : INotifyPropertyChanged, IDisposable
     {
