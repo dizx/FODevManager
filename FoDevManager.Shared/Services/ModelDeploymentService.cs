@@ -539,7 +539,7 @@ namespace FODevManager.Services
             string template = File.ReadAllText(path);
             return template.Replace("{modelName}", modelName).Replace("{modelId}", modelId.ToString());
         }
-        public bool AssignPeriTask(string profileName, string modelName, string periTask, string comment)
+        public bool AssignPeriTask(string profileName, string modelName, string periTask, string comment, bool switchBranch = true)
         {
             var profile = _fileService.LoadProfile(profileName);
             var model = GetProfileEnvironment(profile, modelName);
@@ -554,27 +554,33 @@ namespace FODevManager.Services
             model.PeriTaskComment = comment;
             _fileService.SaveProfile(profile);
 
-            string branchPrefix = $"feature/task-{periTask}";
-            string slug = Slugify(comment, 255, branchPrefix + "-");
-            string fullBranch = string.IsNullOrWhiteSpace(slug)
-                ? branchPrefix
-                : $"{branchPrefix}-{slug}";
-
+            
             // Attempt Git branch switch
-            string repoPath = model.ModelRootFolder;
-            if (!Directory.Exists(repoPath))
+            
+            if (switchBranch)
             {
-                MessageLogger.Error($"❌ Model root folder does not exist: {repoPath}");
-                return false;
-            }
+                string branchPrefix = $"feature/task-{periTask}";
+                string slug = Slugify(comment, 255, branchPrefix + "-");
+                string fullBranch = string.IsNullOrWhiteSpace(slug)
+                    ? branchPrefix
+                    : $"{branchPrefix}-{slug}";
 
-            if (GitHelper.ChangeBranch(repoPath, fullBranch))
-            {
-                MessageLogger.Highlight($"✅ Assigned PeriTask '{periTask}' and switched to branch '{fullBranch}'.");
-            }
-            else
-            {
-                MessageLogger.Warning($"⚠️ Assigned PeriTask '{periTask}', but failed to switch to branch '{fullBranch}'.");
+
+                string repoPath = model.ModelRootFolder;
+                if (!Directory.Exists(repoPath))
+                {
+                    MessageLogger.Error($"❌ Model root folder does not exist: {repoPath}");
+                    return false;
+                }
+
+                if (GitHelper.ChangeBranch(repoPath, fullBranch))
+                {
+                    MessageLogger.Highlight($"✅ Assigned PeriTask '{periTask}' and switched to branch '{fullBranch}'.");
+                }
+                else
+                {
+                    MessageLogger.Warning($"⚠️ Assigned PeriTask '{periTask}', but failed to switch to branch '{fullBranch}'.");
+                }
             }
 
             return true;

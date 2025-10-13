@@ -287,7 +287,7 @@ namespace FODevManager.WinUI
                         var taskId = taskIdBox.Text.Trim();
                         var comment = commentBox.Text.Trim();
 
-                        AssignPeriTask(profileName, modelName, taskId, comment);
+                        await AssignPeriTask(profileName, modelName, taskId, comment);
                         UIMessageHelper.LogToUI($"🔧 Assigned PeriTask '{taskId}' with comment: '{comment}' to model '{modelName}'");
                     }
                     catch (Exception ex)
@@ -302,25 +302,94 @@ namespace FODevManager.WinUI
             }
         }
 
+        private async void AssignPeriTask_ForRepo_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesDropdown.SelectedItem is not string profileName)
+                return;
+
+            if (sender is not Button btn)
+                return;
+
+            // Get the group VM from the DataContext (preferred) or Tag fallback.
+            var group = btn.DataContext as RepoGroupViewModel
+                        ?? btn.Tag as RepoGroupViewModel;
+            if (group == null)
+                return;
+
+            // Same dialog UI as your per-model handler
+            var dialog = new ContentDialog
+            {
+                Title = $"Assign PeriTask to repository ({group.DisplayName})",
+                PrimaryButtonText = "Assign",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var taskIdBox = new TextBox { PlaceholderText = "Enter PeriTask ID (e.g. 2145)" };
+            var commentBox = new TextBox { PlaceholderText = "Enter optional comment (e.g. fix performance)" };
+            dialog.Content = new StackPanel { Spacing = 8, Children = { taskIdBox, commentBox } };
+
+            var result = await dialog.ShowAsync();
+            if (result != ContentDialogResult.Primary || string.IsNullOrWhiteSpace(taskIdBox.Text))
+                return;
+
+            var taskId = taskIdBox.Text.Trim();
+            var comment = commentBox.Text?.Trim() ?? string.Empty;
+
+            try
+            {
+                // Reuse your existing per-model method for every model in this group
+                int ok = 0, fail = 0;
+                var modelNames = group.Models
+                    .Select(m => m.ModelName)
+                    .Where(n => !string.IsNullOrWhiteSpace(n))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+
+                await RunOperationAsync(() =>
+                {
+                    var first = true;
+                    foreach (var modelName in modelNames)
+                    {
+                        _deploymentService.AssignPeriTask(profileName, modelName, taskId, comment, first);
+                        ok++;
+                        first = false; // only switch branch on first model
+                    }
+                }, "Assign PeriTask");
+
+                UIMessageHelper.LogToUI($"✅ Assigned PeriTask '{taskId}' to {ok} model(s) in repo '{group.DisplayName}'.{(fail > 0 ? $" ({fail} failed)" : "")}");
+                
+            }
+            catch (Exception ex)
+            {
+                UIMessageHelper.LogToUI($"❌ Failed to assign PeriTask: {ex.Message}", MessageType.Error);
+            }
+
+            // Refresh once
+            LoadModelListViewData(profileName);
+        }
+
+        private void OpenPeriTask_ForRepo_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button btn) return;
+            if (btn.DataContext is not RepoGroupViewModel group) return;
+
+            var task = group.FirstPeriTask;
+
+            var url = $"{_appConfig.PeriTaskUrl}/{task}";
+            ServiceHelper.OpenUrl(url);
+
+        }
+
+
         private void OpenPeriTask_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button button && button.Tag is string taskId && !string.IsNullOrWhiteSpace(taskId))
             {
-                try
-                {
-                    ProcessStartInfo psi = new()
-                    {
-                        FileName = $"https://tasks.peritus.no/nb-NO/Case/Details/{taskId}",
-                        UseShellExecute = true
-                    };
-                    Process.Start(psi);
-
-                    UIMessageHelper.LogToUI($"🌐 Opened PeriTask URL for Task: {taskId}");
-                }
-                catch (Exception ex)
-                {
-                    UIMessageHelper.LogToUI($"❌ Failed to open task URL: {ex.Message}", MessageType.Error);
-                }
+                var url = $"{_appConfig.PeriTaskUrl}/{taskId}";
+                ServiceHelper.OpenUrl(url);
             }
         }
 
@@ -788,9 +857,9 @@ namespace FODevManager.WinUI
             return await RunOperationAsync(() => _deploymentService.UnDeployAllModels(profileName), "Undeploy all models");
         }
 
-        private async Task<bool> AssignPeriTask(string profileName, string modelName, string taskId, string comment)
+        private async Task<bool> AssignPeriTask(string profileName, string modelName, string taskId, string comment, bool switchBranch = true)
         {
-            return await RunOperationAsync(() => _deploymentService.AssignPeriTask(profileName, modelName, taskId, comment), "Assign PeriTask");
+            return await RunOperationAsync(() => _deploymentService.AssignPeriTask(profileName, modelName, taskId, comment, switchBranch), "Assign PeriTask");
         }
 
         private string? GetActiveGitBranch(string profileName, string modelName)
