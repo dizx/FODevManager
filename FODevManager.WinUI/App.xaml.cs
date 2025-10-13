@@ -106,10 +106,11 @@ namespace FODevManager.WinUI
             var profileService = Services.GetRequiredService<ProfileService>();
             var fileService = Services.GetRequiredService<FileService>();
             var deploymentService = Services.GetRequiredService<ModelDeploymentService>();
+            var appConfig = Services.GetRequiredService<AppConfig>();
 
             try
             {
-                var mainWindow = new MainWindow(profileService, fileService, deploymentService);
+                var mainWindow = new MainWindow(profileService, fileService, deploymentService, appConfig);
                 mainWindow.Activate();
             }
             catch (Exception ex)

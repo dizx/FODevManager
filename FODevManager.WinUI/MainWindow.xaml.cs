@@ -35,13 +35,14 @@ namespace FODevManager.WinUI
         private readonly ProfileService _profileService;
         private readonly FileService _fileService;
         private readonly ModelDeploymentService _deploymentService;
+        private readonly AppConfig _appConfig;
         private MicaController? _micaController;
         private SystemBackdropConfiguration? _backdropConfig;
         private AppWindow _appWindow;
         public BusyOverlayViewModel BusyOverlayVm { get; }
         public ProfileModel ActiveProfile { get; set; }
 
-        public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService)
+        public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService, AppConfig appConfig)
         {
             this.InitializeComponent();
             this.Activated += MainWindow_Activated;
@@ -60,11 +61,10 @@ namespace FODevManager.WinUI
 
             var serilogSubscriber = new SerilogSubscriber();
 
-
-
             _profileService = profileService;
             _fileService = fileService;
             _deploymentService = deploymentService;
+            _appConfig = appConfig;
 
 
             // Initialize Mica + TitleBar
