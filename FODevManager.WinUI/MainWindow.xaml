@@ -5,17 +5,17 @@
     xmlns:local="using:FODevManager.WinUI"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:converters="using:FODevManager.WinUI.Converters"
+    xmlns:converters="using:FODevManager.WinUI.Converters" xmlns:vm="using:FODevManager.WinUI.ViewModel"
     mc:Ignorable="d"
     Title="FO Dev Manager">
 
     <Window.SystemBackdrop>
         <MicaBackdrop Kind="BaseAlt"/>
     </Window.SystemBackdrop>
-    
+
     <Border Background="{ThemeResource SystemBaseLowColor}">
         <Grid>
-            
+
             <Grid.Resources>
                 <converters:MessageTypeToColorConverter x:Key="MessageTypeToColorConverter" />
             </Grid.Resources>
@@ -125,51 +125,114 @@
 
                 <!-- 🔷 Row 2: Models List -->
 
-                <ListView x:Name="ModelsListView"
-                      Grid.Row="2"
-                      Grid.ColumnSpan="2"
-                      SelectionMode="Single"
-                      Padding="10" >
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                            <Setter Property="VerticalContentAlignment" Value="Center"/>
-                            <Setter Property="MinHeight" Value="40"/>
-                            <Setter Property="Padding" Value="4"/>
-                        </Style>    
-                    </ListView.ItemContainerStyle>
-                    <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <Grid Margin="5">
+                <Grid Grid.Row="2" Grid.ColumnSpan="2">
+                    <Grid.Resources>
+                        <!-- Selector -->
+                        <local:CombinedTemplateSelector x:Key="CombinedSelector"
+                                        RepoTemplate="{StaticResource RepoItemTemplate}"
+                                        NonGitTemplate="{StaticResource NonGitRowTemplate}" />
+
+                        <DataTemplate x:Key="RepoItemTemplate" x:DataType="vm:RepoGroupViewModel">
+                            <StackPanel Spacing="8" Margin="0,2,0,2">
+
+                                <Grid Margin="0,4,0,2" Background="{ThemeResource SystemFillColorNeutralBackgroundBrush}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="240"/>
+                                        <!-- Repo name -->
+                                        <ColumnDefinition Width="240"/>
+                                        <!-- Branch -->
+                                        <ColumnDefinition Width="Auto"/>
+                                        <!-- Open -->
+                                        <ColumnDefinition Width="Auto"/>
+                                        <!-- Assign -->
+                                        <ColumnDefinition Width="Auto"/>
+                                        <!-- Remove (right) -->
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"   Text="{x:Bind DisplayName}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="{x:Bind Branch}" FontStyle="Italic"  VerticalAlignment="Center" />
+                                    <Button Grid.Column="2" Content="Assign Task"   Click="AssignPeriTask_ForRepo_Click" Margin="6,0,0,0" />
+                                    <Button Grid.Column="3" Content="Open PeriTask"   Click="OpenPeriTask_ForRepo_Click" IsEnabled="{x:Bind HasPeriTask}" Margin="6,0,0,0"/>
+                                    <Button Grid.Column="4" Content="DevOps"    Click="OpenGitForRepo_Click" Margin="20,0,0,0"/>
+
+                                </Grid>
+                                <!-- Rows for models in this repo -->
+                                <ItemsControl ItemsSource="{x:Bind Models}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ProfileEnvironmentViewModel"> <Grid Margin="0,4,0,2">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="240"/> <!-- Name -->
+                                                    <ColumnDefinition Width="240"/> <!-- Status -->
+                                                    <ColumnDefinition Width="Auto"/> <!-- Deploy -->
+                                                    <ColumnDefinition Width="Auto"/> <!-- Undeploy -->
+                                                    <ColumnDefinition Width="*"/> <!-- Spacer -->
+                                                    <ColumnDefinition Width="Auto"/> <!-- Remove (right) -->
+                                                </Grid.ColumnDefinitions>
+
+                                                <TextBlock Grid.Column="0" Text="{x:Bind ModelName}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="2" Content="Deploy" Tag="{x:Bind ModelName}" Click="DeployModel_Click" Margin="6,0,0,0"/>
+                                                <Button Grid.Column="3" Content="Undeploy" Tag="{x:Bind ModelName}" Click="UnDeployModel_Click" Margin="6,0,0,0"/>
+                                                <Button Grid.Column="5" Content="Remove" Tag="{x:Bind ModelName}" Click="RemoveModel_Click" Margin="10,0,0,0" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </DataTemplate>
+
+                        <DataTemplate x:Key="NonGitRowTemplate" x:DataType="vm:ProfileEnvironmentViewModel">
+                            <Grid Margin="0,2,0,2">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="200"/> <!-- Model Name -->
-                                    <ColumnDefinition Width="150"/> <!-- Deployment Status -->
-                                    <ColumnDefinition Width="150"/> <!-- Git Branch -->
-                                    <ColumnDefinition Width="Auto"/> <!-- Git Button -->
-                                    <ColumnDefinition Width="Auto"/> <!-- Deploy -->
-                                    <ColumnDefinition Width="Auto"/> <!-- Undeploy -->
-                                    <ColumnDefinition Width="Auto"/> <!-- PeriTask -->
-                                    <ColumnDefinition Width="Auto"/> <!-- Open Task -->
-                                    <ColumnDefinition Width="*"/> <!-- Spacer -->
-                                    <ColumnDefinition Width="Auto"/> <!-- Remove Button -->
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <TextBlock Grid.Column="0" Text="{Binding ModelName}" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1" Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}" VerticalAlignment="Center" /> 
-                                <TextBlock Grid.Column="2" Text="{Binding GitBranch}" Foreground="Black" FontStyle="Italic" VerticalAlignment="Center" />
-                                <Button Grid.Column="3" Content="Git" Click="OpenGit_Click" Tag="{Binding ModelName}" IsEnabled="{Binding HasGit}" ToolTipService.ToolTip="Open Git repository URL"/>
-                                <Button Grid.Column="4" Content="Deploy" Tag="{Binding ModelName}" Click="DeployModel_Click" Margin="6,0,0,0" ToolTipService.ToolTip="Deploy this model to the environment" />
-                                <Button Grid.Column="5" Content="Undeploy" Tag="{Binding ModelName}" Click="UnDeployModel_Click" Margin="6,0,0,0" ToolTipService.ToolTip="Remove the deployed model from the environment" />
-                                <Button Grid.Column="6" Content="Task" Tag="{Binding ModelName}" Click="AssignPeriTask_Click" Margin="6,0,0,0" ToolTipService.ToolTip="Assign a PeriTask ID to this model" />
-                                <Button Grid.Column="7" Content="Open" Click="OpenPeriTask_Click" Tag="{Binding PeriTask}" IsEnabled="{Binding HasPeriTask}" Margin="6,0,0,0" ToolTipService.ToolTip="Open the assigned PeriTask in your browser" />
+                                <TextBlock Grid.Column="0" Text="{x:Bind ModelName}" VerticalAlignment="Center"/>
 
-                                <!-- Spacer in Grid.Column=4 -->
-                                <Button Grid.Column="8" Content="Remove" Click="RemoveModel_Click" Tag="{Binding ModelName}" Margin="10,0,0,0" HorizontalAlignment="Right" ToolTipService.ToolTip="Remove this model from the profile (does not delete files)" />
+                                <!-- IMPORTANT: Binding + converter (no x:Bind here) -->
+                                <TextBlock Grid.Column="1"
+               Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}"
+               VerticalAlignment="Center"/>
+
+                                <Button Grid.Column="2" Content="Deploy" Tag="{x:Bind ModelName}" Click="DeployModel_Click" Margin="6,0,0,0"/>
+                                <Button Grid.Column="3" Content="Undeploy" Tag="{x:Bind ModelName}" Click="UnDeployModel_Click" Margin="6,0,0,0"/>
+                                <Button Grid.Column="4" Content="Task" Tag="{x:Bind ModelName}" Click="AssignPeriTask_Click" Margin="6,0,0,0"/>
+                                <Button Grid.Column="5" Content="Open"
+            Tag="{x:Bind PeriTask}"
+            Click="OpenPeriTask_Click"
+            IsEnabled="{x:Bind HasPeriTask}"
+            Margin="6,0,0,0"/>
+
+                                <!-- Right-aligned only for Remove -->
+                                <Button Grid.Column="7" Content="Remove"
+            Tag="{x:Bind ModelName}"
+            Click="RemoveModel_Click"
+            Margin="10,0,0,0"
+            HorizontalAlignment="Right"/>
                             </Grid>
                         </DataTemplate>
-                    </ListView.ItemTemplate>
 
-                </ListView>
+
+                    </Grid.Resources>
+
+                    <ListView x:Name="CombinedList" ItemTemplateSelector="{StaticResource CombinedSelector}" SelectionMode="None" Padding="0">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="VerticalContentAlignment" Value="Top"/>
+                                <Setter Property="MinHeight" Value="0"/>
+                                <Setter Property="Padding" Value="6"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                    </ListView>
+                </Grid>
+
 
 
                 <!-- 🔷 Row 3: Add Model -->
@@ -198,7 +261,7 @@
                             <Setter Property="Margin" Value="1"/>
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                             <Setter Property="VerticalContentAlignment" Value="Top"/>
-                            
+
                         </Style>
                     </ListView.ItemContainerStyle>
 
@@ -209,7 +272,7 @@
                         </DataTemplate>
                     </ListView.ItemTemplate>
 
-                   
+
                 </ListView>
                 <StackPanel Grid.Column="1" Orientation="Vertical" Spacing="8" VerticalAlignment="Bottom">
                     <Button x:Name="SettingsButton" Click="OpenSettings_Click" ToolTipService.ToolTip="Settings">
