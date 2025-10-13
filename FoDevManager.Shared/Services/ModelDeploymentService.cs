@@ -348,9 +348,6 @@ namespace FODevManager.Services
                 {
                     return "";
                 }
-
-                //string projectRootPath = FileHelper.GetModelRootFolder(model.ModelRootFolder);
-
                 if (GitHelper.IsGitRepository(model.ModelRootFolder, out string gitRemoteUrl))
                 {
                     return GitHelper.GetActiveBranch(model.ModelRootFolder);
