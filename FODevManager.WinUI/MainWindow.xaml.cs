@@ -167,19 +167,24 @@ namespace FODevManager.WinUI
             UpdateProfileFields(profile);
         }
 
+        private ModelsGroupingViewModel? _groupingVm;
+
+        
         private void LoadModelListViewData(string profileName)
         {
-            var profileEnvironmentViewModelList = new List<ProfileEnvironmentViewModel>();
+            // however you currently build your list of ProfileEnvironmentViewModel:
+            var items = _profileService
+                .GetModelsInProfile(profileName) 
+                .Select(m => m.ToViewModel(GetActiveGitBranch(profileName, m.ModelName) ?? string.Empty)) 
+                .ToList();
 
-            var models = GetModelsInProfile(profileName);
+            _groupingVm = new ModelsGroupingViewModel(items);
 
-            foreach (var model in models)
-            {
-                var activeBranch = GetActiveGitBranch(profileName, model.ModelName);
-                profileEnvironmentViewModelList.Add(model.ToViewModel(activeBranch ?? ""));
-            }
+            var combined = new System.Collections.Generic.List<object>();
+            combined.AddRange(_groupingVm.GitGroups);        // RepoGroupViewModel items
+            combined.AddRange(_groupingVm.NonGitModels);     // ProfileEnvironmentViewModel items
 
-            ModelsListView.ItemsSource = profileEnvironmentViewModelList;
+            CombinedList.ItemsSource = combined;
 
         }
 
@@ -222,6 +227,24 @@ namespace FODevManager.WinUI
                 }
             }
         }
+
+        private void OpenGitForRepo_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesDropdown.SelectedItem is not string profileName) return;
+            if (sender is not Button btn) return;
+            if (btn.DataContext is not RepoGroupViewModel group) return;
+
+            var anchorModel = group.Models.FirstOrDefault();
+            if (anchorModel is null || string.IsNullOrWhiteSpace(anchorModel.ModelName))
+            {
+                MessageLogger.Warning("⚠️ No model found in this repo group to open Git.");
+                return;
+            }
+
+            OpenGitRepo(profileName, anchorModel.ModelName);
+        }
+
+
         private async void AssignPeriTask_Click(object sender, RoutedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is not string profileName)
@@ -332,23 +355,7 @@ namespace FODevManager.WinUI
             }
         }
 
-        private void RefreshGitButton()
-        {
-            foreach (var item in ModelsListView.Items)
-            {
-                var container = ModelsListView.ContainerFromItem(item) as ListViewItem;
-                if (container == null)
-                    continue;
-
-                var gitButton = FindVisualChild<Button>(container, "GitButton");
-
-                if (item is ProfileEnvironmentViewModel model && gitButton != null)
-                {
-                    gitButton.IsEnabled = !(model.GitUrl.IsNullOrEmpty());
-                }
-
-            }
-        }
+        
 
         public static T? FindVisualChild<T>(DependencyObject parent, string? name = null) where T : DependencyObject
         {
