@@ -478,7 +478,7 @@ namespace FODevManager.WinUI
             {
                 var modelName = inputBox.Text.Trim();
 
-                CreateModel(profileName, modelName);
+                await CreateModel(profileName, modelName);
 
                 UIMessageHelper.LogToUI($"📦 Created new model '{modelName}' under profile '{profileName}'");
                 LoadModelListViewData(profileName);
@@ -539,7 +539,7 @@ namespace FODevManager.WinUI
 
             if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(inputTextBox.Text))
             {
-                CreateProfile(inputTextBox.Text);
+                await CreateProfile(inputTextBox.Text);
                 LoadProfiles();
             }
         }
@@ -557,7 +557,7 @@ namespace FODevManager.WinUI
                 try
                 {
                     var importPath = file.Path;
-                    ImportProfile(importPath);
+                    await CreateProfile(importPath);
 
                     MessageLogger.Highlight($"✅ Profile imported: {Path.GetFileName(importPath)}");
 
@@ -582,11 +582,11 @@ namespace FODevManager.WinUI
             }
         }
 
-        private void UnDeployProfile_Click(object sender, RoutedEventArgs e)
+        private async void UnDeployProfile_Click(object sender, RoutedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
-                UnDeployAllModels(profileName);
+                await CreateProfile(profileName);
                 UpdateStatus($"🧹 Undeployment complete for '{profileName}'.");
             }
         }
@@ -674,7 +674,7 @@ namespace FODevManager.WinUI
                 if (result != ContentDialogResult.Primary)
                     return;
 
-                RemoveModelFromProfile(profileName, modelName);
+                await RemoveModelFromProfile(profileName, modelName);
                 LoadModelListViewData(profileName);
                 UpdateStatus($"🗑️ Model '{modelName}' removed from '{profileName}'.");
             }
