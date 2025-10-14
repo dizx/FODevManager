@@ -1,6 +1,33 @@
 # FO Dev Manager Changelog
 
 ---
+## [0.9.0] – 2025-10-14
+
+#### ✨ Added
+- **Repository Grouping in Main Window**
+  - Models belonging to the same Git repository are grouped under a single repo header.
+  - Shared repo actions (**Git**, **Task**, **Open**, **Folder**, **Solution**) appear once per repo; per-model **Deploy/Undeploy/Remove** remain on each row.
+  - Repo header shows decoded repo name and current branch.
+
+- **Unified List Layout**
+  - One seamless list (Git & non-Git together) using a template selector—no section headers.
+  - Only **Remove** is right-aligned; all other buttons are left, next to the name/status.
+
+- **PeriTask (Repo)**
+  - New repo-level “Task” action assigns a **single PeriTask ID + comment** to **all models in that repo**, reusing the existing per-model `AssignPeriTask(...)`.
+
+- **Busy Dialog / Busy Overlay Integration**
+  - Centralized `TryCatch`/`TryCatchAsync` usage for long operations with **minimum visible time** to prevent flicker.
+  - Start/complete/failure are logged via `MessageLogger` (no `Console.WriteLine`), with operation IDs scoped per run.
+
+- **Settings Page**
+  - Added new settings page
+
+- **Edit Database Inline**
+  - **Double-tap** the database field to enable inline editing; **Enter** saves, **Esc** cancels.
+  - Persisted to the active profile; status reflects immediately.
+
+
 
 ## [0.8.6] - 2025-07-03
 
