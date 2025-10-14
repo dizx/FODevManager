@@ -1,5 +1,5 @@
 #define MyAppName "FO Dev Manager"
-#define MyAppVersion "0.8.6"
+#define MyAppVersion "0.9.0"
 #define MyAppPublisher "ECIT Peritus AS"
 #define MyAppURL "https://www.ecit.com/no/ecit-peritus/"
 #define MyAppExeName "FODevManager.WinUI.exe"
