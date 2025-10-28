@@ -104,9 +104,9 @@ namespace FODevManager.Utils
         }
 
 
-        public static string GetMetadataFolder(string modelName, string projectFilePath)
+        public static string GetMetadataFolder(string modelName, string modelPath)
         {
-            string? currentPath = Path.HasExtension(projectFilePath) ? Path.GetDirectoryName(projectFilePath) : projectFilePath;
+            string? currentPath = Path.HasExtension(modelPath) ? Path.GetDirectoryName(modelPath) : modelPath;
 
             // Move up to 3 levels and check for Metadata folder
             for (int i = 0; i < 3; i++)
@@ -130,7 +130,36 @@ namespace FODevManager.Utils
                 currentPath = Directory.GetParent(currentPath)?.FullName;
             }
 
-            throw new DirectoryNotFoundException($"Can't find metadata folder in path {projectFilePath}");
+            throw new DirectoryNotFoundException($"Can't find metadata folder in path {modelPath}");
+        }
+
+        public static string GetLibsFolder(string modelName, string modelPath)
+        {
+            string? currentPath = Path.HasExtension(modelPath) ? Path.GetDirectoryName(modelPath) : modelPath;
+
+            // Move up to 3 levels and check for libs folder
+            for (int i = 0; i < 3; i++)
+            {
+                if (currentPath.IsNullOrEmpty())
+                    break;
+
+                string libsPath = Path.Combine(currentPath, "Libs", modelName);
+                if (Directory.Exists(libsPath))
+                {
+                    return libsPath;
+                }
+
+                libsPath = Path.Combine(currentPath, "Libs");
+                if (Directory.Exists(libsPath))
+                {
+                    return Path.Combine(libsPath, modelName);
+                }
+
+                // Move one level up
+                currentPath = Directory.GetParent(currentPath)?.FullName;
+            }
+
+            throw new DirectoryNotFoundException($"Can't find libs folder in path {modelPath}");
         }
 
         public static string GetModelRootFolder(string projectFilePath)
