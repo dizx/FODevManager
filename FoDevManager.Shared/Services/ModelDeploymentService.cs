@@ -250,7 +250,7 @@ namespace FODevManager.Services
             existingEnvironment.IsDeployed = updatedEnvironment.IsDeployed;
 
             // Save the updated profile
-            _fileService.SaveProfile(profile);
+            _fileService.SaveProfile(profile, updateExternal: true);
             MessageLogger.Info($"✅ Updated model '{updatedEnvironment.ModelName}' in profile '{profileName}'.");
         }
 
@@ -318,16 +318,18 @@ namespace FODevManager.Services
 
             try
             {
-                string projectRootPath = FileHelper.GetModelRootFolder(model.ProjectFilePath);
 
-                if (GitHelper.IsGitRepository(projectRootPath, out string gitRemoteUrl))
+                if (GitHelper.IsGitRepository(model.ModelRootFolder, out string gitRemoteUrl))
                 {
                     MessageLogger.Info($"✅ Model '{modelName}' Git repository: {gitRemoteUrl}");
 
-                    MessageLogger.Info($"✅ Model '{modelName}' Git active branch: {GitHelper.GetActiveBranch(projectRootPath)}");
+                    MessageLogger.Info($"✅ Model '{modelName}' Git active branch: {GitHelper.GetActiveBranch(model.ModelRootFolder)}");
 
                     model.GitUrl = gitRemoteUrl;
-                    _fileService.SaveProfile(profile); 
+                    if(!model.GitUrl.Equals(gitRemoteUrl, StringComparison.OrdinalIgnoreCase) == false)
+                    {
+                        _fileService.SaveProfile(profile, updateExternal: true);
+                    }
 
                     return true;
                 }
@@ -427,7 +429,7 @@ namespace FODevManager.Services
                         IsDeployed = false
                     });
 
-                    _fileService.SaveProfile(profile);
+                    _fileService.SaveProfile(profile, updateExternal: true);
                 }
 
                 MessageLogger.Highlight($"✅ Model '{modelName}' created successfully at: {modelRoot}");
@@ -480,7 +482,7 @@ namespace FODevManager.Services
                         IsDeployed = false
                     });
 
-                    _fileService.SaveProfile(profile);
+                    _fileService.SaveProfile(profile, updateExternal: true);
                     MessageLogger.Highlight($"✅ Model '{modelName}' added to profile: {profile.ProfileName}");
                 }
                 else

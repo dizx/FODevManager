@@ -376,15 +376,25 @@ namespace FODevManager.Services
                 ModelRootFolder = modelRootPath,
                 ProjectFilePath = projectFilePath,
                 MetadataFolder = metaDataFolder,
-                IsDeployed = isAlreadyDeployed
+                CompiledModelFolder = compiledModelFolder,
+                IsDeployed = isAlreadyDeployed,
+                ModelType = modelType
+
             });
 
-            _fileService.SaveProfile(profile);
+            _fileService.SaveProfile(profile, updateExternal: true);
 
-            _solutionService.AddProjectToSolution(profileName, modelName, projectFilePath);
             _modelDeploymentService.CheckIfGitRepository(profileName, modelName);
 
-            MessageLogger.Info($"✅ Model '{modelName}' added to profile '{profileName}' and included in solution.");
+            if (modelType == ModelType.Source)
+            {
+                _solutionService.AddProjectToSolution(profileName, modelName, projectFilePath);
+                MessageLogger.Info($"✅ Model '{modelName}' added to profile '{profileName}' and included in solution.");
+            }
+            else
+            {
+                MessageLogger.Info($"✅ Compiled Model '{modelName}' added to profile");
+            }
         }
 
         private bool IsInstalledModel(string path) => path.StartsWith(_deploymentBasePath, StringComparison.OrdinalIgnoreCase);
@@ -515,7 +525,7 @@ namespace FODevManager.Services
 
             profile.Environments.Remove(model);
 
-            _fileService.SaveProfile(profile);
+            _fileService.SaveProfile(profile, updateExternal: true);
 
             MessageLogger.Info($"Model '{modelName}' removed from profile '{profileName}'.");
         }
