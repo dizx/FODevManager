@@ -251,44 +251,105 @@ namespace FODevManager.Services
                 return;
             }
 
-            if (HasSeveralModelsInEnvironment(environmentPath, out var modelFolders))
-            {
-                MessageLogger.Highlight($"📦 Detected multiple models under metadata/. Adding all valid models...");
+            bool anyAdded = false;
 
-                foreach (var metadataPath in modelFolders)
+            // 1. Compiled models under Libs
+            if (HasCompiledModelsInLibs(environmentPath, out var compiledFolders))
+            {
+                MessageLogger.Highlight("📦 Detected compiled model(s) under Libs\\. Adding...");
+
+                foreach (var folder in compiledFolders)
                 {
-                    var detectedModelName = Path.GetFileName(metadataPath);
-                    try
+                    if (IsCompiledModelFolder(folder, out var detectedName))
                     {
-                        AddModelToProfileIfNotExists(profileName, detectedModelName, environmentPath);
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageLogger.Warning($"⚠️ Skipping model '{detectedModelName}': {ex.Message}");
+                        AddModelToProfileIfNotExists(profileName, detectedName, folder, ModelType.Compiled);
+                        anyAdded = true;
                     }
                 }
+             }
 
+            // 2. Source models under Metadata
+            if (HasSourceModelsInMetadata(environmentPath, out var sourceFolders))
+            {
+                MessageLogger.Highlight("📦 Detected source model(s) under Metadata\\. Adding...");
+
+                foreach (var folder in sourceFolders)
+                {
+                    var detectedName = Path.GetFileName(folder);
+                    AddModelToProfileIfNotExists(profileName, detectedName, environmentPath, ModelType.Source);
+                    anyAdded = true;
+                }
+            }
+
+            // 3. Direct compiled model folder
+            if (!anyAdded && IsCompiledModelFolder(environmentPath, out var compiledName))
+            {
+                AddModelToProfileIfNotExists(profileName, compiledName, environmentPath, ModelType.Compiled);
                 return;
             }
 
-            AddModelToProfileIfNotExists(profileName, modelName, environmentPath);
-        }
-
-        private static bool HasSeveralModelsInEnvironment(string environmentPath, out string[] modelFolders)
-        {
-            modelFolders = new string[] { };
-            var metadataRoot = Path.Combine(environmentPath, "metadata");
-
-            if (Directory.Exists(metadataRoot))
+            // 4. Direct source model folder
+            var parent = Directory.GetParent(environmentPath)?.Name;
+            if (!anyAdded && string.Equals(parent, "Metadata", StringComparison.OrdinalIgnoreCase))
             {
-                modelFolders = Directory.GetDirectories(metadataRoot);
-
-                return modelFolders.Length > 1;
+                var sourceName = Path.GetFileName(environmentPath);
+                AddModelToProfileIfNotExists(profileName, sourceName, Path.GetDirectoryName(Path.GetDirectoryName(environmentPath))!, ModelType.Source);
+                return;
             }
 
-            
+            // 5. Fallback
+            if (!anyAdded)
+                AddModelToProfileIfNotExists(profileName, modelName, environmentPath, ModelType.Source);
+        }
+
+
+        private static bool IsCompiledModelFolder(string path, out string modelName)
+        {
+            modelName = "";
+            if (!Directory.Exists(path))
+                return false;
+
+            var folderName = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (string.IsNullOrWhiteSpace(folderName))
+                return false;
+
+            var xref = Path.Combine(path, $"{folderName}.xref");
+            if (File.Exists(xref))
+            {
+                modelName = folderName;
+                return true;
+            }
+
             return false;
         }
+
+        private static bool HasCompiledModelsInLibs(string envPath, out List<string> compiledFolders)
+        {
+            compiledFolders = new List<string>();
+            var libs = Path.Combine(envPath, "Libs");
+            if (!Directory.Exists(libs))
+                return false;
+
+            foreach (var dir in Directory.EnumerateDirectories(libs))
+                if (IsCompiledModelFolder(dir, out _))
+                    compiledFolders.Add(dir);
+
+            return compiledFolders.Count > 0;
+        }
+
+        private static bool HasSourceModelsInMetadata(string envPath, out string[] sourceFolders)
+        {
+            sourceFolders = new string[] { };
+            var metadataRoot = Path.Combine(envPath, "Metadata");
+            if (Directory.Exists(metadataRoot))
+            {
+                sourceFolders = Directory.GetDirectories(metadataRoot);
+
+                return sourceFolders.Length >= 1;
+            }
+            return false;
+        }
+
 
         public void CreateModel(string profileName, string modelName)
         {
@@ -326,38 +387,50 @@ namespace FODevManager.Services
         private string DefaultProjectFilePath(string modelName) => Path.Combine(_defaultSourceDirectory, modelName, "Project", modelName, $"{modelName}.rnrproj");
 
 
-        private void AddModelToProfileIfNotExists(string profileName, string modelName, string environmentPath)
+        private void AddModelToProfileIfNotExists(string profileName, string modelName, string environmentPath, ModelType modelType)
         {
-            string modelRootPath = FileHelper.GetModelRootFolder(environmentPath);
+            var projectFilePath = string.Empty;
+            var metaDataFolder = string.Empty;
+            var compiledModelFolder = string.Empty;
+            var modelRootPath = FileHelper.GetModelRootFolder(environmentPath);
             if (!Directory.Exists(modelRootPath))
             {
                 MessageLogger.Error($"❌ Error: Model root folder not found at {modelRootPath}.");
                 return;
             }
 
-            if (modelName.IsNullOrEmpty())
+            if (modelType == ModelType.Source)
             {
-                modelName = DetectModelNameFromMetadata(modelRootPath);
                 if (modelName.IsNullOrEmpty())
                 {
-                    throw new Exception("❌ Unable to find model name from Metadata folder.");
+                    modelName = DetectModelNameFromMetadata(modelRootPath);
+                    if (modelName.IsNullOrEmpty())
+                    {
+                        throw new Exception("❌ Unable to find model name from Metadata folder.");
+                    }
+                }
+
+                projectFilePath = GetProjectFilePath(modelName, modelRootPath);
+                if (!File.Exists(projectFilePath))
+                {
+                    MessageLogger.Info($"{projectFilePath} does not exist.");
+                    if (Singleton<Engine>.Instance.EnvironmentType == EnvironmentType.Console)
+                        MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" add \"ProjectFilePath\"");
+                    return;
+                }
+
+                metaDataFolder = FileHelper.GetMetadataFolder(modelName, modelRootPath);
+                if (!Directory.Exists(metaDataFolder))
+                {
+                    MessageLogger.Error($"❌ Error: Metadata folder not found at {metaDataFolder}.");
+                    return;
                 }
             }
-
-            var projectFilePath = GetProjectFilePath(modelName, modelRootPath);
-            if (!File.Exists(projectFilePath))
+            else
             {
-                MessageLogger.Info($"{projectFilePath} does not exist.");
-                if (Singleton<Engine>.Instance.EnvironmentType == EnvironmentType.Console)
-                    MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" add \"ProjectFilePath\"");
-                return;
-            }
-
-            var metaDataFolder = FileHelper.GetMetadataFolder(modelName, modelRootPath);
-            if (!Directory.Exists(metaDataFolder))
-            {
-                MessageLogger.Error($"❌ Error: Metadata folder not found at {metaDataFolder}.");
-                return;
+                compiledModelFolder = environmentPath;
+                projectFilePath = string.Empty;
+                metaDataFolder = string.Empty;
             }
 
             var profile = _fileService.LoadProfile(profileName);
