@@ -97,12 +97,12 @@ namespace FODevManager.Services
             return true;
         }
 
-        public void ImportProfile(string importPath)
+        public ProfileModel ImportProfile(string importPath)
         {
             if (!File.Exists(importPath))
             {
                 MessageLogger.Error($"❌ Profile file not found: {importPath}");
-                return;
+                return null!;
             }
 
             try
@@ -112,7 +112,7 @@ namespace FODevManager.Services
                 if (profile == null || string.IsNullOrWhiteSpace(profile.ProfileName))
                 {
                     MessageLogger.Error("❌ Invalid profile file.");
-                    return;
+                    return null!;
                 }
 
                 string solutionFilePath = _solutionService.CreateSolutionFile(profile.ProfileName);
@@ -129,7 +129,6 @@ namespace FODevManager.Services
                 }
 
                 MessageLogger.Info($"📥 Importing profile '{profile.ProfileName}'...");
-
 
                 foreach (var environment in profile.Environments)
                 {
@@ -150,24 +149,36 @@ namespace FODevManager.Services
                         }
                     }
 
-                    environment.ProjectFilePath = FileHelper.GetProjectFilePath(environment.ModelName, modelFolder); ;
                     environment.ModelRootFolder = modelFolder;
-                    environment.MetadataFolder = FileHelper.GetMetadataFolder(environment.ModelName, modelFolder);
+                    if (environment.ModelType == ModelType.Source)
+                    {
+                        environment.ProjectFilePath = FileHelper.GetProjectFilePath(environment.ModelName, modelFolder);
+                        environment.MetadataFolder = FileHelper.GetMetadataFolder(environment.ModelName, modelFolder);
+
+                        _solutionService.AddProjectToSolution(profile.ProfileName, environment.ModelName, environment.ProjectFilePath);
+                    }
+                    else
+                    {
+                        environment.CompiledModelFolder = FileHelper.GetLibsFolder(environment.ModelName, modelFolder);
+                    }
 
                     string deploymentLinkPath = Path.Combine(_deploymentBasePath, environment.ModelName);
                     bool isAlreadyDeployed = Directory.Exists(deploymentLinkPath);
-
                     environment.IsDeployed = isAlreadyDeployed;
 
-                    _solutionService.AddProjectToSolution(profile.ProfileName, environment.ModelName, environment.ProjectFilePath);
+                    
                 }
 
                 FileHelper.SaveJson(profileDestPath, profile);
                 MessageLogger.Highlight($"✅ Profile '{profile.ProfileName}' imported successfully.");
+
+                return profile;
+
             }
             catch (Exception ex)
             {
                 MessageLogger.Error($"❌ Failed to import profile: {ex.Message}");
+                return null!;
             }
         }
 
