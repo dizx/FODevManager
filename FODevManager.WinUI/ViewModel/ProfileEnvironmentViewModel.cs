@@ -1,5 +1,7 @@
+using FODevManager.Models;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -7,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace FODevManager.WinUI.ViewModel
 {
-    public class ProfileEnvironmentViewModel
+    public class ProfileEnvironmentViewModel : INotifyPropertyChanged
     {
         public string ModelName { get; set; } = "";
 
@@ -28,6 +30,28 @@ namespace FODevManager.WinUI.ViewModel
         public string GitBranch { get; set; } = "";
 
         public bool IsDeployed { get; set; } = false;
+
+        private ModelType _modelType = ModelType.Source;
+        public ModelType ModelType
+        {
+            get => _modelType;
+            set
+            {
+                if (_modelType == value) return;
+                _modelType = value;
+                OnPropertyChanged(nameof(ModelType));
+                OnPropertyChanged(nameof(IsCompiled));
+                OnPropertyChanged(nameof(IsSource));
+            }
+        }
+
+        public bool IsCompiled => ModelType == ModelType.Compiled;
+        public bool IsSource => ModelType == ModelType.Source;
+
+        
+        public event PropertyChangedEventHandler? PropertyChanged;
+        private void OnPropertyChanged(string name) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 
     public static class ProfileEnvironmentViewModelExtensions
@@ -42,6 +66,7 @@ namespace FODevManager.WinUI.ViewModel
             viewModel.GitUrl = model.GitUrl;
             viewModel.PeriTask = model.PeriTask;
             viewModel.GitBranch = gitBranch;
+            viewModel.ModelType = model.ModelType;
             return viewModel;
         }
     }
