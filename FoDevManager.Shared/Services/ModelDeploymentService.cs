@@ -184,7 +184,7 @@ namespace FODevManager.Services
             }
         }
 
-        private void DeploySingleModel(ProfileModel profile, string modelName)
+        private bool DeploySingleModel(ProfileModel profile, string modelName)
         {
             try
             {
@@ -192,13 +192,12 @@ namespace FODevManager.Services
                 string targetDir = Path.Combine(_deploymentBasePath, modelName);
 
                 string linkPath = targetDir;
-                //string sourcePath = Path.Combine(Path.GetDirectoryName(environment.ProjectFilePath), "Metadata");
-                string sourcePath = environment.MetadataFolder;
+                string sourcePath = environment.ModelType == ModelType.Compiled ? environment.CompiledModelFolder : environment.MetadataFolder;
 
                 if (!Directory.Exists(sourcePath))
                 {
-                    MessageLogger.Error($"❌ Error: Metadata folder not found at {sourcePath}.");
-                    return;
+                    MessageLogger.Error($"❌ Error: Model not found at {sourcePath}.");
+                    return false;
                 }
 
                 if (Directory.Exists(linkPath))
@@ -209,10 +208,13 @@ namespace FODevManager.Services
 
                 Directory.CreateSymbolicLink(linkPath, sourcePath);
                 MessageLogger.Info($"✅ Model '{modelName}' deployed successfully.");
+
+                return true;
             }
             catch (Exception ex)
             {
                 MessageLogger.Error($"❌ Error deploying model '{modelName}': {ex.Message}");
+                return false;
             }
         }
 
