@@ -13,6 +13,8 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Data;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Serilog;
 using System;
@@ -113,7 +115,7 @@ namespace FODevManager.WinUI
             return AppWindow.GetFromWindowId(windowId);
         }
 
-        private void LoadProfiles()
+        private void LoadProfiles(string setProfile = "")
         {
             var profiles = _fileService.GetAllProfiles();
             ProfilesDropdown.ItemsSource = profiles.Select(x => x.ProfileName).ToList();
@@ -122,19 +124,19 @@ namespace FODevManager.WinUI
             {
                 UIMessageHelper.LogToUI($"🔔 {profiles.Count} profiles loaded");
 
-                var activeProfile = profiles.FirstOrDefault(x => x.IsActive) ?? profiles.First();
+                var currentProfile = !setProfile.IsNullOrEmpty() ? profiles.FirstOrDefault(x => x.ProfileName == setProfile) : (profiles.FirstOrDefault(x => x.IsActive) ?? profiles.First());
 
-                if (activeProfile.IsActive)
+                if (currentProfile != null && currentProfile.IsActive)
                 {
-                    UIMessageHelper.LogToUI($"🔔 Active profile: {activeProfile.ProfileName} ");
+                    UIMessageHelper.LogToUI($"🔔 Active profile: {currentProfile.ProfileName} ");
                 }
 
-                if (!activeProfile.IsActive)
+                if (setProfile.IsNullOrEmpty() && currentProfile != null && !currentProfile.IsActive)
                 {
                     UIMessageHelper.LogToUI($"No active profile", MessageType.Warning);
                 }
 
-                SetProfile(activeProfile);
+                SetProfile(currentProfile);
 
             }
         }
@@ -180,7 +182,13 @@ namespace FODevManager.WinUI
 
             _groupingVm = new ModelsGroupingViewModel(items);
 
-            var combined = new System.Collections.Generic.List<object>();
+            var active = _groupingVm.GitGroups.FirstOrDefault();
+            if (active != null)
+            {
+                active.IsExpanded = true;
+            }
+
+            var combined = new List<object>();
             combined.AddRange(_groupingVm.GitGroups);        // RepoGroupViewModel items
             combined.AddRange(_groupingVm.NonGitModels);     // ProfileEnvironmentViewModel items
 
@@ -557,12 +565,12 @@ namespace FODevManager.WinUI
                 try
                 {
                     var importPath = file.Path;
-                    await ImportProfile(importPath);
+                    var importedProfileName = await ImportProfile(importPath);
 
                     MessageLogger.Highlight($"✅ Profile imported: {Path.GetFileName(importPath)}");
 
                     // Refresh UI
-                    LoadProfiles();
+                    LoadProfiles(importedProfileName);
                 }
                 catch (Exception ex)
                 {
@@ -812,9 +820,16 @@ namespace FODevManager.WinUI
             return await RunOperationAsync(() => _profileService.CreateProfile(profileName), "Create profile");
         }
 
-        private async Task<bool> ImportProfile(string importPath)
+        private async Task<string> ImportProfile(string importPath)
         {
-            return await RunOperationAsync(() => _profileService.ImportProfile(importPath), "Import profile");
+            var (ok, importedProfile) = await BusyOps.TrySyncAsAsync(() => _profileService.ImportProfile(importPath), "Import profile");
+
+            if (ok)
+            {
+                return importedProfile.ProfileName;
+            }
+
+            return string.Empty;
         }
 
         private async Task<bool> CheckProfile(string profileName)
@@ -956,9 +971,14 @@ namespace FODevManager.WinUI
             });
         }
 
-        private void Button_Click(object sender, RoutedEventArgs e)
+        private void RepoHeader_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
         {
-
+            var fe = e.OriginalSource as FrameworkElement ?? sender as FrameworkElement;
+            if (fe?.DataContext is RepoGroupViewModel repo)
+            {
+                repo.IsExpanded = !repo.IsExpanded;
+                e.Handled = true;
+            }
         }
     }
 }

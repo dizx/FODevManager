@@ -6,8 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:converters="using:FODevManager.WinUI.Converters" xmlns:vm="using:FODevManager.WinUI.ViewModel"
-    mc:Ignorable="d"
-    Title="FO Dev Manager">
+    mc:Ignorable="d">
 
     <Window.SystemBackdrop>
         <MicaBackdrop Kind="BaseAlt"/>
@@ -18,6 +17,10 @@
 
             <Grid.Resources>
                 <converters:MessageTypeToColorConverter x:Key="MessageTypeToColorConverter" />
+                <converters:BoolToChevronConverter x:Key="BoolToChevronConverter"/>
+                <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+                <converters:ModelTypeToBrushConverter x:Key="ModelTypeToBrushConverter" SourceBrush="{ThemeResource TextFillColorPrimaryBrush}" CompiledBrush="CornflowerBlue"/>
+
             </Grid.Resources>
             <Grid.RowDefinitions>
                 <RowDefinition Height="48"/>
@@ -135,50 +138,67 @@
                         <DataTemplate x:Key="RepoItemTemplate" x:DataType="vm:RepoGroupViewModel">
                             <StackPanel Spacing="8" Margin="0,2,0,2">
 
-                                <Grid Margin="0,4,0,2" Background="{ThemeResource SystemFillColorNeutralBackgroundBrush}">
+                                <!-- Header (double-click to toggle) -->
+                                <Grid Margin="0,4,0,2"
+              Background="{ThemeResource SystemFillColorNeutralBackgroundBrush}"
+              DoubleTapped="RepoHeader_DoubleTapped"
+              Padding="6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="240"/>
-                                        <!-- Repo name -->
+                                        <ColumnDefinition Width="24"/>
                                         <ColumnDefinition Width="240"/>
-                                        <!-- Branch -->
                                         <ColumnDefinition Width="Auto"/>
-                                        <!-- Open -->
                                         <ColumnDefinition Width="Auto"/>
-                                        <!-- Assign -->
                                         <ColumnDefinition Width="Auto"/>
-                                        <!-- Remove (right) -->
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0"   Text="{x:Bind DisplayName}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="{x:Bind Branch}" FontStyle="Italic"  VerticalAlignment="Center" />
-                                    <Button Grid.Column="2" Content="Assign Task"   Click="AssignPeriTask_ForRepo_Click" Margin="6,0,0,0" />
-                                    <Button Grid.Column="3" Content="Open PeriTask"   Click="OpenPeriTask_ForRepo_Click" IsEnabled="{x:Bind HasPeriTask}" Margin="6,0,0,0"/>
-                                    <Button Grid.Column="4" Content="DevOps"    Click="OpenGitForRepo_Click" Margin="20,0,0,0"/>
 
+                                    
+                                    <TextBlock Grid.Column="0" Text="{x:Bind DisplayName}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center" Text="{x:Bind ChevronGlyph, Mode=OneWay}" />
+                                    <TextBlock Grid.Column="2" Text="{x:Bind Branch}" FontStyle="Italic" VerticalAlignment="Center"/>
+
+                                    <Button Grid.Column="3" Content="Assign Task" Click="AssignPeriTask_ForRepo_Click" Margin="6,0,0,0"/>
+                                    <Button Grid.Column="4" Content="Open PeriTask" Click="OpenPeriTask_ForRepo_Click" IsEnabled="{x:Bind HasPeriTask}" Margin="6,0,0,0"/>
+                                    <Button Grid.Column="5" Content="DevOps" Click="OpenGitForRepo_Click" Margin="20,0,0,0"/>
                                 </Grid>
-                                <!-- Rows for models in this repo -->
-                                <ItemsControl ItemsSource="{x:Bind Models}">
+
+                                <!-- Models (collapse with computed Visibility) -->
+                                <ItemsControl ItemsSource="{x:Bind Models, Mode=OneWay}" Visibility="{x:Bind IsExpandedVisibility, Mode=OneWay}">
                                     <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:ProfileEnvironmentViewModel"> <Grid Margin="0,4,0,2">
+                                        <DataTemplate x:DataType="vm:ProfileEnvironmentViewModel">
+                                            <Grid Margin="10,4,0,2">
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="240"/> <!-- Name -->
-                                                    <ColumnDefinition Width="240"/> <!-- Status -->
-                                                    <ColumnDefinition Width="Auto"/> <!-- Deploy -->
-                                                    <ColumnDefinition Width="Auto"/> <!-- Undeploy -->
-                                                    <ColumnDefinition Width="*"/> <!-- Spacer -->
-                                                    <ColumnDefinition Width="Auto"/> <!-- Remove (right) -->
+                                                    <ColumnDefinition Width="240"/>
+                                                    <ColumnDefinition Width="240"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
 
-                                                <TextBlock Grid.Column="0" Text="{x:Bind ModelName}" VerticalAlignment="Center"/>
+                                                <!--<TextBlock Grid.Column="0" Text="{x:Bind ModelName}" Foreground="{Binding ModelType, Converter={StaticResource ModelTypeToBrushConverter}}" VerticalAlignment="Center"/>-->
+
+                                                <!-- Source (default color) -->
+                                                <TextBlock x:Name="ModelNameSource" Grid.Column="0" Text="{x:Bind ModelName}" VerticalAlignment="Center" x:Load="{x:Bind IsSource, Mode=OneWay}" /> 
+                                                <!-- Compiled (accent/blue) -->
+                                                <TextBlock x:Name="ModelNameCompiled" Grid.Column="0" Text="{x:Bind ModelName}" VerticalAlignment="Center" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" FontWeight="SemiBold" x:Load="{x:Bind IsCompiled, Mode=OneWay}" />
+
+
                                                 <TextBlock Grid.Column="1" Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}" VerticalAlignment="Center"/>
                                                 <Button Grid.Column="2" Content="Deploy" Tag="{x:Bind ModelName}" Click="DeployModel_Click" Margin="6,0,0,0"/>
                                                 <Button Grid.Column="3" Content="Undeploy" Tag="{x:Bind ModelName}" Click="UnDeployModel_Click" Margin="6,0,0,0"/>
                                                 <Button Grid.Column="5" Content="Remove" Tag="{x:Bind ModelName}" Click="RemoveModel_Click" Margin="10,0,0,0" HorizontalAlignment="Right"/>
+                                                
+                                                
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+
                             </StackPanel>
                         </DataTemplate>
+
+
 
                         <DataTemplate x:Key="NonGitRowTemplate" x:DataType="vm:ProfileEnvironmentViewModel">
                             <Grid Margin="0,2,0,2">
