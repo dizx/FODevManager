@@ -10,13 +10,22 @@
 
         public string MetadataFolder { get; set; } = "";
 
+        public string CompiledModelFolder { get; set; } = "";
+
         public string GitUrl { get; set; } = "";
 
         public string PeriTask { get; set; } = "";
         public string PeriTaskComment { get; set; } = "";
 
-
         public bool IsDeployed { get; set; } = false;
-        
+
+        public ModelType ModelType { get; set; } = ModelType.Source;
+
     }
+    public enum ModelType
+    {
+        Source,   
+        Compiled  
+    }
+
 }
