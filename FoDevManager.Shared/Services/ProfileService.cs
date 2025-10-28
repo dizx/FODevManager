@@ -117,6 +117,7 @@ namespace FODevManager.Services
 
                 string solutionFilePath = _solutionService.CreateSolutionFile(profile.ProfileName);
 
+                profile.ProfileFilePath = importPath;
                 profile.SolutionFilePath = solutionFilePath;
                 profile.IsActive = false;
 

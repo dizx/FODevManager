@@ -557,7 +557,7 @@ namespace FODevManager.WinUI
                 try
                 {
                     var importPath = file.Path;
-                    await CreateProfile(importPath);
+                    await ImportProfile(importPath);
 
                     MessageLogger.Highlight($"✅ Profile imported: {Path.GetFileName(importPath)}");
 
