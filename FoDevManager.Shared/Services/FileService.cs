@@ -115,7 +115,7 @@ namespace FODevManager.Services
                     env.PeriTaskComment = "";
                     env.IsDeployed = false;
                 }
-                FileHelper.SaveJson(externalSavePath, profile);
+                FileHelper.SaveJson(externalSavePath, clone);
             }
 
         }
