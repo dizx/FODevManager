@@ -31,7 +31,7 @@ namespace FODevManager.WinUI.Framework
                     var result = await func().ConfigureAwait(true);
 
                     MessageLogger.Highlight($"✓ {operationName} completed.");
-                    return new(true, default);
+                    return new(true, result);
                 }
                 catch (OperationCanceledException cancelException)
                 {
@@ -60,7 +60,7 @@ namespace FODevManager.WinUI.Framework
         }
 
         public static Task<TryResult<T>> TrySyncAsAsync<T>(Func<T> func, string operationName, T fallback = default)
-            => TryCatchAsync(() => Task.Run(func), operationName, fallback);
+            => TryCatchAsync<T>(() => Task.Run(func), operationName, fallback);
 
         public static async Task<bool> TryCatchAsync(Func<Task> action, string operationName)
         {
