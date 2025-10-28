@@ -62,7 +62,7 @@ namespace FODevManager.Services
             if (!File.Exists(solutionFilePath))
             {
                 MessageLogger.Info($"Solution file does not exist for profile '{profileName}'. Creating one...");
-                CreateSolutionFile(profileName);
+                CreateSolutionFile(profileName);    
             }
 
             string relativePath = Path.GetRelativePath(solutionDir, projectFilePath);

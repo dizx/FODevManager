@@ -798,7 +798,13 @@ namespace FODevManager.WinUI
 
         private async Task<bool> AddEnvironmentToProfile(string profileName, string path)
         {
-            return await RunOperationAsync(() => _profileService.AddEnvironment(profileName, string.Empty, path), "Add Environment to profile");
+            var ret = await RunOperationAsync(() => _profileService.AddEnvironment(profileName, string.Empty, path), "Add Environment to profile");
+            if (!ret) return false;
+            //await CheckProfile(profileName);
+            LoadModelListViewData(profileName);
+
+            return true;
+
         }
 
         private async Task<bool> CreateProfile(string profileName)
