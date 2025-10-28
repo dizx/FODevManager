@@ -45,8 +45,11 @@ namespace FODevManager.Services
             {
                 var profile = _fileService.LoadProfile(profileName);
 
-                DeploySingleModel(profile, modelName);
-                UpdateProfileFile(profileName, new ProfileEnvironmentModel { ModelName = modelName, IsDeployed = true });
+                if(DeploySingleModel(profile, modelName))
+                {
+                    UpdateProfileFile(profileName, new ProfileEnvironmentModel { ModelName = modelName, IsDeployed = true });
+                }
+                
             }
             finally
             {
@@ -73,8 +76,9 @@ namespace FODevManager.Services
                     if (!model.IsDeployed && !Directory.Exists(linkPath))
                     {
                         MessageLogger.Info($"🔄 Deploying model: {model.ModelName}...");
-                        DeploySingleModel(profile, model.ModelName);
-                        model.IsDeployed = true;
+                        
+                        if(DeploySingleModel(profile, model.ModelName))
+                            model.IsDeployed = true;
                         anyUndeployed = true;
                     }
                 }
