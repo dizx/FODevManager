@@ -174,7 +174,6 @@ namespace FODevManager.WinUI
         
         private void LoadModelListViewData(string profileName)
         {
-            // however you currently build your list of ProfileEnvironmentViewModel:
             var items = _profileService
                 .GetModelsInProfile(profileName) 
                 .Select(m => m.ToViewModel(GetActiveGitBranch(profileName, m.ModelName) ?? string.Empty)) 
@@ -978,6 +977,68 @@ namespace FODevManager.WinUI
             {
                 repo.IsExpanded = !repo.IsExpanded;
                 e.Handled = true;
+            }
+        }
+
+        private async void DeleteProfile_Click(object sender, RoutedEventArgs e)
+        {
+            string selectedProfileName = string.Empty;
+
+            try
+            {
+
+                if (ProfilesDropdown.SelectedItem is string profileName)
+                {
+                    selectedProfileName = profileName;
+                    var profile = LoadProfileByName(profileName);
+                    if (profile == null)
+                    {
+                        MessageLogger.Error($"✖ Profile '{profileName}' could not be loaded.");
+                        return;
+                    }
+                }
+                // Confirm
+                var dlg = new ContentDialog
+                {
+                    Title = "Delete profile?",
+                    Content = $"This will permanently delete the profile '{selectedProfileName}'\n\nThis cannot be undone.",
+                    PrimaryButtonText = "Delete",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await dlg.ShowAsync();
+                if (result != ContentDialogResult.Primary)
+                {
+                    MessageLogger.Info("ℹ Delete profile cancelled.");
+                    return;
+                }
+
+                
+                try
+                {
+                    
+                    _profileService.DeleteProfile(selectedProfileName);
+
+                    MessageLogger.Highlight($"✅ Deleted profile: {selectedProfileName}");
+
+
+                    ProfilesDropdown.SelectedItem = null;
+                    DatabaseNameTextBox.Text = string.Empty;
+                    IsActiveCheckBox.IsChecked = false;
+
+                    LoadProfiles();
+
+                }
+                catch (Exception ex)
+                {
+                    MessageLogger.Error($"✖ Failed to remove profile '{selectedProfileName}': {ex.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"✖ DeleteProfile error: {ex.Message}");
             }
         }
     }
