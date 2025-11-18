@@ -1,12 +1,13 @@
+using FODevManager.Messages;
+using FODevManager.Models;
+using FODevManager.Shared.Utils;
+using FODevManager.Utils;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
-using FODevManager.Models;
-using FODevManager.Utils;
-using FODevManager.Messages;
-using FODevManager.Shared.Utils;
 using System.Text.RegularExpressions;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace FODevManager.Services
 {
@@ -155,7 +156,7 @@ namespace FODevManager.Services
                         environment.ProjectFilePath = FileHelper.GetProjectFilePath(environment.ModelName, modelFolder);
                         environment.MetadataFolder = FileHelper.GetMetadataFolder(environment.ModelName, modelFolder);
 
-                        _solutionService.AddProjectToSolution(profile.ProfileName, environment.ModelName, environment.ProjectFilePath);
+                        _solutionService.AddProjectToSolution(profile, environment);
                     }
                     else
                     {
@@ -365,8 +366,13 @@ namespace FODevManager.Services
         public void CreateModel(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
-            _modelDeploymentService.CreateModel(modelName, profile);
-            _solutionService.AddProjectToSolution(profileName, modelName, DefaultProjectFilePath(modelName));
+            
+            if (_modelDeploymentService.CreateModel(modelName, profile))
+            {
+                AddProjectToVsSolution(profileName, modelName);
+                _modelDeploymentService.CheckIfGitRepository(profileName, modelName);
+            }
+            
         }
 
         private void HandleInstalledModel(string profileName, string modelName, string environmentPath)
@@ -384,18 +390,16 @@ namespace FODevManager.Services
                 return;
             }
 
-            RegisterModelToSolution(profileName, targetFolderName);
+            RegisterModelToSolution(profile, modelName);
         }
 
-        private void RegisterModelToSolution(string profileName, string modelName)
+        private void RegisterModelToSolution(ProfileModel profile, string modelName)
         {
-            _solutionService.AddProjectToSolution(profileName, modelName, DefaultProjectFilePath(modelName));
-            _modelDeploymentService.CheckIfGitRepository(profileName, modelName);
+            AddProjectToVsSolution(profile.ProfileName, modelName);
+            _modelDeploymentService.CheckIfGitRepository(profile.ProfileName, modelName);
 
             MessageLogger.Highlight($"✅ Converted model '{modelName}' registered into solution.");
         }
-
-        private string DefaultProjectFilePath(string modelName) => Path.Combine(_defaultSourceDirectory, modelName, "Project", modelName, $"{modelName}.rnrproj");
 
 
         private void AddModelToProfileIfNotExists(string profileName, string modelName, string environmentPath, ModelType modelType)
@@ -468,18 +472,31 @@ namespace FODevManager.Services
             });
 
             _fileService.SaveProfile(profile, updateExternal: true);
-
             _modelDeploymentService.CheckIfGitRepository(profileName, modelName);
 
             if (modelType == ModelType.Source)
             {
-                _solutionService.AddProjectToSolution(profileName, modelName, projectFilePath);
-                MessageLogger.Info($"✅ Model '{modelName}' added to profile '{profileName}' and included in solution.");
+                AddProjectToVsSolution(profileName, modelName);
             }
             else
             {
                 MessageLogger.Info($"✅ Compiled Model '{modelName}' added to profile");
             }
+        }
+
+        private void AddProjectToVsSolution(string profileName, string modelName)
+        {
+            var profile = _fileService.LoadProfile(profileName);
+            var newModel = profile.Environments.Find(e => e.ModelName == modelName);
+            if (newModel == null)
+            {
+                MessageLogger.Error($"❌ Error: Model '{modelName}' not found in profile after creation.");
+                return;
+            }
+            _solutionService.AddProjectToSolution(profile, newModel);
+
+            MessageLogger.Info($"✅ Model '{modelName}' added to profile '{profileName}' and included in solution.");
+
         }
 
         private bool IsInstalledModel(string path) => path.StartsWith(_deploymentBasePath, StringComparison.OrdinalIgnoreCase);

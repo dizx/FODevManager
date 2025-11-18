@@ -19,6 +19,8 @@
 
         public bool IsDeployed { get; set; } = false;
 
+        public bool IsMainFOModel { get; set; } = false;
+
         public ModelType ModelType { get; set; } = ModelType.Source;
 
     }

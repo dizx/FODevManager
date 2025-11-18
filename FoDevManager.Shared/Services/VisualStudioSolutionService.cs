@@ -1,10 +1,11 @@
-﻿using FODevManager.Utils;
+﻿using FODevManager.Messages;
+using FODevManager.Models;
+using FODevManager.Utils;
 using Microsoft.Extensions.Configuration;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
-using FODevManager.Messages;
-using System.Diagnostics;
 
 namespace FODevManager.Services
 {
@@ -22,6 +23,35 @@ namespace FODevManager.Services
             return Path.Combine(_defaultSourceDirectory, profileName, $"{profileName}.sln");
         }
 
+        public string GetSolutionFilePath(ProfileModel profile)
+        {
+            if (profile == null) throw new ArgumentNullException(nameof(profile));
+
+            if (!string.IsNullOrWhiteSpace(profile.SolutionFilePath))
+                return Path.GetFullPath(profile.SolutionFilePath);
+
+            var mainEnv = profile.Environments?.FirstOrDefault(e => e.IsMainFOModel);
+            if (mainEnv != null && !string.IsNullOrWhiteSpace(mainEnv.ModelRootFolder))
+                return Path.Combine(mainEnv.ModelRootFolder, $"{profile.ProfileName}.sln");
+
+            return Path.Combine(_defaultSourceDirectory, profile.ProfileName, $"{profile.ProfileName}.sln");
+        }
+
+        public string GetSolutionDirectory(ProfileModel profile)
+        {
+            if (profile == null) throw new ArgumentNullException(nameof(profile));
+
+            if (!string.IsNullOrWhiteSpace(profile.SolutionFilePath))
+                return Path.GetDirectoryName(Path.GetFullPath(profile.SolutionFilePath))!;
+
+            var mainEnv = profile.Environments?.FirstOrDefault(e => e.IsMainFOModel);
+            if (mainEnv != null && !string.IsNullOrWhiteSpace(mainEnv.ModelRootFolder))
+                return mainEnv.ModelRootFolder;
+
+            return Path.Combine(_defaultSourceDirectory, profile.ProfileName);
+        }
+
+
         public string GetSolutionDirectory(string profileName)
         {
             return Path.Combine(_defaultSourceDirectory, profileName);
@@ -32,6 +62,19 @@ namespace FODevManager.Services
             string solutionDir = GetSolutionDirectory(profileName);
             string solutionFilePath = GetSolutionFilePath(profileName);
 
+            return CreateSolutionFile(profileName, solutionDir, solutionFilePath);
+        }
+
+        public string CreateSolutionFile(ProfileModel profile)
+        {
+            string solutionDir = GetSolutionDirectory(profile);
+            var solutionFilePath = GetSolutionFilePath(profile);
+            
+            return CreateSolutionFile(profile.ProfileName, solutionDir, solutionFilePath);
+        }
+
+        private string CreateSolutionFile(string profileName, string solutionDir, string solutionFilePath)
+        {
             if (!Directory.Exists(solutionDir))
             {
                 Directory.CreateDirectory(solutionDir);
@@ -54,34 +97,56 @@ namespace FODevManager.Services
             return solutionFilePath;
         }
 
-        public void AddProjectToSolution(string profileName, string modelName, string projectFilePath)
+        public void AddProjectToSolution(ProfileModel profile, ProfileEnvironmentModel environment)
         {
-            string solutionDir = GetSolutionDirectory(profileName);
-            string solutionFilePath = GetSolutionFilePath(profileName);
+            if (profile == null) throw new ArgumentNullException(nameof(profile));
+            if (environment == null) throw new ArgumentNullException(nameof(environment));
 
-            if (!File.Exists(solutionFilePath))
+            var projectFilePath = environment.ProjectFilePath;
+            if (string.IsNullOrWhiteSpace(projectFilePath))
             {
-                MessageLogger.Info($"Solution file does not exist for profile '{profileName}'. Creating one...");
-                CreateSolutionFile(profileName);    
-            }
-
-            string relativePath = Path.GetRelativePath(solutionDir, projectFilePath);
-            var lines = File.ReadAllLines(solutionFilePath);
-
-            // Check if the project is already in the solution
-            if (lines.Any(line => line.Contains($"\"{relativePath}\"", StringComparison.OrdinalIgnoreCase)))
-            {
-                MessageLogger.Warning($"⚠️ Project '{modelName}' is already included in the solution.");
+                MessageLogger.Error("Environment has no ProjectFilePath.");
                 return;
             }
 
-            string projectGuid = Guid.NewGuid().ToString("B").ToUpper();
-            var sb = new StringBuilder(File.ReadAllText(solutionFilePath));
-            sb.AppendLine($"Project(\"{projectGuid}\") = \"{modelName}\", \"{relativePath}\", \"{projectGuid}\"");
+            if (!File.Exists(projectFilePath))
+            {
+                MessageLogger.Error($"Project file not found: {projectFilePath}");
+                return;
+            }
+
+            var solutionDir = GetSolutionDirectory(profile);
+            var solutionFilePath = GetSolutionFilePath(profile);
+
+            if (!File.Exists(solutionFilePath))
+            {
+                MessageLogger.Info($"Solution file does not exist for profile '{profile.ProfileName}'. Creating one...");
+                CreateSolutionFile(profile); 
+            }
+
+            // .sln wants backslashes
+            var relativePath = Path.GetRelativePath(solutionDir, projectFilePath)
+                                   .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
+                                   .Replace('/', '\\');
+
+            // Avoid duplicates (case-insensitive)
+            var slnText = File.ReadAllText(solutionFilePath);
+            if (slnText.IndexOf($"\"{relativePath}\"", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                MessageLogger.Warning($"Project '{environment.ModelName}' already in solution.");
+                return;
+            }
+
+            // ProjectType GUID by extension (best-effort)
+            var projectTypeGuid = "{FC65038C-1B2F-41E1-A629-BED71D161FFF}";
+            var projectGuid = Guid.NewGuid().ToString("B").ToUpper();
+
+            var sb = new StringBuilder(slnText);
+            sb.AppendLine($"Project(\"{projectTypeGuid}\") = \"{environment.ModelName}\", \"{relativePath}\", \"{projectGuid}\"");
             sb.AppendLine("EndProject");
 
             File.WriteAllText(solutionFilePath, sb.ToString());
-            MessageLogger.Info($"✅ Added project '{modelName}' to solution '{profileName}.sln'.");
+            MessageLogger.Info($"Added project '{environment.ModelName}' to solution '{profile.ProfileName}.sln'.");
         }
 
 
