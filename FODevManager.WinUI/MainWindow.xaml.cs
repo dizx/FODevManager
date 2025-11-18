@@ -136,7 +136,7 @@ namespace FODevManager.WinUI
                     UIMessageHelper.LogToUI($"No active profile", MessageType.Warning);
                 }
 
-                SetProfile(currentProfile);
+                SetSelectedProfile(currentProfile);
 
             }
         }
@@ -154,24 +154,31 @@ namespace FODevManager.WinUI
 
         private void LoadProfile(string profileName)
         {
-            SetProfile(LoadProfileByName(profileName));
+            SetSelectedProfile(LoadProfileByName(profileName));
         }
 
-        private void SetProfile(ProfileModel? profile)
+        private void SetSelectedProfile(ProfileModel? profile)
+        {
+            if (profile == null)
+                return;
+
+            ProfilesDropdown.SelectedItem = profile.ProfileName;
+            SetActiveProfile(profile);
+        }
+
+        private void SetActiveProfile(ProfileModel? profile)
         {
             if (profile == null)
                 return;
 
             ActiveProfile = profile;
-
-            ProfilesDropdown.SelectedItem = profile.ProfileName;
             LoadModelListViewData(profile.ProfileName);
             UpdateProfileFields(profile);
         }
 
         private ModelsGroupingViewModel? _groupingVm;
+       
 
-        
         private void LoadModelListViewData(string profileName)
         {
             var items = _profileService
@@ -199,12 +206,10 @@ namespace FODevManager.WinUI
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
-                LoadModelListViewData(profileName);
-
                 var profile = _fileService.LoadProfile(profileName);
                 if (profile != null)
                 {
-                    UpdateProfileFields(profile);
+                    SetActiveProfile(profile);
                 }
             }
         }
@@ -214,25 +219,6 @@ namespace FODevManager.WinUI
             DatabaseNameTextBox.Text = profile.DatabaseName ?? string.Empty;
             IsActiveCheckBox.IsChecked = profile.IsActive;
 
-        }
-
-        private void OpenGit_Click(object sender, RoutedEventArgs e)
-        {
-            if (ProfilesDropdown.SelectedItem is not string profileName)
-                return;
-
-            if (sender is Button button && button.Tag is string modelName)
-            {
-                var model = GetModel(profileName, modelName);
-                if (model != null && IsGitRepo(profileName, modelName))
-                {
-                    OpenGitRepo(profileName, modelName);
-                }
-                else
-                {
-                    UIMessageHelper.LogToUI($"Git repository not found for model '{modelName}'.", MessageType.Warning);
-                }
-            }
         }
 
         private void OpenGitForRepo_Click(object sender, RoutedEventArgs e)
@@ -492,8 +478,6 @@ namespace FODevManager.WinUI
             }
         }
 
-
-
         private void OpenSolution_Click(object sender, RoutedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
@@ -632,7 +616,7 @@ namespace FODevManager.WinUI
             }
             else
             {
-                SetProfile(GetActiveProfile());
+                SetSelectedProfile(GetActiveProfile());
             }
         }
 
@@ -653,12 +637,12 @@ namespace FODevManager.WinUI
             }
         }
 
-        private void AddModel_Click(object sender, RoutedEventArgs e)
+        private async void AddModel_Click(object sender, RoutedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is string profileName && !string.IsNullOrWhiteSpace(ModelPathTextBox.Text))
             {
                 var path = ModelPathTextBox.Text;
-                AddEnvironmentToProfile(profileName, path);
+                await AddEnvironmentToProfile(profileName, path);
                 LoadModelListViewData(profileName);
                 ModelPathTextBox.Text = string.Empty;
             }
@@ -687,8 +671,6 @@ namespace FODevManager.WinUI
             }
         }
 
-
-
         private static DateTime GetBuildDate()
         {
             var assembly = Assembly.GetExecutingAssembly();
@@ -699,7 +681,6 @@ namespace FODevManager.WinUI
 
             return File.GetLastWriteTime(filePath);
         }
-            
 
         private async void OpenSettings_Click(object sender, RoutedEventArgs e)
         {
