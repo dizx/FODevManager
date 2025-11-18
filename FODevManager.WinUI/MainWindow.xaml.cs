@@ -23,6 +23,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using Windows.System;
 using Windows.UI.Text;
@@ -41,6 +42,9 @@ namespace FODevManager.WinUI
         private MicaController? _micaController;
         private SystemBackdropConfiguration? _backdropConfig;
         private AppWindow _appWindow;
+        private CancellationTokenSource? _profileSyncCts;
+        private ModelsGroupingViewModel? _groupingVm;
+
         public BusyOverlayViewModel BusyOverlayVm { get; }
         public ProfileModel ActiveProfile { get; set; }
 
@@ -52,6 +56,7 @@ namespace FODevManager.WinUI
             BusyOverlayVm = new BusyOverlayViewModel();
             this.Activated += MainWindow_Activated;
 
+            this.Closed += MainWindow_Closed;
 
             Singleton<Engine>.Instance.EnvironmentType = EnvironmentType.WinUi;
 
@@ -152,17 +157,22 @@ namespace FODevManager.WinUI
             return null;
         }
 
-        private void LoadProfile(string profileName)
-        {
-            SetSelectedProfile(LoadProfileByName(profileName));
-        }
 
         private void SetSelectedProfile(ProfileModel? profile)
         {
             if (profile == null)
                 return;
 
-            ProfilesDropdown.SelectedItem = profile.ProfileName;
+            ProfilesDropdown.SelectionChanged -= ProfilesDropdown_SelectionChanged;
+            try
+            {
+                ProfilesDropdown.SelectedItem = profile.ProfileName;
+            }
+            finally
+            {
+                ProfilesDropdown.SelectionChanged += ProfilesDropdown_SelectionChanged;
+            }
+
             SetActiveProfile(profile);
         }
 
@@ -174,10 +184,113 @@ namespace FODevManager.WinUI
             ActiveProfile = profile;
             LoadModelListViewData(profile.ProfileName);
             UpdateProfileFields(profile);
+
+            StartProfileSyncMonitoring(profile);
         }
 
-        private ModelsGroupingViewModel? _groupingVm;
        
+        private void StartProfileSyncMonitoring(ProfileModel profile)
+        {
+            // Cancel previous monitor (if any)
+            _profileSyncCts?.Cancel();
+            _profileSyncCts = new CancellationTokenSource();
+
+            // Fire-and-forget
+            _ = RunProfileSyncLoopAsync(profile, _profileSyncCts.Token);
+        }
+
+        private async Task RunProfileSyncLoopAsync(ProfileModel profile, CancellationToken token)
+        {
+            try
+            {
+                // Initial delay after selection
+                await Task.Delay(TimeSpan.FromSeconds(15), token);
+                if (token.IsCancellationRequested)
+                    return;
+
+                await RunModelSyncCheckAsync(profile);
+
+                // Repeat every 5 minutes
+                while (!token.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromMinutes(2), token);
+                    if (token.IsCancellationRequested)
+                        break;
+
+                    await RunModelSyncCheckAsync(profile);
+                }
+            }
+            catch (TaskCanceledException)
+            {
+                // Expected when switching profiles or closing app
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"RunProfileSyncLoopAsync failed: {ex.Message}");
+            }
+        }
+
+        private void MainWindow_Closed(object sender, WindowEventArgs args)
+        {
+            _profileSyncCts?.Cancel();
+            BusyOverlayVm.Dispose();
+        }
+
+        private async Task RunModelSyncCheckAsync(ProfileModel currentProfile)
+        {
+            try
+            {
+                if (currentProfile == null)
+                    return;
+
+                // This stays in the service project, no UI there
+                var syncResult = await _profileService.CheckProfileModelChangesAsync(currentProfile);
+
+                if (!syncResult.HasChanges)
+                    return;
+
+                var added = syncResult.AddedModels.Any()
+                    ? $"Added: {string.Join(", ", syncResult.AddedModels)}\n"
+                    : string.Empty;
+
+                var removed = syncResult.RemovedModels.Any()
+                    ? $"Removed: {string.Join(", ", syncResult.RemovedModels)}\n"
+                    : string.Empty;
+
+                var message =
+                    "The profile definition has changed (models were added or removed).\n\n" +
+                    added + removed +
+                    "\nDo you want to re-import the profile now?";
+
+                var dialog = new ContentDialog
+                {
+                    Title = "Profile changes detected",
+                    Content = message,
+                    PrimaryButtonText = "Re-import",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Primary,
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await dialog.ShowAsync();
+                if (result != ContentDialogResult.Primary)
+                    return;
+
+                if (string.IsNullOrWhiteSpace(currentProfile.ProfileFilePath))
+                    return;
+
+                var updatedProfile = _profileService.ImportProfile(currentProfile.ProfileFilePath);
+                if (updatedProfile != null)
+                {
+                    SetSelectedProfile(updatedProfile); 
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"RunModelSyncCheckAsync failed: {ex.Message}");
+            }
+        }
+
 
         private void LoadModelListViewData(string profileName)
         {
@@ -206,7 +319,10 @@ namespace FODevManager.WinUI
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
-                var profile = _fileService.LoadProfile(profileName);
+                if(ActiveProfile?.ProfileName == profileName)
+                    return;
+
+                var profile = LoadProfileByName(profileName);
                 if (profile != null)
                 {
                     SetActiveProfile(profile);
@@ -612,7 +728,7 @@ namespace FODevManager.WinUI
             if (await SwitchProfile(newProfile))
             {
                 UIMessageHelper.LogToUI($"✅ Switched to profile '{newProfile}'");
-                LoadModelListViewData(newProfile);
+                SetSelectedProfile(LoadProfileByName(newProfile));
             }
             else
             {

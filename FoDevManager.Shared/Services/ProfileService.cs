@@ -1,5 +1,6 @@
 using FODevManager.Messages;
 using FODevManager.Models;
+using FODevManager.Shared.Models;
 using FODevManager.Shared.Utils;
 using FODevManager.Utils;
 using System;
@@ -97,6 +98,97 @@ namespace FODevManager.Services
 
             return true;
         }
+
+        private static ModelSyncResult GetEnvironmentDiff(ProfileModel current, ProfileModel imported)
+        {
+            var result = new ModelSyncResult();
+
+            var currentNames = new HashSet<string>(
+                current.Environments.Select(e => e.ModelName),
+                StringComparer.OrdinalIgnoreCase);
+
+            var importedNames = new HashSet<string>(
+                imported.Environments.Select(e => e.ModelName),
+                StringComparer.OrdinalIgnoreCase);
+
+            // Added models (in imported but not in current)
+            foreach (var name in importedNames)
+            {
+                if (!currentNames.Contains(name))
+                    result.AddAdded(name);
+            }
+
+            // Removed models (in current but not in imported)
+            foreach (var name in currentNames)
+            {
+                if (!importedNames.Contains(name))
+                    result.AddRemoved(name);
+            }
+
+            return result;
+        }
+
+        public Task<ModelSyncResult> CheckProfileModelChangesAsync(ProfileModel currentProfile)
+        {
+            var result = CheckProfileModelChanges(currentProfile);
+            return Task.FromResult(result);
+        }
+
+        private ModelSyncResult CheckProfileModelChanges(ProfileModel currentProfile)
+        {
+            if (currentProfile == null)
+            {
+                MessageLogger.Error("CheckProfileModelChanges: currentProfile is null.");
+                return new ModelSyncResult();
+            }
+
+            if (string.IsNullOrWhiteSpace(currentProfile.ProfileFilePath))
+            {
+                MessageLogger.Warning("CheckProfileModelChanges: ProfileFilePath is not set. Skipping model sync check.");
+                return new ModelSyncResult();
+            }
+
+            var importPath = currentProfile.ProfileFilePath;
+
+            if (!File.Exists(importPath))
+            {
+                MessageLogger.Warning($"CheckProfileModelChanges: Profile file not found: {importPath}");
+                return new ModelSyncResult();
+            }
+
+            try
+            {
+                var importedProfile = FileHelper.LoadJson<ProfileModel>(importPath);
+                if (importedProfile == null || string.IsNullOrWhiteSpace(importedProfile.ProfileName))
+                {
+                    MessageLogger.Error("CheckProfileModelChanges: Imported profile is invalid.");
+                    return new ModelSyncResult();
+                }
+
+                var diff = GetEnvironmentDiff(currentProfile, importedProfile);
+
+                if (!diff.HasChanges)
+                {
+                    MessageLogger.Info("CheckProfileModelChanges: No added or removed models detected.");
+                }
+                else
+                {
+                    if (diff.AddedModels.Any())
+                        MessageLogger.Info($"CheckProfileModelChanges: Added models: {string.Join(", ", diff.AddedModels)}");
+
+                    if (diff.RemovedModels.Any())
+                        MessageLogger.Info($"CheckProfileModelChanges: Removed models: {string.Join(", ", diff.RemovedModels)}");
+                }
+
+                return diff;
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"CheckProfileModelChanges: Failed to load or compare profiles: {ex.Message}");
+                return new ModelSyncResult();
+            }
+        }
+
 
         public ProfileModel ImportProfile(string importPath)
         {
