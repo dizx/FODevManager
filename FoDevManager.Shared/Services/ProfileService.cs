@@ -102,38 +102,39 @@ namespace FODevManager.Services
         {
             if (!File.Exists(importPath))
             {
-                MessageLogger.Error($"❌ Profile file not found: {importPath}");
+                MessageLogger.Error($"Profile file not found: {importPath}");
                 return null!;
             }
 
             try
             {
-                var profile = FileHelper.LoadJson<ProfileModel>(importPath);
+                var sourceProfile = FileHelper.LoadJson<ProfileModel>(importPath);
 
-                if (profile == null || string.IsNullOrWhiteSpace(profile.ProfileName))
+                if (sourceProfile == null || string.IsNullOrWhiteSpace(sourceProfile.ProfileName))
                 {
-                    MessageLogger.Error("❌ Invalid profile file.");
+                    MessageLogger.Error("Invalid profile file.");
                     return null!;
                 }
 
-                string solutionFilePath = _solutionService.CreateSolutionFile(profile.ProfileName);
+                sourceProfile.ProfileFilePath = importPath;
+                sourceProfile.IsActive = false;
 
-                profile.ProfileFilePath = importPath;
-                profile.SolutionFilePath = solutionFilePath;
-                profile.IsActive = false;
-
-                string profileDestPath = Path.Combine(_profileStoragePath, profile.ProfileName + ".json");
-
+                var profileDestPath = Path.Combine(_profileStoragePath, sourceProfile.ProfileName + ".json");
                 if (File.Exists(profileDestPath))
                 {
-                    MessageLogger.Warning($"⚠️ Profile '{profile.ProfileName}' already exists. It will be overwritten.");
+                    MessageLogger.Warning($"Profile '{sourceProfile.ProfileName}' already exists. It will be overwritten.");
                 }
 
-                MessageLogger.Info($"📥 Importing profile '{profile.ProfileName}'...");
+                MessageLogger.Info($"Importing profile '{sourceProfile.ProfileName}'...");
 
-                foreach (var environment in profile.Environments)
+                var sourceEnvironments = new List<ProfileEnvironmentModel>();
+
+                foreach (var environment in sourceProfile.Environments)
                 {
-                    var modelFolderName = environment.GitUrl.IsNullOrEmpty() ? environment.ModelName : ExtractAzureDevOpsRepo(environment.GitUrl);
+                    var modelFolderName = environment.GitUrl.IsNullOrEmpty()
+                        ? environment.ModelName
+                        : ExtractAzureDevOpsRepo(environment.GitUrl);
+
                     var modelFolder = Path.Combine(_defaultSourceDirectory, modelFolderName);
                     FileHelper.EnsureDirectoryExists(modelFolder);
 
@@ -141,49 +142,105 @@ namespace FODevManager.Services
                     {
                         if (GitHelper.IsGitRepository(modelFolder))
                         {
-                            MessageLogger.Warning($"⚠️ Git repo already exists at {modelFolder}. Skipping clone.");
+                            MessageLogger.Warning($"Git repo already exists at {modelFolder}. Skipping clone.");
                         }
                         else if (!GitHelper.CloneRepository(environment.GitUrl, modelFolder))
                         {
-                            MessageLogger.Error($"❌ Failed to clone repository for {environment.ModelName}.");
+                            MessageLogger.Error($"Failed to clone repository for {environment.ModelName}.");
                             continue;
                         }
                     }
 
                     environment.ModelRootFolder = modelFolder;
+
                     if (environment.ModelType == ModelType.Source)
                     {
                         environment.ProjectFilePath = FileHelper.GetProjectFilePath(environment.ModelName, modelFolder);
                         environment.MetadataFolder = FileHelper.GetMetadataFolder(environment.ModelName, modelFolder);
-
-                        _solutionService.AddProjectToSolution(profile, environment);
+                        sourceEnvironments.Add(environment);
                     }
                     else
                     {
                         environment.CompiledModelFolder = FileHelper.GetLibsFolder(environment.ModelName, modelFolder);
                     }
 
+                    // Deployment flag
                     string deploymentLinkPath = Path.Combine(_deploymentBasePath, environment.ModelName);
-                    bool isAlreadyDeployed = Directory.Exists(deploymentLinkPath);
-                    environment.IsDeployed = isAlreadyDeployed;
-
-                    
+                    environment.IsDeployed = Directory.Exists(deploymentLinkPath);
                 }
 
-                FileHelper.SaveJson(profileDestPath, profile);
-                MessageLogger.Highlight($"✅ Profile '{profile.ProfileName}' imported successfully.");
+                if(sourceProfile.SolutionFilePath.IsNullOrEmpty())
+                {
+                    // Decide on the solution path now (before adding projects)
+                    var mainFoEnvironment = sourceProfile.Environments.FirstOrDefault(e => e.IsMainFOModel && !string.IsNullOrWhiteSpace(e.ModelRootFolder));
 
-                return profile;
+                    if (mainFoEnvironment != null)
+                    {
+                        var existingVsSolution = FindExistingSolutionFile(mainFoEnvironment.ModelRootFolder!, sourceProfile.ProfileName);
+                        if (!string.IsNullOrWhiteSpace(existingVsSolution))
+                        {
+                            // Use existing solution in the main repo
+                            sourceProfile.SolutionFilePath = Path.GetFullPath(existingVsSolution);
+                            MessageLogger.Highlight($"Using existing solution: {sourceProfile.SolutionFilePath}");
+                        }
+                    }
+                    else
+                    {
+                        sourceProfile.SolutionFilePath = _solutionService.GetSolutionFilePath(sourceProfile);
+                        if (!File.Exists(sourceProfile.SolutionFilePath))
+                        {
+                            MessageLogger.Info("No solution found. Creating a new one...");
+                            _solutionService.CreateSolutionFile(sourceProfile); // profile-aware overload
+                        }
+                    }
 
+                }
+
+                // Add source projects 
+                foreach (var env in sourceEnvironments)
+                {
+                    _solutionService.AddProjectToSolution(sourceProfile, env);
+                }
+
+                // Persist the imported profile
+                FileHelper.SaveJson(profileDestPath, sourceProfile);
+                MessageLogger.Highlight($"Profile '{sourceProfile.ProfileName}' imported successfully.");
+
+                return sourceProfile;
             }
             catch (Exception ex)
             {
-                MessageLogger.Error($"❌ Failed to import profile: {ex.Message}");
+                MessageLogger.Error($"Failed to import profile: {ex.Message}");
                 return null!;
             }
         }
 
-        
+        private static string? FindExistingSolutionFile(string repoRoot, string profileName)
+        {
+            try
+            {
+                // Only look in the root folder, not subfolders
+                var slns = Directory.GetFiles(repoRoot, "*.sln", SearchOption.TopDirectoryOnly)
+                                    .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                                    .ToArray();
+
+                if (slns.Length == 0) return null;
+
+                var preferred = slns.FirstOrDefault(s =>
+                    string.Equals(Path.GetFileNameWithoutExtension(s),
+                                  profileName,
+                                  StringComparison.OrdinalIgnoreCase));
+
+                return preferred ?? slns.First();
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Warning($"Failed to scan for existing solution in '{repoRoot}': {ex.Message}");
+                return null;
+            }
+        }
+
+
         public void SetDatabaseName(string profileName, string dbName)
         {
             var profile = _fileService.LoadProfile(profileName);
