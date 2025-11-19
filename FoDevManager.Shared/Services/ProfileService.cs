@@ -269,21 +269,20 @@ namespace FODevManager.Services
                     if (mainFoEnvironment != null)
                     {
                         var existingVsSolution = FindExistingSolutionFile(mainFoEnvironment.ModelRootFolder!, sourceProfile.ProfileName);
-                        if (!string.IsNullOrWhiteSpace(existingVsSolution))
+                        if (!existingVsSolution.IsNullOrEmpty())
                         {
                             // Use existing solution in the main repo
                             sourceProfile.SolutionFilePath = Path.GetFullPath(existingVsSolution);
                             MessageLogger.Highlight($"Using existing solution: {sourceProfile.SolutionFilePath}");
                         }
+                        else
+                        {
+                            sourceProfile.SolutionFilePath = _solutionService.CreateSolutionFile(sourceProfile);
+                        }
                     }
                     else
                     {
-                        sourceProfile.SolutionFilePath = _solutionService.GetSolutionFilePath(sourceProfile);
-                        if (!File.Exists(sourceProfile.SolutionFilePath))
-                        {
-                            MessageLogger.Info("No solution found. Creating a new one...");
-                            _solutionService.CreateSolutionFile(sourceProfile); // profile-aware overload
-                        }
+                        sourceProfile.SolutionFilePath = _solutionService.CreateSolutionFile(sourceProfile);
                     }
 
                 }
