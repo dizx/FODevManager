@@ -257,10 +257,8 @@ namespace FODevManager.WinUI
                     ? $"Removed: {string.Join(", ", syncResult.RemovedModels)}\n"
                     : string.Empty;
 
-                var message =
-                    "The profile definition has changed (models were added or removed).\n\n" +
-                    added + removed +
-                    "\nDo you want to re-import the profile now?";
+                var message = $"The { currentProfile.ProfileName } profile definition has changed (models were added or removed).\n\n" +
+                    added + removed + "\nDo you want to re-import the profile now?";
 
                 var dialog = new ContentDialog
                 {

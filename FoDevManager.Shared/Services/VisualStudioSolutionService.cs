@@ -124,29 +124,57 @@ namespace FODevManager.Services
                 CreateSolutionFile(profile); 
             }
 
-            // .sln wants backslashes
-            var relativePath = Path.GetRelativePath(solutionDir, projectFilePath)
-                                   .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
-                                   .Replace('/', '\\');
 
-            // Avoid duplicates (case-insensitive)
-            var slnText = File.ReadAllText(solutionFilePath);
-            if (slnText.IndexOf($"\"{relativePath}\"", StringComparison.OrdinalIgnoreCase) >= 0)
+            var lines = File.ReadAllLines(solutionFilePath);
+
+            var alreadyInSolution = lines
+                .Select(TryGetProjectNameFromLine)
+                .Where(name => !name.IsNullOrEmpty())
+                .Any(name => name!.Contains(environment.ModelName, StringComparison.OrdinalIgnoreCase));
+
+            if (alreadyInSolution)
             {
                 MessageLogger.Warning($"Project '{environment.ModelName}' already in solution.");
                 return;
             }
 
-            // ProjectType GUID by extension (best-effort)
+
+            // .sln wants backslashes
+            var relativePath = Path.GetRelativePath(solutionDir, projectFilePath)
+                                   .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
+                                   .Replace('/', '\\');
+
+         
             var projectTypeGuid = "{FC65038C-1B2F-41E1-A629-BED71D161FFF}";
             var projectGuid = Guid.NewGuid().ToString("B").ToUpper();
 
-            var sb = new StringBuilder(slnText);
-            sb.AppendLine($"Project(\"{projectTypeGuid}\") = \"{environment.ModelName}\", \"{relativePath}\", \"{projectGuid}\"");
+            var sb = new StringBuilder(File.ReadAllText(solutionFilePath));
+            sb.AppendLine($"Project(\"{projectTypeGuid}\") = \"{environment.ModelName}\",    \"{relativePath}\", \"{projectGuid}\"");
             sb.AppendLine("EndProject");
 
             File.WriteAllText(solutionFilePath, sb.ToString());
             MessageLogger.Info($"Added project '{environment.ModelName}' to solution '{profile.ProfileName}.sln'.");
+        }
+
+        private static string? TryGetProjectNameFromLine(string line)
+        {
+            // Example line:
+            // Project("{TYPE-GUID}") = "MyModelName", "MyModelName\MyModelName.rnrproj", "{PROJECT-GUID}"
+            if (!line.TrimStart().StartsWith("Project(", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var parts = line.Split('"');
+            // indices:
+            // 0: Project(
+            // 1: TYPE-GUID
+            // 2: ) = 
+            // 3: PROJECT NAME
+            // 4: , 
+            // 5: PROJECT PATH
+            if (parts.Length < 4)
+                return null;
+
+            return parts[3].Trim();
         }
 
 
