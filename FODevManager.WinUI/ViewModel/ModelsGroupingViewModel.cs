@@ -1,4 +1,6 @@
-﻿using System;
+﻿using FODevManager.Models;
+using FODevManager.Models.FODevManager.Models;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -10,28 +12,59 @@ namespace FODevManager.WinUI.ViewModel
         public ReadOnlyCollection<RepoGroupViewModel> GitGroups { get; }
         public ReadOnlyCollection<ProfileEnvironmentViewModel> NonGitModels { get; }
 
-        public ModelsGroupingViewModel(IEnumerable<ProfileEnvironmentViewModel> items)
+        public ModelsGroupingViewModel(ProfileModel profile, IEnumerable<ProfileEnvironmentViewModel> allItems)
         {
-            var list = items?.ToList() ?? new List<ProfileEnvironmentViewModel>();
+            var items = allItems?.ToList() ?? new List<ProfileEnvironmentViewModel>();
 
-            var git = list.Where(v => v.HasGit).ToList();
-            var non = list.Where(v => !v.HasGit).ToList();
+            // Standalone/non-repo models = still come from list (or profile.Environments)
+            var non = items.Where(v => !v.HasGit).ToList();
 
-            var groups = git.GroupBy(v => v.GitUrl)
-                            .Select(g =>
-                            {
-                                var vms = g.OrderBy(x => x.ModelName, StringComparer.OrdinalIgnoreCase).ToList();
-                                var display = ExtractRepoName(g.Key);
-                                var branch = vms.FirstOrDefault()?.GitBranch; // same repo => same branch
-                                return new RepoGroupViewModel(
-                                    gitUrl: g.Key,
-                                    displayName: display,
-                                    branch: branch,
-                                    models: new ReadOnlyCollection<ProfileEnvironmentViewModel>(vms)
-                                );
-                            })
-                            .OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+            // Repo groups should come from profile.Repositories (source of truth)
+            var groups = (profile.Repositories ?? new List<RepositoryModel>())
+                .Select(repo =>
+                {
+                    // Match viewmodels to repo models. Prefer (ModelName + MetadataFolder) to avoid collisions.
+                    var repoModelKeys = (repo.Models ?? new List<ProfileEnvironmentModel>())
+                        .Select(m => (m.ModelName ?? "", m.MetadataFolder ?? ""))
+                        .ToHashSet();
+
+                    var vms = items
+                        .Where(v => v.HasGit)
+                        .Where(v => repoModelKeys.Contains((v.ModelName ?? "", v.MetadataFolder ?? "")))
+                        .OrderBy(v => v.ModelName, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    // Fallback: if UI items weren’t built with MetadataFolder, match by name only
+                    if (vms.Count == 0)
+                    {
+                        var names = (repo.Models ?? new List<ProfileEnvironmentModel>())
+                            .Select(m => m.ModelName ?? "")
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                        vms = items
+                            .Where(v => v.HasGit)
+                            .Where(v => names.Contains(v.ModelName ?? ""))
+                            .OrderBy(v => v.ModelName, StringComparer.OrdinalIgnoreCase)
                             .ToList();
+                    }
+
+                    var display = !string.IsNullOrWhiteSpace(repo.DisplayName)
+                        ? repo.DisplayName
+                        : ExtractRepoName(repo.GitUrl ?? repo.RepoRootFolder);
+
+                    var branch = repo.LastKnownBranch; // repo-level truth
+
+                    return new RepoGroupViewModel(
+                        gitUrl: repo.GitUrl ?? string.Empty,
+                        displayName: display,
+                        branch: branch,
+                        models: new ReadOnlyCollection<ProfileEnvironmentViewModel>(vms)
+                    );
+                })
+                // Hide empty repos if you prefer
+                .Where(g => g.Models.Count > 0)
+                .OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             GitGroups = new ReadOnlyCollection<RepoGroupViewModel>(groups);
             NonGitModels = new ReadOnlyCollection<ProfileEnvironmentViewModel>(

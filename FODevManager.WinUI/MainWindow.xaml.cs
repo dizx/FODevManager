@@ -292,26 +292,32 @@ namespace FODevManager.WinUI
 
         private void LoadModelListViewData(string profileName)
         {
+            // Load full profile so grouping can use repositories as source-of-truth
+            var profile = _fileService.LoadProfile(profileName);
+
+            // Build model viewmodels WITHOUT per-model branch lookups
             var items = _profileService
-                .GetModelsInProfile(profileName) 
-                .Select(m => m.ToViewModel(GetActiveGitBranch(profileName, m.ModelName) ?? string.Empty)) 
+                .GetModelsInProfile(profileName)
+                .Select(m => m.ToViewModel(gitBranch: string.Empty))
                 .ToList();
 
-            _groupingVm = new ModelsGroupingViewModel(items);
+            // Optional: if your model VM needs HasGit/GitUrl filled, ensure those are set in ToViewModel.
+            // (Branch will be set at repo-group level instead.)
+
+            // Build grouping from repositories + standalone models
+            _groupingVm = new ModelsGroupingViewModel(profile, items);
 
             var active = _groupingVm.GitGroups.FirstOrDefault();
             if (active != null)
-            {
                 active.IsExpanded = true;
-            }
 
             var combined = new List<object>();
-            combined.AddRange(_groupingVm.GitGroups);        // RepoGroupViewModel items
-            combined.AddRange(_groupingVm.NonGitModels);     // ProfileEnvironmentViewModel items
+            combined.AddRange(_groupingVm.GitGroups);
+            combined.AddRange(_groupingVm.NonGitModels);
 
             CombinedList.ItemsSource = combined;
-
         }
+        
 
         private void ProfilesDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
