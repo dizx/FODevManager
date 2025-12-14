@@ -62,6 +62,8 @@ namespace FODevManager.Services
         public bool SwitchProfile(string newProfileName)
         {
             var currentProfileName = GetActiveProfileName();
+
+            
             if (currentProfileName == newProfileName)
             {
                 MessageLogger.Info($"ℹ️ Profile '{newProfileName}' is already active.");
@@ -76,12 +78,21 @@ namespace FODevManager.Services
             if (!currentProfileName.IsNullOrEmpty())
             {
                 var currentProfile = _fileService.LoadProfile(currentProfileName);
-                foreach (var model in currentProfile.Environments)
+                EnsureRepositories(currentProfile);
+
+                
+                if (_checkUncommittedBeforeSwitch)
                 {
-                    if (_checkUncommittedBeforeSwitch && GitHelper.IsGitRepository(model.ModelRootFolder) && GitHelper.HasUncommittedChanges(model.ModelRootFolder))
+                    foreach (var repo in currentProfile.Repositories)
                     {
-                        MessageLogger.Error($"❌ Uncommitted Git changes found in model '{model.ModelName}'. Switch aborted.");
-                        return false;
+                        if (!GitHelper.IsGitRepository(repo.RepoRootFolder))
+                            continue;
+
+                        if (GitHelper.HasUncommittedChanges(repo.RepoRootFolder))
+                        {
+                            MessageLogger.Error($"❌ Uncommitted Git changes found in repo '{repo.RepoId}'. Switch aborted.");
+                            return false;
+                        }
                     }
                 }
 
@@ -90,6 +101,12 @@ namespace FODevManager.Services
             }
 
             MessageLogger.Info($"📂 Switching to profile '{newProfileName}'...");
+
+            var newProfile = _fileService.LoadProfile(newProfileName);
+            EnsureRepositories(newProfile);
+
+            SwitchBranchesInProfile(newProfile);
+
             UpdateDeploymentStatus(newProfileName);
 
             _modelDeploymentService.DeployAllUndeployedModels(newProfileName);
@@ -98,6 +115,32 @@ namespace FODevManager.Services
             MessageLogger.Highlight($"✅ Successfully switched to profile '{newProfileName}'.");
 
             return true;
+        }
+
+        private void SwitchBranchesInProfile(ProfileModel profile)
+        {
+            foreach (var repo in profile.Repositories)
+            {
+                if (!repo.AutoCheckoutOnProfileLoad)
+                    continue;
+
+                if (repo.PreferredBranch.IsNullOrEmpty())
+                    continue;
+
+                var stashMsg = $"FO Dev Manager: profile '{profile.ProfileName}' switch";
+
+                GitHelper.ChangeBranch(
+                    repo.RepoRootFolder,
+                    repo.PreferredBranch!,
+                    autoStashIfDirty: repo.AutoStashOnDirtyCheckout,
+                    stashMessage: stashMsg
+                );
+
+                repo.LastKnownBranch = GitHelper.GetActiveBranch(repo.RepoRootFolder);
+            }
+
+            _fileService.SaveProfile(profile);
+
         }
 
         private static ModelSyncResult GetEnvironmentDiff(ProfileModel current, ProfileModel imported)
@@ -866,6 +909,63 @@ namespace FODevManager.Services
                 _fileService.SaveProfile(profile);
                 MessageLogger.Info($"🔍 Deployment status updated for profile '{profileName}'");
             }
+        }
+
+        private bool EnsureRepositories(ProfileModel profile)
+        {
+            if (profile.Repositories != null && profile.Repositories.Count > 0)
+                return false;
+
+            if (profile.Environments == null || profile.Environments.Count == 0)
+                return false;
+
+            var repoMap = new Dictionary<string, RepositoryModel>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var m in profile.Environments)
+            {
+                // Your current ModelRootFolder is already the repo root folder in most flows
+                // (it’s used for git checks and cloning). :contentReference[oaicite:2]{index=2}
+                var repoRoot = (m.ModelRootFolder ?? "").Trim();
+                if (repoRoot.IsNullOrEmpty())
+                    continue;
+
+                // Key: prefer GitUrl if present, else folder path
+                var key = !m.GitUrl.IsNullOrEmpty() ? m.GitUrl : repoRoot;
+
+                if (!repoMap.TryGetValue(key, out var repo))
+                {
+                    repo = new RepositoryModel
+                    {
+                        RepoId = SlugRepoId(key),
+                        RepoRootFolder = repoRoot,
+                        GitUrl = m.GitUrl.IsNullOrEmpty() ? null : m.GitUrl
+                    };
+                    repoMap[key] = repo;
+                }
+
+                repo.Models.Add(m);
+            }
+
+            profile.Repositories = repoMap.Values
+                .OrderBy(r => r.RepoId, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // Optional: keep Environments for backwards compat, or clear it once UI is updated.
+            // profile.Environments = new();
+
+            MessageLogger.Info($"📦 Repositories built: {profile.Repositories.Count}");
+            return true;
+        }
+
+        private static string SlugRepoId(string input)
+        {
+            if (input.IsNullOrEmpty()) return Guid.NewGuid().ToString("N");
+
+            // Simple stable-ish id: folder name or repo name tail
+            var tail = input.Replace('\\', '/').TrimEnd('/');
+            tail = tail.Contains("/") ? tail.Split('/').Last() : tail;
+            tail = tail.Replace(".git", "", StringComparison.OrdinalIgnoreCase);
+            return tail.IsNullOrEmpty() ? Guid.NewGuid().ToString("N") : tail;
         }
 
     }
