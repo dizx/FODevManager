@@ -8,16 +8,116 @@ namespace FODevManager.Utils
 {
     public static class GitHelper
     {
-
-        public static bool IsGitRepository(string repoPath)
+        public sealed class GitRepoState
         {
+            public string? Branch { get; init; }
+            public string? Commit { get; init; }
+            public bool IsDirty { get; init; }
+        }
+
+        public static GitRepoState GetRepoState(string repoPath)
+        {
+            var branch = GetActiveBranch(repoPath);
+            var commit = GetHeadCommit(repoPath);
+            var dirty = HasUncommittedChanges(repoPath);
+
+            return new GitRepoState
+            {
+                Branch = branch,
+                Commit = commit,
+                IsDirty = dirty
+            };
+        }
+
+        public static string? GetHeadCommit(string repoPath)
+        {
+            try
+            {
+                string result;
+                if (RunProcess(repoPath, "git", "rev-parse HEAD", out result))
+                    return result?.Trim();
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"Error fetching commit: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        public static bool Stash(string repoPath, string message, bool includeUntracked = true)
+        {
+            try
+            {
+                var args = includeUntracked
+                    ? $"stash push -u -m \"{EscapeQuotes(message)}\""
+                    : $"stash push -m \"{EscapeQuotes(message)}\"";
+
+                string result;
+                if (RunProcess(repoPath, "git", args, out result))
+                {
+                    // git prints "No local changes to save" when nothing to stash
+                    if (result.IndexOf("No local changes", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        MessageLogger.Info("ℹ️ Nothing to stash.");
+                        return true;
+                    }
+
+                    MessageLogger.Highlight("✅ Changes stashed.");
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Error during stash: {ex.Message}");
+            }
+
+            return false;
+        }
+
+        public static bool StashPop(string repoPath)
+        {
+            try
+            {
+                string result;
+                if (RunProcess(repoPath, "git", "stash pop", out result))
+                {
+                    // Conflicts can still yield exit code 0 sometimes, so be conservative:
+                    if (result.IndexOf("CONFLICT", StringComparison.OrdinalIgnoreCase) >= 0)
+                        MessageLogger.Warning("⚠️ Stash applied with conflicts. Manual resolution may be required.");
+                    else
+                        MessageLogger.Highlight("✅ Stash applied.");
+
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Error during stash pop: {ex.Message}");
+            }
+
+            return false;
+        }
+        private static string EscapeQuotes(string value) => value.Replace("\"", "\\\"");
+
+
+
+       public static bool IsGitRepository(string? repoPath)
+        {
+            if(repoPath.IsNullOrEmpty())
+                return false;
+
             string noOutput = "";
             return IsGitRepository(repoPath, out noOutput);
         }
 
-        public static bool IsGitRepository(string repoPath, out string remoteUrl)
+        public static bool IsGitRepository(string? repoPath, out string remoteUrl)
         {
             remoteUrl = string.Empty;
+
+            if (repoPath.IsNullOrEmpty())
+                return false;
+            
             var isGitRepo = false; ;
             string gitDirPath = Path.Combine(repoPath, ".git");
             string configPath = Path.Combine(gitDirPath, "config");
@@ -42,8 +142,14 @@ namespace FODevManager.Utils
             return isGitRepo;
         }
 
-        public static void OpenGitRemoteUrl(string repoPath)
+        public static void OpenGitRemoteUrl(string? repoPath)
         {
+            if (repoPath.IsNullOrEmpty())
+            {
+                MessageLogger.Error("❌ Repository path is null or empty.");
+                return;
+            }
+
             string configPath = Path.Combine(repoPath, ".git", "config");
 
             if (!File.Exists(configPath))
@@ -52,7 +158,7 @@ namespace FODevManager.Utils
                 return;
             }
 
-            string remoteUrl = GetGitRemoteUrl(configPath);
+            string? remoteUrl = GetGitRemoteUrl(configPath);
             if (remoteUrl.IsNullOrEmpty())
             {
                 MessageLogger.Error("❌ Could not find remote URL in .git/config.");
@@ -64,8 +170,14 @@ namespace FODevManager.Utils
             OpenUrl(remoteUrl);
         }
 
-        public static string? GetActiveBranch(string repoPath)
+        public static string? GetActiveBranch(string? repoPath)
         {
+            if (repoPath.IsNullOrEmpty())
+            {
+                MessageLogger.Error("❌ Repository path is null or empty.");
+                return string.Empty;
+            }
+
             try
             {
 ;               var result = string.Empty;
@@ -98,7 +210,7 @@ namespace FODevManager.Utils
             return false;
         }
 
-        public static bool ChangeBranch(string repoPath, string branchName)
+        public static bool ChangeBranch(string repoPath, string branchName, bool autoStashIfDirty, string? stashMessage = null)
         {
             if (!IsGitRepository(repoPath))
             {
@@ -106,51 +218,118 @@ namespace FODevManager.Utils
                 return false;
             }
 
-            if (HasUncommittedChanges(repoPath))
+            branchName = branchName?.Trim() ?? "";
+            if (branchName.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Has uncommited changes. Cannot switch");
+                MessageLogger.Error("❌ Branch name is empty.");
                 return false;
             }
 
+            var state = GetRepoState(repoPath);
+            if (!state.Branch.IsNullOrEmpty() &&
+                string.Equals(state.Branch, branchName, StringComparison.OrdinalIgnoreCase))
+            {
+                MessageLogger.Info($"ℹ️ Already on branch: {branchName}");
+                return true;
+            }
+
+            if (state.IsDirty)
+            {
+                if (!autoStashIfDirty)
+                {
+                    MessageLogger.Warning($"⚠️ Repo has uncommitted changes. Skipping checkout to '{branchName}'.");
+                    return false;
+                }
+
+                var msg = stashMessage.IsNullOrEmpty()
+                    ? $"FO Dev Manager: auto-stash before switching to {branchName}"
+                    : stashMessage;
+
+                MessageLogger.Warning($"⚠️ Repo is dirty. Stashing changes before switching to '{branchName}'.");
+                if (!Stash(repoPath, msg, includeUntracked: true))
+                {
+                    MessageLogger.Error("❌ Stash failed. Cannot switch branch.");
+                    return false;
+                }
+            }
+
+            // Fetch first so origin/<branch> is known
+            if (!FetchAll(repoPath))
+            {
+                MessageLogger.Warning("⚠️ Fetch failed (continuing anyway).");
+            }
+
+            // 1) If local branch exists: checkout
+            if (LocalBranchExists(repoPath, branchName))
+            {
+                return Checkout(repoPath, branchName);
+            }
+
+            // 2) If remote branch exists: create tracking local branch and checkout
+            if (RemoteBranchExists(repoPath, "origin", branchName))
+            {
+                return Checkout(repoPath, $"-b {branchName} --track origin/{branchName}");
+            }
+
+            // 3) Otherwise: do NOT create a new empty branch silently
+            MessageLogger.Error($"❌ Branch '{branchName}' not found locally or on origin.");
+            return false;
+        }
+
+        private static bool FetchAll(string repoPath)
+        {
             try
             {
-                MessageLogger.Info($"🔍 Checking if branch '{branchName}' exists...");
-
-                string branchList;
-                if (!RunProcess(repoPath, "git", "branch --list", out branchList))
-                {
-                    MessageLogger.Error("❌ Could not list branches.");
-                    return false;
-                }
-
-                bool branchExists = branchList
-                    .Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Any(line => line.Trim().TrimStart('*').Equals(branchName, StringComparison.OrdinalIgnoreCase));
-
-                string command = branchExists ? $"checkout {branchName}" : $"checkout -b {branchName}";
                 string result;
-
-                if (RunProcess(repoPath, "git", command, out result))
+                if (RunProcess(repoPath, "git", "fetch --all --prune", out result))
                 {
-                    if (branchExists)
-                        MessageLogger.Highlight($"✅ Switched to existing branch: {branchName}");
-                    else
-                        MessageLogger.Highlight($"✅ Created and switched to new branch: {branchName}");
-
+                    MessageLogger.Info("✅ Fetch completed.");
                     return true;
-                }
-                else
-                {
-                    MessageLogger.Error($"❌ Failed to switch/create branch: {branchName}");
-                    return false;
                 }
             }
             catch (Exception ex)
             {
-                MessageLogger.Error($"❌ Error switching branch: {ex.Message}");
+                MessageLogger.Error($"Error fetching from remote: {ex.Message}");
+            }
+
+            return false;
+        }
+
+        private static bool Checkout(string repoPath, string checkoutArgs)
+        {
+            try
+            {
+                string result;
+                if (RunProcess(repoPath, "git", $"checkout {checkoutArgs}", out result))
+                {
+                    MessageLogger.Highlight($"✅ Checked out: {checkoutArgs}");
+                    return true;
+                }
+
+                MessageLogger.Error($"❌ Checkout failed: {checkoutArgs}");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Error during checkout: {ex.Message}");
                 return false;
             }
         }
+
+        private static bool LocalBranchExists(string repoPath, string branchName)
+        {
+            // show-ref is faster/more reliable than parsing "git branch --list"
+            string result;
+            return RunProcess(repoPath, "git", $"show-ref --verify --quiet refs/heads/{branchName}", out result);
+        }
+
+        private static bool RemoteBranchExists(string repoPath, string remoteName, string branchName)
+        {
+            // Check refs/remotes/origin/<branch>
+            string result;
+            return RunProcess(repoPath, "git", $"show-ref --verify --quiet refs/remotes/{remoteName}/{branchName}", out result);
+        }
+
 
         public static bool CloneRepository(string gitUrl, string targetPath)
         {
@@ -206,8 +385,11 @@ namespace FODevManager.Utils
             }
         }
 
-        public static string GetGitRemoteUrl(string configPath)
+        public static string? GetGitRemoteUrl(string? configPath)
         {
+            if(configPath.IsNullOrEmpty() || !File.Exists(configPath))
+                return null;
+
             string[] lines = File.ReadAllLines(configPath);
             bool inRemoteSection = false;
 

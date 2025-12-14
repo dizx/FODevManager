@@ -10,7 +10,7 @@ namespace FODevManager.Utils
     {
         public static bool IsNullOrEmpty(this string? value)
         {
-            return string.IsNullOrEmpty(value);
+            return string.IsNullOrEmpty(value) || string.IsNullOrWhiteSpace(value);
         }
     }
 }
