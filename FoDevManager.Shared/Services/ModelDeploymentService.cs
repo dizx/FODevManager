@@ -114,7 +114,7 @@ namespace FODevManager.Services
             try
             {
                 var profile = _fileService.LoadProfile(profileName);
-                var environment = GetProfileEnvironment(profile, modelName);
+                var environment = GetProfileModel(profile, modelName);
                 string linkPath = Path.Combine(_deploymentBasePath, modelName);
 
                 if (!Directory.Exists(linkPath))
@@ -192,7 +192,7 @@ namespace FODevManager.Services
         {
             try
             {
-                var environment = GetProfileEnvironment(profile, modelName);
+                var environment = GetProfileModel(profile, modelName);
                 string targetDir = Path.Combine(_deploymentBasePath, modelName);
 
                 string linkPath = targetDir;
@@ -222,16 +222,30 @@ namespace FODevManager.Services
             }
         }
 
-        private ProfileEnvironmentModel GetProfileEnvironment(ProfileModel profile, string modelName)
+        private ProfileEnvironmentModel GetProfileModel(ProfileModel profile, string modelName)
         {
-            var environment = profile.Environments.FirstOrDefault(e => e.ModelName == modelName);
+            if (profile == null)
+                throw new ArgumentNullException(nameof(profile));
 
-            if (environment == null)
-            {
-                throw new Exception($"Model '{modelName}' not found in profile '{profile.ProfileName}'.");
-            }
+            if (string.IsNullOrWhiteSpace(modelName))
+                throw new ArgumentException("Model name is required.", nameof(modelName));
 
-            return environment;
+            // 1) Repository models
+            var repoModel = profile.Repositories?
+                .SelectMany(r => r.Models ?? new List<ProfileEnvironmentModel>())
+                .FirstOrDefault(m => m.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
+
+            if (repoModel != null)
+                return repoModel;
+
+            // 2) Standalone models (disk-only)
+            var standalone = profile.Environments?
+                .FirstOrDefault(m => m.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
+
+            if (standalone != null)
+                return standalone;
+
+            throw new Exception($"Model '{modelName}' not found in profile '{profile.ProfileName}'.");
         }
 
         private void UpdateProfileFile(string profileName, ProfileEnvironmentModel updatedEnvironment)
@@ -239,7 +253,7 @@ namespace FODevManager.Services
             var profile = _fileService.LoadProfile(profileName);
 
             // Find the model in the profile
-            var existingEnvironment = GetProfileEnvironment(profile, updatedEnvironment.ModelName);
+            var existingEnvironment = GetProfileModel(profile, updatedEnvironment.ModelName);
 
             if (!updatedEnvironment.ModelRootFolder.IsNullOrEmpty())
                 existingEnvironment.ModelRootFolder = updatedEnvironment.ModelRootFolder;
@@ -256,7 +270,7 @@ namespace FODevManager.Services
 
         public void CheckModelDeployment(string profileName, string modelName)
         {
-            var env = GetProfileEnvironment(_fileService.LoadProfile(profileName), modelName);
+            var env = GetProfileModel(_fileService.LoadProfile(profileName), modelName);
 
             if(env.ModelRootFolder.IsNullOrEmpty())
             {
@@ -308,7 +322,7 @@ namespace FODevManager.Services
         public bool CheckIfGitRepository(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
-            var model = GetProfileEnvironment(profile, modelName);
+            var model = GetProfileModel(profile, modelName);
 
             if (model == null)
             {
@@ -319,7 +333,7 @@ namespace FODevManager.Services
             try
             {
 
-                if (GitHelper.IsGitRepository(model.ModelRootFolder, out string gitRemoteUrl))
+                if (GitHelper.IsGitRepository(profile.TryGetRepoRootFolder(model), out string gitRemoteUrl))
                 {
                     MessageLogger.Info($"✅ Model '{modelName}' Git repository: {gitRemoteUrl}");
 
@@ -351,14 +365,11 @@ namespace FODevManager.Services
         {
             try
             {
-                var model = GetProfileEnvironment(_fileService.LoadProfile(profileName), modelName);
-                if (model == null)
+                var profile = _fileService.LoadProfile(profileName);
+
+                if (GitHelper.IsGitRepository(profile.TryGetRepoRootFolder(modelName), out string gitRemoteUrl))
                 {
-                    return "";
-                }
-                if (GitHelper.IsGitRepository(model.ModelRootFolder, out string gitRemoteUrl))
-                {
-                    return GitHelper.GetActiveBranch(model.ModelRootFolder);
+                    return GitHelper.GetActiveBranch(profile.TryGetRepoRootFolder(modelName));
                 }
             }
             catch
@@ -371,7 +382,7 @@ namespace FODevManager.Services
         public void OpenGitRepositoryUrl(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
-            var model = GetProfileEnvironment(profile, modelName);
+            var model = GetProfileModel(profile, modelName);
 
             if (model == null)
             {
@@ -379,9 +390,9 @@ namespace FODevManager.Services
                 return;
             }
 
-            if (GitHelper.IsGitRepository(model.ModelRootFolder))
+            if (GitHelper.IsGitRepository(profile.TryGetRepoRootFolder(model)))
             {
-                GitHelper.OpenGitRemoteUrl(model.ModelRootFolder);
+                GitHelper.OpenGitRemoteUrl(profile.TryGetRepoRootFolder(model));
             }
             else
             {
@@ -550,7 +561,7 @@ namespace FODevManager.Services
         public bool AssignPeriTask(string profileName, string modelName, string periTask, string comment, bool switchBranch = true)
         {
             var profile = _fileService.LoadProfile(profileName);
-            var model = GetProfileEnvironment(profile, modelName);
+            var model = GetProfileModel(profile, modelName);
 
             if (string.IsNullOrWhiteSpace(periTask))
             {
@@ -574,25 +585,37 @@ namespace FODevManager.Services
                     : $"{branchPrefix}-{slug}";
 
 
-                string repoPath = model.ModelRootFolder;
-                if (!Directory.Exists(repoPath))
+                var repoPath = profile.TryGetRepoRootFolder(model);
+
+                if (string.IsNullOrWhiteSpace(repoPath) || !Directory.Exists(repoPath))
                 {
-                    MessageLogger.Error($"❌ Model root folder does not exist: {repoPath}");
-                    return false;
+                    MessageLogger.Warning($"⚠️ Repo root folder not found for '{model.ModelName}'. Skipping branch switch.");
+                    return true;
                 }
 
-                if (GitHelper.ChangeBranch(repoPath, fullBranch))
+                if (!GitHelper.IsGitRepository(repoPath))
                 {
-                    MessageLogger.Highlight($"✅ Assigned PeriTask '{periTask}' and switched to branch '{fullBranch}'.");
+                    MessageLogger.Warning($"⚠️ '{repoPath}' is not a Git repository. Skipping branch switch.");
+                    return true;
+                }
+
+                // For AssignPeriTask, auto-stash is usually fine (user initiated action).
+                var autoStashIfDirty = true;
+                var stashMsg = $"FO Dev Manager: PeriTask {periTask} ({model.ModelName})";
+
+                if (GitHelper.ChangeBranch(repoPath, fullBranch, autoStashIfDirty, stashMsg))
+                {
+                    MessageLogger.Highlight($"✅ Switched to branch '{fullBranch}'.");
                 }
                 else
                 {
-                    MessageLogger.Warning($"⚠️ Assigned PeriTask '{periTask}', but failed to switch to branch '{fullBranch}'.");
+                    MessageLogger.Warning($"⚠️ Failed to switch to branch '{fullBranch}'.");
                 }
             }
 
             return true;
         }
+      
 
         private static string Slugify(string input, int maxTotalLength, string branchPrefix)
         {
