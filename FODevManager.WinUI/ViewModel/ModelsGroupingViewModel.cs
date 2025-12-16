@@ -15,129 +15,139 @@ namespace FODevManager.WinUI.ViewModel
         {
             var items = allItems?.ToList() ?? new List<ProfileEnvironmentViewModel>();
 
-            // Standalone/non-repo models = still come from list (or profile.Environments)
-            var non = items.Where(v => !v.HasGit).ToList();
+            var repositoryModels = (profile.Repositories ?? new List<RepositoryModel>()).ToList();
 
-            // Repo groups should come from profile.Repositories (source of truth)
-            var groups = (profile.Repositories ?? new List<RepositoryModel>())
+            var modelKeysInRepos = repositoryModels
+                .SelectMany(repo => repo.Models ?? new List<ProfileEnvironmentModel>())
+                .Select(model => CreateModelKey(model.ModelName, model.MetadataFolder))
+                .Where(key => !string.IsNullOrWhiteSpace(key))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var non = items
+                .Where(viewModel => !modelKeysInRepos.Contains(CreateModelKey(viewModel.ModelName, viewModel.MetadataFolder)))
+                .ToList();
+
+            var groups = repositoryModels
                 .Select(repo =>
                 {
-                    // Match viewmodels to repo models. Prefer (ModelName + MetadataFolder) to avoid collisions.
                     var repoModelKeys = (repo.Models ?? new List<ProfileEnvironmentModel>())
-                        .Select(m => (m.ModelName ?? "", m.MetadataFolder ?? ""))
+                        .Select(model => (model.ModelName ?? "", model.MetadataFolder ?? ""))
                         .ToHashSet();
 
-                    var vms = items
-                        .Where(v => v.HasGit)
-                        .Where(v => repoModelKeys.Contains((v.ModelName ?? "", v.MetadataFolder ?? "")))
-                        .OrderBy(v => v.ModelName, StringComparer.OrdinalIgnoreCase)
+                    var viewModels = items
+                        .Where(viewModel => repoModelKeys.Contains((viewModel.ModelName ?? "", viewModel.MetadataFolder ?? "")))
+                        .OrderBy(viewModel => viewModel.ModelName, StringComparer.OrdinalIgnoreCase)
                         .ToList();
 
-                    // Fallback: if UI items weren’t built with MetadataFolder, match by name only
-                    if (vms.Count == 0)
+                    if (viewModels.Count == 0)
                     {
                         var names = (repo.Models ?? new List<ProfileEnvironmentModel>())
-                            .Select(m => m.ModelName ?? "")
+                            .Select(model => model.ModelName ?? "")
                             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-                        vms = items
-                            .Where(v => v.HasGit)
-                            .Where(v => names.Contains(v.ModelName ?? ""))
-                            .OrderBy(v => v.ModelName, StringComparer.OrdinalIgnoreCase)
+                        viewModels = items
+                            .Where(viewModel => names.Contains(viewModel.ModelName ?? ""))
+                            .OrderBy(viewModel => viewModel.ModelName, StringComparer.OrdinalIgnoreCase)
                             .ToList();
                     }
 
-                    var display = !string.IsNullOrWhiteSpace(repo.DisplayName)
+                    var displayName = !string.IsNullOrWhiteSpace(repo.DisplayName)
                         ? repo.DisplayName
                         : ExtractRepoName(repo.GitUrl ?? repo.RepoRootFolder);
 
-                    var branch = repo.LastKnownBranch; // repo-level truth
-
                     return new RepoGroupViewModel(
-                        gitUrl: repo.GitUrl ?? string.Empty,
-                        displayName: display,
-                        branch: branch,
-                        models: new ReadOnlyCollection<ProfileEnvironmentViewModel>(vms)
+                        repository: repo,
+                        displayName: displayName,
+                        models: new ReadOnlyCollection<ProfileEnvironmentViewModel>(viewModels)
                     );
                 })
-                // Hide empty repos if you prefer
-                .Where(g => g.Models.Count > 0)
-                .OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .Where(group => group.Models.Count > 0)
+                .OrderBy(group => group.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             GitGroups = new ReadOnlyCollection<RepoGroupViewModel>(groups);
+
             NonGitModels = new ReadOnlyCollection<ProfileEnvironmentViewModel>(
-                non.OrderBy(x => x.ModelName, StringComparer.OrdinalIgnoreCase).ToList()
+                non.OrderBy(model => model.ModelName, StringComparer.OrdinalIgnoreCase).ToList()
             );
+        }
+
+        private static string CreateModelKey(string modelName, string metadataFolder)
+        {
+            var normalizedModelName = (modelName ?? string.Empty).Trim();
+            var normalizedMetadataFolder = (metadataFolder ?? string.Empty).Trim();
+
+            if (string.IsNullOrWhiteSpace(normalizedModelName))
+                return string.Empty;
+
+            return string.IsNullOrWhiteSpace(normalizedMetadataFolder)
+                ? normalizedModelName
+                : $"{normalizedModelName}|{normalizedMetadataFolder}";
         }
 
         private static string ExtractRepoName(string input)
         {
             if (string.IsNullOrWhiteSpace(input)) return string.Empty;
 
-            // Normalize
-            var s = input.Trim().Trim('"', '\'').Replace('\\', '/');
+            var normalizedInput = input.Trim().Trim('"', '\'').Replace('\\', '/');
 
-            // Strip query/fragment early
-            var q = s.IndexOfAny(new[] { '?', '#' });
-            if (q >= 0) s = s.Substring(0, q);
+            var queryOrFragmentIndex = normalizedInput.IndexOfAny(new[] { '?', '#' });
+            if (queryOrFragmentIndex >= 0)
+                normalizedInput = normalizedInput.Substring(0, queryOrFragmentIndex);
 
-            // Trim trailing slashes
-            s = s.TrimEnd('/');
+            normalizedInput = normalizedInput.TrimEnd('/');
 
-            // Azure DevOps: .../_git/Repo Name (optionally ends with .git)
-            var gitSegIdx = s.IndexOf("/_git/", StringComparison.OrdinalIgnoreCase);
-            if (gitSegIdx >= 0)
+            var azureDevOpsGitSegmentIndex = normalizedInput.IndexOf("/_git/", StringComparison.OrdinalIgnoreCase);
+            if (azureDevOpsGitSegmentIndex >= 0)
             {
-                var start = gitSegIdx + "/_git/".Length;
-                var end = s.IndexOf('/', start);
-                var name = end >= 0 ? s.Substring(start, end - start) : s.Substring(start);
-                return TrimGitSuffix(Uri.UnescapeDataString(name));
+                var startIndex = azureDevOpsGitSegmentIndex + "/_git/".Length;
+                var endIndex = normalizedInput.IndexOf('/', startIndex);
+                var repoName = endIndex >= 0
+                    ? normalizedInput.Substring(startIndex, endIndex - startIndex)
+                    : normalizedInput.Substring(startIndex);
+
+                return TrimGitSuffix(Uri.UnescapeDataString(repoName));
             }
 
-            // SCP-like: git@host:org/repo name(.git)
-            var hasScheme = s.Contains("://", StringComparison.Ordinal);
-            if (!hasScheme && s.Contains(':'))
+            var hasScheme = normalizedInput.Contains("://", StringComparison.Ordinal);
+            if (!hasScheme && normalizedInput.Contains(':'))
             {
-                var afterColon = s.Substring(s.IndexOf(':') + 1).Trim('/');
+                var afterColon = normalizedInput.Substring(normalizedInput.IndexOf(':') + 1).Trim('/');
                 var lastSlash = afterColon.LastIndexOf('/');
-                var name = lastSlash >= 0 ? afterColon.Substring(lastSlash + 1) : afterColon;
-                return TrimGitSuffix(Uri.UnescapeDataString(name));
+                var repoName = lastSlash >= 0 ? afterColon.Substring(lastSlash + 1) : afterColon;
+                return TrimGitSuffix(Uri.UnescapeDataString(repoName));
             }
 
-            // Regular URL: take last non-empty path segment
             if (hasScheme)
             {
-                // Don’t rely on Uri.TryCreate with spaces—just split path manually
-                var lastSlash = s.LastIndexOf('/');
-                if (lastSlash >= 0 && lastSlash + 1 < s.Length)
+                var lastSlash = normalizedInput.LastIndexOf('/');
+                if (lastSlash >= 0 && lastSlash + 1 < normalizedInput.Length)
                 {
-                    var tail = s.Substring(lastSlash + 1);
+                    var tail = normalizedInput.Substring(lastSlash + 1);
                     if (string.IsNullOrWhiteSpace(tail))
                     {
-                        // If trailing slash, back up one segment
-                        var prev = s.LastIndexOf('/', Math.Max(0, lastSlash - 1));
-                        if (prev >= 0 && prev + 1 < lastSlash)
-                            tail = s.Substring(prev + 1, lastSlash - prev - 1);
+                        var previousSlash = normalizedInput.LastIndexOf('/', Math.Max(0, lastSlash - 1));
+                        if (previousSlash >= 0 && previousSlash + 1 < lastSlash)
+                            tail = normalizedInput.Substring(previousSlash + 1, lastSlash - previousSlash - 1);
                     }
                     return TrimGitSuffix(Uri.UnescapeDataString(tail));
                 }
             }
 
-            // Local/UNC path or bare name: take last segment after '/'
-            var idx = s.LastIndexOf('/');
-            var candidate = idx >= 0 ? s.Substring(idx + 1) : s;
+            var lastSegmentIndex = normalizedInput.LastIndexOf('/');
+            var candidate = lastSegmentIndex >= 0 ? normalizedInput.Substring(lastSegmentIndex + 1) : normalizedInput;
             return TrimGitSuffix(Uri.UnescapeDataString(candidate));
         }
 
         private static string TrimGitSuffix(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return string.Empty;
-            name = name.Trim();
-            if (name.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
-                name = name.Substring(0, name.Length - 4);
-            return name;
-        }
 
+            var trimmedName = name.Trim();
+            if (trimmedName.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+                trimmedName = trimmedName.Substring(0, trimmedName.Length - 4);
+
+            return trimmedName;
+        }
     }
 }

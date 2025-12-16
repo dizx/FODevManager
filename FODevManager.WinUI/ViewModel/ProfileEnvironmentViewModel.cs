@@ -1,35 +1,15 @@
 using FODevManager.Models;
-using System;
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace FODevManager.WinUI.ViewModel
 {
-    public class ProfileEnvironmentViewModel : INotifyPropertyChanged
+    public sealed class ProfileEnvironmentViewModel : INotifyPropertyChanged
     {
-        public string ModelName { get; set; } = "";
-
-        public string ModelRootFolder { get; set; } = "";
-
-        public string ProjectFilePath { get; set; } = "";
-
-        public string MetadataFolder { get; set; } = "";
-
-        public string GitUrl { get; set; } = "";
-
-        public string PeriTask { get; set; } = "";
-
-        public bool HasPeriTask => !string.IsNullOrWhiteSpace(PeriTask);
-
-        public bool HasGit => !string.IsNullOrWhiteSpace(GitUrl);
-
-        public string GitBranch { get; set; } = "";
-
-        public bool IsDeployed { get; set; } = false;
+        public string ModelName { get; set; } = string.Empty;
+        public string ModelRootFolder { get; set; } = string.Empty;
+        public string ProjectFilePath { get; set; } = string.Empty;
+        public string MetadataFolder { get; set; } = string.Empty;
+        public bool IsDeployed { get; set; }
 
         private ModelType _modelType = ModelType.Source;
         public ModelType ModelType
@@ -37,7 +17,9 @@ namespace FODevManager.WinUI.ViewModel
             get => _modelType;
             set
             {
-                if (_modelType == value) return;
+                if (_modelType == value)
+                    return;
+
                 _modelType = value;
                 OnPropertyChanged(nameof(ModelType));
                 OnPropertyChanged(nameof(IsCompiled));
@@ -48,26 +30,25 @@ namespace FODevManager.WinUI.ViewModel
         public bool IsCompiled => ModelType == ModelType.Compiled;
         public bool IsSource => ModelType == ModelType.Source;
 
-        
         public event PropertyChangedEventHandler? PropertyChanged;
-        private void OnPropertyChanged(string name) =>
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+        private void OnPropertyChanged(string propertyName)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
     public static class ProfileEnvironmentViewModelExtensions
     {
-        public static ProfileEnvironmentViewModel ToViewModel(this Models.ProfileEnvironmentModel model, string gitBranch)
+        public static ProfileEnvironmentViewModel ToViewModel(this ProfileEnvironmentModel model)
         {
-            var viewModel = new ProfileEnvironmentViewModel();
-            viewModel.ModelName = model.ModelName;
-            viewModel.IsDeployed = model.IsDeployed;
-            viewModel.ProjectFilePath = model.ProjectFilePath;
-            viewModel.MetadataFolder = model.MetadataFolder;
-            viewModel.GitUrl = model.GitUrl;
-            viewModel.PeriTask = model.PeriTask;
-            viewModel.GitBranch = gitBranch;
-            viewModel.ModelType = model.ModelType;
-            return viewModel;
+            return new ProfileEnvironmentViewModel
+            {
+                ModelName = model.ModelName,
+                ModelRootFolder = model.ModelRootFolder,
+                IsDeployed = model.IsDeployed,
+                ProjectFilePath = model.ProjectFilePath,
+                MetadataFolder = model.MetadataFolder,
+                ModelType = model.ModelType
+            };
         }
     }
 }

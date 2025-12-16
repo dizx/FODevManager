@@ -1,21 +1,28 @@
-﻿using System;
+﻿using FODevManager.Models;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Linq;
 
 namespace FODevManager.WinUI.ViewModel
 {
     public sealed class RepoGroupViewModel : INotifyPropertyChanged
     {
+        public RepositoryModel Repository { get; }
+
         public string DisplayName { get; }
-        public string? Branch { get; }
-        public string GitUrl { get; } // group key (non-empty)
+
+        public string? Branch => Repository.LastKnownBranch;
+
+        public string? GitUrl => Repository.GitUrl;
+
+        public string RepoRootFolder => Repository.RepoRootFolder;
+
+        public string PeriTask => Repository.PeriTask;
+
+        public string PeriTaskComment => Repository.PeriTaskComment;
+
+        public bool HasPeriTask => !string.IsNullOrWhiteSpace(PeriTask);
+
         public ReadOnlyCollection<ProfileEnvironmentViewModel> Models { get; }
-
-        public bool HasPeriTask => Models.Any(m => m.HasPeriTask);
-        public string? FirstPeriTask => Models.FirstOrDefault(m => m.HasPeriTask)?.PeriTask;
-
-        public string? FirstModelRoot => Models.FirstOrDefault()?.ModelRootFolder;
 
         private bool _isExpanded;
         public bool IsExpanded
@@ -23,7 +30,9 @@ namespace FODevManager.WinUI.ViewModel
             get => _isExpanded;
             set
             {
-                if (_isExpanded == value) return;
+                if (_isExpanded == value)
+                    return;
+
                 _isExpanded = value;
                 OnPropertyChanged(nameof(IsExpanded));
                 OnPropertyChanged(nameof(IsExpandedVisibility));
@@ -32,21 +41,20 @@ namespace FODevManager.WinUI.ViewModel
         }
 
         public Microsoft.UI.Xaml.Visibility IsExpandedVisibility
-                => IsExpanded ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+            => IsExpanded ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
 
-        public string ChevronGlyph => IsExpanded ? "\uE70D" /*chevron down*/ : "\uE76C" /*chevron right*/;
+        public string ChevronGlyph
+            => IsExpanded ? "\uE70D" /*chevron down*/ : "\uE76C" /*chevron right*/;
 
         public event PropertyChangedEventHandler? PropertyChanged;
-        private void OnPropertyChanged(string name)
-            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
+        private void OnPropertyChanged(string propertyName)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
-        public RepoGroupViewModel(string gitUrl, string displayName, string? branch,
-                                  ReadOnlyCollection<ProfileEnvironmentViewModel> models)
+        public RepoGroupViewModel(RepositoryModel repository, string displayName, ReadOnlyCollection<ProfileEnvironmentViewModel> models)
         {
-            GitUrl = gitUrl;
+            Repository = repository;
             DisplayName = displayName;
-            Branch = branch;
             Models = models;
         }
     }

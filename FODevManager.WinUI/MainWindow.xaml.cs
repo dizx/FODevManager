@@ -292,19 +292,13 @@ namespace FODevManager.WinUI
 
         private void LoadModelListViewData(string profileName)
         {
-            // Load full profile so grouping can use repositories as source-of-truth
-            var profile = _fileService.LoadProfile(profileName);
+            var profile = _profileService.LoadProfile(profileName);
 
-            // Build model viewmodels WITHOUT per-model branch lookups
             var items = _profileService
                 .GetModelsInProfile(profileName)
-                .Select(m => m.ToViewModel(gitBranch: string.Empty))
+                .Select(model => model.ToViewModel())
                 .ToList();
 
-            // Optional: if your model VM needs HasGit/GitUrl filled, ensure those are set in ToViewModel.
-            // (Branch will be set at repo-group level instead.)
-
-            // Build grouping from repositories + standalone models
             _groupingVm = new ModelsGroupingViewModel(profile, items);
 
             var active = _groupingVm.GitGroups.FirstOrDefault();
@@ -317,7 +311,7 @@ namespace FODevManager.WinUI
 
             CombinedList.ItemsSource = combined;
         }
-        
+
 
         private void ProfilesDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -484,17 +478,23 @@ namespace FODevManager.WinUI
             LoadModelListViewData(profileName);
         }
 
-        private void OpenPeriTask_ForRepo_Click(object sender, RoutedEventArgs e)
+        private void OpenPeriTask_ForRepo_Click(object sender, RoutedEventArgs eventArgs)
         {
-            if (sender is not Button btn) return;
-            if (btn.DataContext is not RepoGroupViewModel group) return;
+            if (sender is not Button button)
+                return;
 
-            var task = group.FirstPeriTask;
+            if (button.DataContext is not RepoGroupViewModel repoGroup)
+                return;
 
-            var url = $"{_appConfig.PeriTaskUrl}/{task}";
+            var periTaskId = repoGroup.Repository?.PeriTask;
+
+            if (string.IsNullOrWhiteSpace(periTaskId))
+                return;
+
+            var url = $"{_appConfig.PeriTaskUrl}/{periTaskId}";
             ServiceHelper.OpenUrl(url);
-
         }
+
 
 
         private void OpenPeriTask_Click(object sender, RoutedEventArgs e)

@@ -215,34 +215,24 @@
                                     <ColumnDefinition Width="140"/>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
                                 <TextBlock Grid.Column="0" Text="{x:Bind ModelName}" VerticalAlignment="Center"/>
 
-                                <!-- IMPORTANT: Binding + converter (no x:Bind here) -->
                                 <TextBlock Grid.Column="1"
-               Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}"
-               VerticalAlignment="Center"/>
+                                    Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}"
+                                    VerticalAlignment="Center"/>             
 
                                 <Button Grid.Column="2" Content="Deploy" Tag="{x:Bind ModelName}" Click="DeployModel_Click" Margin="6,0,0,0"/>
                                 <Button Grid.Column="3" Content="Undeploy" Tag="{x:Bind ModelName}" Click="UnDeployModel_Click" Margin="6,0,0,0"/>
-                                <Button Grid.Column="4" Content="Task" Tag="{x:Bind ModelName}" Click="AssignPeriTask_Click" Margin="6,0,0,0"/>
-                                <Button Grid.Column="5" Content="Open"
-            Tag="{x:Bind PeriTask}"
-            Click="OpenPeriTask_Click"
-            IsEnabled="{x:Bind HasPeriTask}"
-            Margin="6,0,0,0"/>
 
-                                <!-- Right-aligned only for Remove -->
-                                <Button Grid.Column="7" Content="Remove"
-            Tag="{x:Bind ModelName}"
-            Click="RemoveModel_Click"
-            Margin="10,0,0,0"
-            HorizontalAlignment="Right"/>
+                                <Button Grid.Column="5" Content="Remove"
+                                    Tag="{x:Bind ModelName}"
+                                    Click="RemoveModel_Click"
+                                    Margin="10,0,0,0"
+                                    HorizontalAlignment="Right"/>           
                             </Grid>
                         </DataTemplate>
 
