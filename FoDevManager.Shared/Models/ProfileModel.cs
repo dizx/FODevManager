@@ -12,6 +12,7 @@ namespace FODevManager.Models
 
         public List<RepositoryModel> Repositories { get; set; } = new();
 
+
         public List<ProfileEnvironmentModel> Models { get; set; } = new();
 
         public string? DatabaseName { get; set; }
@@ -28,8 +29,7 @@ namespace FODevManager.Models
                 return Enumerable.Empty<ProfileEnvironmentModel>();
 
             var repoModels = profile.Repositories?
-                .SelectMany(r => r.Models ?? new List<ProfileEnvironmentModel>())
-                ?? Enumerable.Empty<ProfileEnvironmentModel>();
+                .SelectMany(r => r.Models ?? new List<ProfileEnvironmentModel>()) ?? Enumerable.Empty<ProfileEnvironmentModel>();
 
             var standalone = profile.Models ?? Enumerable.Empty<ProfileEnvironmentModel>();
 

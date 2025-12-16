@@ -9,6 +9,8 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using System.IO;
+using FODevManager.Models.Export;
 
 namespace FODevManager.Services
 {
@@ -103,22 +105,18 @@ namespace FODevManager.Services
 
             FileHelper.SaveJson(profilePath, profile);
 
-            if(updateExternal && !profile.ProfileFilePath.IsNullOrEmpty())
+            
+            if (updateExternal && !profile.ProfileFilePath.IsNullOrEmpty())
             {
                 var externalSavePath = profile.ProfileFilePath;
-                var clone = SerializedClone(profile);
-                clone.ProfileFilePath = string.Empty;
-                clone.IsActive = false;
-                foreach (var env in clone.Models)
-                {
-                    env.PeriTask = "";
-                    env.PeriTaskComment = "";
-                    env.IsDeployed = false;
-                }
-                FileHelper.SaveJson(externalSavePath, clone);
-            }
 
-        }
+                // Write a portable export format to the repository file:
+                // - No absolute paths
+                // - No runtime/local state (deployment, PeriTask, IsActive, etc.)
+                var exportProfile = ExportProfileMapper.ToExport(profile);
+
+                FileHelper.SaveJson(externalSavePath, exportProfile);
+            }}
 
         public static T SerializedClone<T>(T objectToClone) where T  : notnull        
         {

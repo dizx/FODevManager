@@ -10,6 +10,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using static System.Runtime.InteropServices.JavaScript.JSType;
+using FODevManager.Models.Export;
 
 namespace FODevManager.Services
 {
@@ -148,11 +149,11 @@ namespace FODevManager.Services
             var result = new ModelSyncResult();
 
             var currentNames = new HashSet<string>(
-                current.Models.Select(e => e.ModelName),
+                current.GetAllModels().Select(e => e.ModelName),
                 StringComparer.OrdinalIgnoreCase);
 
             var importedNames = new HashSet<string>(
-                imported.Models.Select(e => e.ModelName),
+                imported.GetAllModels().Select(e => e.ModelName),
                 StringComparer.OrdinalIgnoreCase);
 
             // Added models (in imported but not in current)
@@ -202,8 +203,7 @@ namespace FODevManager.Services
 
             try
             {
-                var importedProfile = FileHelper.LoadJson<ProfileModel>(importPath);
-                if (importedProfile == null || string.IsNullOrWhiteSpace(importedProfile.ProfileName))
+                if (!TryLoadExternalProfile(importPath, out var importedProfile))
                 {
                     MessageLogger.Error("CheckProfileModelChanges: Imported profile is invalid.");
                     return new ModelSyncResult();
@@ -232,21 +232,19 @@ namespace FODevManager.Services
 
         public ProfileModel ImportProfile(string importPath)
         {
-            if(!_fileService.ExistProfile(importPath))
+            if (!File.Exists(importPath))
             {
-                throw new Exception($"Profile '{importPath}' does not exist.");
+                MessageLogger.Error($"Profile file not found: {importPath}");
+                return null!;
             }
 
             try
-            { 
-                var sourceProfile = _fileService.LoadProfile(importPath);
-
-                if (sourceProfile == null || string.IsNullOrWhiteSpace(sourceProfile.ProfileName))
+            {
+                if (!TryLoadExternalProfile(importPath, out var sourceProfile))
                 {
                     MessageLogger.Error("Invalid profile file.");
                     return null!;
                 }
-
                 sourceProfile.ProfileFilePath = importPath;
                 sourceProfile.IsActive = false;
 
@@ -260,7 +258,7 @@ namespace FODevManager.Services
 
                 var sourceEnvironments = new List<ProfileEnvironmentModel>();
 
-                foreach (var environment in sourceProfile.Models)
+                foreach (var environment in sourceProfile.GetAllModels())
                 {
                     var modelFolderName = environment.GitUrl.IsNullOrEmpty()
                         ? environment.ModelName
@@ -303,7 +301,7 @@ namespace FODevManager.Services
                 if(sourceProfile.SolutionFilePath.IsNullOrEmpty())
                 {
                     // Decide on the solution path now (before adding projects)
-                    var mainFoEnvironment = sourceProfile.Models.FirstOrDefault(e => e.IsMainFOModel && !string.IsNullOrWhiteSpace(e.ModelRootFolder));
+                    var mainFoEnvironment = sourceProfile.GetAllModels().FirstOrDefault(e => e.IsMainFOModel && !string.IsNullOrWhiteSpace(e.ModelRootFolder));
 
                     if (mainFoEnvironment != null)
                     {
@@ -950,6 +948,47 @@ namespace FODevManager.Services
 
             MessageLogger.Info($"📦 Repositories built: {profile.Repositories.Count}");
             return true;
+        }
+
+
+        private static bool TryLoadExternalProfile(string filePath, out ProfileModel profile)
+        {
+            profile = null!;
+
+            try
+            {
+                if (!File.Exists(filePath))
+                    return false;
+
+                var json = File.ReadAllText(filePath);
+
+                using var document = JsonDocument.Parse(json);
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                    return false;
+
+                if (document.RootElement.TryGetProperty("ExportFormatVersion", out _))
+                {
+                    var exportProfile = JsonSerializer.Deserialize<ExportProfileModel>(json);
+                    if (exportProfile == null || string.IsNullOrWhiteSpace(exportProfile.ProfileName))
+                        return false;
+
+                    profile = ExportProfileMapper.FromExport(exportProfile, filePath);
+                    return true;
+                }
+
+                // Legacy format
+                var legacyProfile = JsonSerializer.Deserialize<ProfileModel>(json);
+                if (legacyProfile == null || string.IsNullOrWhiteSpace(legacyProfile.ProfileName))
+                    return false;
+
+                profile = legacyProfile;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"Failed to load profile file '{filePath}': {ex.Message}");
+                return false;
+            }
         }
 
         private static string SlugRepoId(string input)
