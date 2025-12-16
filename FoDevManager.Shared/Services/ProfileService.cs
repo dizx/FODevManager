@@ -1,6 +1,5 @@
 using FODevManager.Messages;
 using FODevManager.Models;
-using FODevManager.Models.FODevManager.Models;
 using FODevManager.Shared.Models;
 using FODevManager.Shared.Utils;
 using FODevManager.Utils;
@@ -958,32 +957,32 @@ namespace FODevManager.Services
 
         public List<ProfileEnvironmentModel> GetModelsInProfile(string profileName)
         {
-            var profile = _fileService.LoadProfile(profileName);
-            if (profile.Models.Count == 0)
-            {
-                return new List<ProfileEnvironmentModel>();
-            }
-            return profile.Models;
+            var profile = LoadProfile(profileName);
+
+            return profile
+                .GetAllModels()
+                .ToList();
         }
 
         public ProfileEnvironmentModel GetModel(string profileName, string modelName)
         {
-            var profile = _fileService.LoadProfile(profileName);
-            if (profile.Models.Count == 0)
-            {
-                return new ProfileEnvironmentModel();
-            }
-            return profile.Models.FirstOrDefault(x => x.ModelName == modelName);
+            var profile = LoadProfile(profileName);
+
+            return profile
+                .GetAllModels()
+                .FirstOrDefault(model => string.Equals(model.ModelName, modelName, StringComparison.OrdinalIgnoreCase))
+                ?? new ProfileEnvironmentModel();
         }
 
         public void UpdateDeploymentStatus(string profileName)
         {
-            bool updated = false;
-            var profile = _fileService.LoadProfile(profileName);
+            var profile = LoadProfile(profileName);
 
-            foreach (var model in profile.Models)
+            var updated = false;
+
+            foreach (var model in profile.GetAllModels())
             {
-                bool shouldBeMarkedAsDeployed = _modelDeploymentService.IsModelActuallyDeployed(model);
+                var shouldBeMarkedAsDeployed = _modelDeploymentService.IsModelActuallyDeployed(model);
                 if (model.IsDeployed != shouldBeMarkedAsDeployed)
                 {
                     model.IsDeployed = shouldBeMarkedAsDeployed;
@@ -997,6 +996,7 @@ namespace FODevManager.Services
                 MessageLogger.Info($"🔍 Deployment status updated for profile '{profileName}'");
             }
         }
+
 
         private bool EnsureRepositories(ProfileModel profile)
         {
@@ -1082,7 +1082,7 @@ namespace FODevManager.Services
 
                 if (document.RootElement.TryGetProperty("ExportFormatVersion", out _))
                 {
-                    var exportProfile = JsonSerializer.Deserialize<ExportProfileModel>(json);
+                    var exportProfile = FileHelper.LoadJson<ExportProfileModel>(filePath);
                     if (exportProfile == null || string.IsNullOrWhiteSpace(exportProfile.ProfileName))
                         return false;
 
@@ -1091,7 +1091,7 @@ namespace FODevManager.Services
                 }
 
                 // Legacy format
-                var legacyProfile = JsonSerializer.Deserialize<ProfileModel>(json);
+                var legacyProfile = FileHelper.LoadJson<ProfileModel>(filePath);
                 if (legacyProfile == null || string.IsNullOrWhiteSpace(legacyProfile.ProfileName))
                     return false;
 

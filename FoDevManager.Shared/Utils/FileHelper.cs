@@ -1,7 +1,10 @@
 ﻿using FODevManager.Messages;
+using FODevManager.Models;
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace FODevManager.Utils
 {
@@ -30,16 +33,50 @@ namespace FODevManager.Utils
             }
         }
 
+        private static readonly JsonSerializerOptions DefaultJsonSerializerOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            ReadCommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true,
+            WriteIndented = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+
         public static T LoadJson<T>(string filePath) where T : new()
         {
             if (!File.Exists(filePath))
             {
                 return new T();
             }
+            var jsonText = File.ReadAllText(filePath);
 
-            string json = File.ReadAllText(filePath);
-            return JsonSerializer.Deserialize<T>(json) ?? new T();
+            if (typeof(T) == typeof(ProfileModel))
+                jsonText = NormalizeLegacyProfileJson(jsonText);
+
+
+            var result = JsonSerializer.Deserialize<T>(jsonText, DefaultJsonSerializerOptions);
+            return result ?? new T();
         }
+
+        private static string NormalizeLegacyProfileJson(string jsonText)
+        {
+            if (string.IsNullOrWhiteSpace(jsonText))
+                return jsonText;
+
+            var hasEnvironments = jsonText.IndexOf("\"Environments\"", StringComparison.OrdinalIgnoreCase) >= 0;
+            var hasModels = jsonText.IndexOf("\"Models\"", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if (!hasEnvironments || hasModels)
+                return jsonText;
+
+            // Replace only the property name token, not values
+            return Regex.Replace(
+                jsonText,
+                "\"Environments\"\\s*:",
+                "\"Models\":",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        }
+
 
         public static void SaveJson<T>(string filePath, T data)
         {
