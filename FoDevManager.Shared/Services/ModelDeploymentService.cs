@@ -321,8 +321,12 @@ namespace FODevManager.Services
 
         public bool CheckIfGitRepository(string profileName, string modelName)
         {
-            var profile = _fileService.LoadProfile(profileName);
-            var model = GetProfileModel(profile, modelName);
+            var profile = _fileService.LoadProfile(profileName); 
+
+            var model = profile
+                .GetAllModels()
+                .FirstOrDefault(candidate =>
+                    string.Equals(candidate.ModelName, modelName, StringComparison.OrdinalIgnoreCase));
 
             if (model == null)
             {
@@ -330,36 +334,69 @@ namespace FODevManager.Services
                 return false;
             }
 
+            var repository = FindRepositoryForModel(profile, model);
+            if (repository == null)
+            {
+                MessageLogger.Warning($"❌ Model '{modelName}' is not mapped to a repository in profile '{profileName}'.");
+                return false;
+            }
+
             try
             {
-
-                if (GitHelper.IsGitRepository(profile.TryGetRepoRootFolder(model), out string gitRemoteUrl))
+                var repoRootFolder = (repository.RepoRootFolder ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(repoRootFolder))
                 {
-                    MessageLogger.Info($"✅ Model '{modelName}' Git repository: {gitRemoteUrl}");
-
-                    MessageLogger.Info($"✅ Model '{modelName}' Git active branch: {GitHelper.GetActiveBranch(model.ModelRootFolder)}");
-
-                    model.GitUrl = gitRemoteUrl;
-                    if(!model.GitUrl.Equals(gitRemoteUrl, StringComparison.OrdinalIgnoreCase) == false)
-                    {
-                        _fileService.SaveProfile(profile, updateExternal: true);
-                    }
-
-                    return true;
+                    MessageLogger.Warning($"❌ Repository root folder is missing for model '{modelName}'.");
+                    return false;
                 }
-                else
+
+                if (!GitHelper.IsGitRepository(repoRootFolder, out var gitRemoteUrl))
                 {
-                    MessageLogger.Warning($"❌ Model '{modelName}' is NOT a Git repository.");
+                    MessageLogger.Warning($"❌ Repo for model '{modelName}' is NOT a Git repository.");
+                    return false;
                 }
+
+                var activeBranch = GitHelper.GetActiveBranch(repoRootFolder) ?? string.Empty;
+
+                MessageLogger.Info($"✅ Repo Git remote: {gitRemoteUrl}");
+                MessageLogger.Info($"✅ Repo active branch: {activeBranch}");
+
+                var gitUrlChanged = !string.Equals(repository.GitUrl, gitRemoteUrl, StringComparison.OrdinalIgnoreCase);
+                var branchChanged = !string.Equals(repository.LastKnownBranch, activeBranch, StringComparison.OrdinalIgnoreCase);
+
+                if (gitUrlChanged)
+                    repository.GitUrl = gitRemoteUrl;
+
+                if (branchChanged)
+                    repository.LastKnownBranch = activeBranch;
+
+                if (gitUrlChanged || branchChanged)
+                    _fileService.SaveProfile(profile, updateExternal: true);
+
+                return true;
             }
-            catch
+            catch (Exception exception)
             {
-                MessageLogger.Error($"❌ Eror getting git status for '{modelName}' in profile '{profileName}'");
+                MessageLogger.Error($"❌ Error getting git status for '{modelName}' in profile '{profileName}': {exception.Message}");
+                return false;
             }
-
-            return false;
-
         }
+
+        public static RepositoryModel? FindRepositoryForModel(this ProfileModel profile, ProfileEnvironmentModel model)
+        {
+            if (profile.Repositories == null || profile.Repositories.Count == 0)
+                return null;
+
+            var metadataFolder = model.MetadataFolder ?? string.Empty;
+
+            return profile.Repositories.FirstOrDefault(repo =>
+                repo.Models != null &&
+                repo.Models.Any(repoModel =>
+                    string.Equals(repoModel.ModelName, model.ModelName, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(repoModel.MetadataFolder ?? string.Empty, metadataFolder, StringComparison.OrdinalIgnoreCase)));
+        }
+
+
 
         public string? GetActiveGitBranch(string profileName, string modelName)
         {
