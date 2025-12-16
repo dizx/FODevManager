@@ -34,7 +34,7 @@ namespace FODevManager.Utils
             try
             {
                 string result;
-                if (RunProcess(repoPath, "git", "rev-parse HEAD", out result))
+                if (RunGitCommand(repoPath, "rev-parse HEAD", out result))
                     return result?.Trim();
             }
             catch (Exception ex)
@@ -54,7 +54,7 @@ namespace FODevManager.Utils
                     : $"stash push -m \"{EscapeQuotes(message)}\"";
 
                 string result;
-                if (RunProcess(repoPath, "git", args, out result))
+                if (RunGitCommand(repoPath, args, out result))
                 {
                     // git prints "No local changes to save" when nothing to stash
                     if (result.IndexOf("No local changes", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -80,7 +80,7 @@ namespace FODevManager.Utils
             try
             {
                 string result;
-                if (RunProcess(repoPath, "git", "stash pop", out result))
+                if (RunGitCommand(repoPath, "stash pop", out result))
                 {
                     // Conflicts can still yield exit code 0 sometimes, so be conservative:
                     if (result.IndexOf("CONFLICT", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -181,7 +181,7 @@ namespace FODevManager.Utils
             try
             {
 ;               var result = string.Empty;
-                if (RunProcess(repoPath, "git", "rev-parse --abbrev-ref HEAD", out result))
+                if (RunGitCommand(repoPath, "rev-parse --abbrev-ref HEAD", out result))
                     return result;
             }
             catch (Exception ex)
@@ -197,7 +197,7 @@ namespace FODevManager.Utils
             try
             {
                 string result;
-                if (RunProcess(repoPath, "git", "status --porcelain", out result))
+                if (RunGitCommand(repoPath, "status --porcelain", out result))
                 {
                     return !string.IsNullOrWhiteSpace(result);
                 }
@@ -210,7 +210,7 @@ namespace FODevManager.Utils
             return false;
         }
 
-        public static bool ChangeBranch(string repoPath, string branchName, bool autoStashIfDirty, string? stashMessage = null)
+        public static bool ChangeBranch(string repoPath, string branchName, bool autoStashIfDirty, string? stashMessage = null, bool createIfMissing = false)
         {
             if (!IsGitRepository(repoPath))
             {
@@ -218,7 +218,7 @@ namespace FODevManager.Utils
                 return false;
             }
 
-            branchName = branchName?.Trim() ?? "";
+            branchName = branchName?.Trim() ?? string.Empty;
             if (branchName.IsNullOrEmpty())
             {
                 MessageLogger.Error("❌ Branch name is empty.");
@@ -241,47 +241,46 @@ namespace FODevManager.Utils
                     return false;
                 }
 
-                var msg = stashMessage.IsNullOrEmpty()
+                var message = stashMessage.IsNullOrEmpty()
                     ? $"FO Dev Manager: auto-stash before switching to {branchName}"
                     : stashMessage;
 
                 MessageLogger.Warning($"⚠️ Repo is dirty. Stashing changes before switching to '{branchName}'.");
-                if (!Stash(repoPath, msg, includeUntracked: true))
+                if (!Stash(repoPath, message, includeUntracked: true))
                 {
                     MessageLogger.Error("❌ Stash failed. Cannot switch branch.");
                     return false;
                 }
             }
 
-            // Fetch first so origin/<branch> is known
+            // Fetch first so origin/<branch> is known (best effort)
             if (!FetchAll(repoPath))
-            {
                 MessageLogger.Warning("⚠️ Fetch failed (continuing anyway).");
-            }
 
-            // 1) If local branch exists: checkout
             if (LocalBranchExists(repoPath, branchName))
-            {
                 return Checkout(repoPath, branchName);
-            }
 
-            // 2) If remote branch exists: create tracking local branch and checkout
             if (RemoteBranchExists(repoPath, "origin", branchName))
-            {
                 return Checkout(repoPath, $"-b {branchName} --track origin/{branchName}");
+
+            if (!createIfMissing)
+            {
+                MessageLogger.Error($"❌ Branch '{branchName}' not found locally or on origin.");
+                return false;
             }
 
-            // 3) Otherwise: do NOT create a new empty branch silently
-            MessageLogger.Error($"❌ Branch '{branchName}' not found locally or on origin.");
-            return false;
+            // Create new local branch from current HEAD and switch to it
+            MessageLogger.Info($"🆕 Creating new local branch '{branchName}' from current HEAD...");
+            return Checkout(repoPath, $"-b {branchName}");
         }
+
 
         private static bool FetchAll(string repoPath)
         {
             try
             {
                 string result;
-                if (RunProcess(repoPath, "git", "fetch --all --prune", out result))
+                if (RunGitCommand(repoPath, "fetch --all --prune", out result))
                 {
                     MessageLogger.Info("✅ Fetch completed.");
                     return true;
@@ -300,7 +299,7 @@ namespace FODevManager.Utils
             try
             {
                 string result;
-                if (RunProcess(repoPath, "git", $"checkout {checkoutArgs}", out result))
+                if (RunGitCommand(repoPath, $"checkout {checkoutArgs}", out result))
                 {
                     MessageLogger.Highlight($"✅ Checked out: {checkoutArgs}");
                     return true;
@@ -318,16 +317,19 @@ namespace FODevManager.Utils
 
         private static bool LocalBranchExists(string repoPath, string branchName)
         {
-            // show-ref is faster/more reliable than parsing "git branch --list"
-            string result;
-            return RunProcess(repoPath, "git", $"show-ref --verify --quiet refs/heads/{branchName}", out result);
+            return RunGitCommand(
+                workingDirectory: repoPath,
+                arguments: $"show-ref --verify --quiet refs/heads/{branchName}",
+                combinedOutput: out _,
+                logOnSuccess: false,
+                logOnFailure: false);
         }
 
         private static bool RemoteBranchExists(string repoPath, string remoteName, string branchName)
         {
             // Check refs/remotes/origin/<branch>
             string result;
-            return RunProcess(repoPath, "git", $"show-ref --verify --quiet refs/remotes/{remoteName}/{branchName}", out result);
+            return RunGitCommand(repoPath, $"show-ref --verify --quiet refs/remotes/{remoteName}/{branchName}", out result);
         }
 
 
@@ -344,7 +346,7 @@ namespace FODevManager.Utils
                 string result;
                 MessageLogger.Info($"🌀 Cloning '{gitUrl}' into '{targetPath}'...");
 
-                if (RunProcess(Directory.GetParent(targetPath).FullName, "git", $"clone {gitUrl} \"{targetPath}\"", out result))
+                if (RunGitCommand(Directory.GetParent(targetPath).FullName, $"clone {gitUrl} \"{targetPath}\"", out result))
                 {
                     MessageLogger.Highlight($"✅ Successfully cloned {gitUrl}");
                     return true;
@@ -368,9 +370,9 @@ namespace FODevManager.Utils
             try
             {
                 var result = string.Empty;
-                if(RunProcess(repoPath, "git", "fetch --all"))
+                if(RunGitCommand(repoPath, "fetch --all"))
                 {
-                    if(RunProcess(repoPath, "git", "status -sb", out result))
+                    if(RunGitCommand(repoPath, "status -sb", out result))
                     {
                         MessageLogger.Info($"Model {profileName }: {result}");
                         return true;
@@ -460,54 +462,76 @@ namespace FODevManager.Utils
             }
         }
 
-        private static bool RunProcess(string workingDir, string fileName, string args)
+       
+        private static bool RunGitCommand(string workingDirectory, string arguments, bool logOnSuccess = false, bool logOnFailure = true)
         {
             var result = string.Empty;
-            return RunProcess(workingDir, fileName, args, out result);
-
+            return RunGitCommand(workingDirectory, arguments, out result, logOnSuccess, logOnFailure);
         }
-        private static bool RunProcess(string workingDir, string fileName, string args, out string result)
-        {
-            result = string.Empty;
 
-            ProcessStartInfo psi = new()
+        private static bool RunGitCommand(string workingDirectory, string arguments, out string combinedOutput, bool logOnSuccess = false, bool logOnFailure = true)
+        {
+            combinedOutput = string.Empty;
+
+            if (workingDirectory.IsNullOrEmpty())
             {
-                FileName = fileName,
-                Arguments = args,
+                MessageLogger.Error("❌ Working directory is null or empty.");
+                return false;
+            }
+
+            var processStartInfo = new ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = arguments,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                WorkingDirectory = workingDir
+                WorkingDirectory = workingDirectory
             };
 
-            using Process process = new Process { StartInfo = psi };
-
-            process.Start();
-
-            string output = process.StandardOutput.ReadToEnd() ?? string.Empty;
-            string error = process.StandardError.ReadToEnd() ?? string.Empty;
-
-            result = (output + "\n" + error).Trim();
-
-            if (process.ExitCode == 0)
+            try
             {
-                if (!error.IsNullOrEmpty())
-                    MessageLogger.Info(error); // not error, just info
-                return true;
-            }
+                using var process = new Process { StartInfo = processStartInfo };
 
-            if (!error.IsNullOrEmpty())
-            {
-                MessageLogger.Error(error);
+                process.Start();
+
+                var standardOutput = process.StandardOutput.ReadToEnd() ?? string.Empty;
+                var standardError = process.StandardError.ReadToEnd() ?? string.Empty;
+
+                if (!process.WaitForExit(60_000))
+                {
+                    try { process.Kill(entireProcessTree: true); } catch { }
+
+                    if (logOnFailure)
+                        MessageLogger.Error($"❌ Git command timed out: git {arguments}");
+
+                    return false;
+                }
+
+                combinedOutput = (standardOutput + "\n" + standardError).Trim();
+
+                if (process.ExitCode == 0)
+                {
+                    if (logOnSuccess && !combinedOutput.IsNullOrEmpty())
+                        MessageLogger.Info(combinedOutput);
+
+                    return true;
+                }
+
+                if (logOnFailure && !combinedOutput.IsNullOrEmpty())
+                    MessageLogger.Error(combinedOutput);
+
                 return false;
             }
+            catch (Exception exception)
+            {
+                if (logOnFailure)
+                    MessageLogger.Error($"❌ Git command failed: git {arguments}. {exception.Message}");
 
-            result = output.Trim();
-
-            return true;
+                return false;
+            }
         }
-
-
+       
     }
 }

@@ -136,7 +136,8 @@ namespace FODevManager.Services
                     repo.RepoRootFolder,
                     repo.PreferredBranch!,
                     autoStashIfDirty: repo.AutoStashOnDirtyCheckout,
-                    stashMessage: stashMsg
+                    stashMessage: stashMsg,
+                    createIfMissing: true
                 );
 
                 repo.LastKnownBranch = GitHelper.GetActiveBranch(repo.RepoRootFolder);
@@ -231,7 +232,6 @@ namespace FODevManager.Services
                 return new ModelSyncResult();
             }
         }
-
 
         public ProfileModel ImportProfile(string importPath)
         {
@@ -336,7 +336,7 @@ namespace FODevManager.Services
 
             var repoFolderName = ExtractAzureDevOpsRepo(repository.GitUrl);
             if (repoFolderName.IsNullOrEmpty())
-                repoFolderName = repository.RepoId;
+                repoFolderName = repository.RepoRootFolder;
 
             var repoRootFolder = Path.Combine(_defaultSourceDirectory, repoFolderName);
             FileHelper.EnsureDirectoryExists(repoRootFolder);
@@ -1035,20 +1035,20 @@ namespace FODevManager.Services
                 var gitUrl = environmentModel.GitUrl.IsNullOrEmpty() ? (detectedGitUrl ?? string.Empty) : environmentModel.GitUrl;
                 environmentModel.GitUrl = gitUrl;
 
-                // Key: GitUrl (most stable). Fallback: repo root folder.
-                var repoKey = !gitUrl.IsNullOrEmpty() ? gitUrl : repoRootFolder;
+                var repoKey = !environmentModel.GitUrl.IsNullOrEmpty() ? environmentModel.GitUrl : repoRootFolder;
 
                 if (!repoMap.TryGetValue(repoKey, out var repository))
                 {
                     repository = new RepositoryModel
                     {
-                        RepoId = SlugRepoId(repoKey),
                         RepoRootFolder = repoRootFolder,
-                        GitUrl = gitUrl.IsNullOrEmpty() ? null : gitUrl,
-                        DisplayName = GitHelper.DeriveRepoDisplayName(repoRootFolder, gitUrl)
+                        GitUrl = environmentModel.GitUrl.IsNullOrEmpty() ? null : environmentModel.GitUrl
                     };
 
-                    repoMap[repoKey] = repository;
+                    repository.EnsureRepoId();
+                    repository.EnsureDisplayName();
+
+                    repoMap.Add(repository.GetRepoKey(), repository);
                 }
 
                 repository.Models.Add(environmentModel);
@@ -1103,17 +1103,6 @@ namespace FODevManager.Services
                 MessageLogger.Error($"Failed to load profile file '{filePath}': {ex.Message}");
                 return false;
             }
-        }
-
-        private static string SlugRepoId(string input)
-        {
-            if (input.IsNullOrEmpty()) return Guid.NewGuid().ToString("N");
-
-            // Simple stable-ish id: folder name or repo name tail
-            var tail = input.Replace('\\', '/').TrimEnd('/');
-            tail = tail.Contains("/") ? tail.Split('/').Last() : tail;
-            tail = tail.Replace(".git", "", StringComparison.OrdinalIgnoreCase);
-            return tail.IsNullOrEmpty() ? Guid.NewGuid().ToString("N") : tail;
         }
 
     }

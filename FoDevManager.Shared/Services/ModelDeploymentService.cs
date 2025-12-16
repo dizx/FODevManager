@@ -334,7 +334,7 @@ namespace FODevManager.Services
                 return false;
             }
 
-            var repository = FindRepositoryForModel(profile, model);
+            var repository = profile.FindRepositoryForModel(model);
             if (repository == null)
             {
                 MessageLogger.Warning($"❌ Model '{modelName}' is not mapped to a repository in profile '{profileName}'.");
@@ -381,23 +381,7 @@ namespace FODevManager.Services
                 return false;
             }
         }
-
-        public static RepositoryModel? FindRepositoryForModel(this ProfileModel profile, ProfileEnvironmentModel model)
-        {
-            if (profile.Repositories == null || profile.Repositories.Count == 0)
-                return null;
-
-            var metadataFolder = model.MetadataFolder ?? string.Empty;
-
-            return profile.Repositories.FirstOrDefault(repo =>
-                repo.Models != null &&
-                repo.Models.Any(repoModel =>
-                    string.Equals(repoModel.ModelName, model.ModelName, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(repoModel.MetadataFolder ?? string.Empty, metadataFolder, StringComparison.OrdinalIgnoreCase)));
-        }
-
-
-
+        
         public string? GetActiveGitBranch(string profileName, string modelName)
         {
             try
@@ -492,7 +476,7 @@ namespace FODevManager.Services
 
         public bool ConvertInstalledModelToProjectModel(string modelName, ProfileModel profile, string? projectFolderNameOverride = null)
         {
-            string sourceModelPath = Path.Combine(_deploymentBasePath, modelName);
+            var sourceModelPath = Path.Combine(_deploymentBasePath, modelName);
 
             if (!Directory.Exists(sourceModelPath))
             {
@@ -500,42 +484,80 @@ namespace FODevManager.Services
                 return false;
             }
 
-            string projectFolderName = projectFolderNameOverride ?? modelName;
-            string projectRootPath = Path.Combine(_defaultSourceDirectory, projectFolderName);
-            string metadataTargetPath = Path.Combine(projectRootPath, "Metadata", modelName);
-            string projectTargetPath = Path.Combine(projectRootPath, "Project", modelName);
+            var projectFolderName = projectFolderNameOverride ?? modelName;
+            var projectRootPath = Path.Combine(_defaultSourceDirectory, projectFolderName);
+            var metadataTargetPath = Path.Combine(projectRootPath, "Metadata", modelName);
+            var projectTargetPath = Path.Combine(projectRootPath, "Project", modelName);
 
             try
             {
                 FileHelper.EnsureDirectoryExists(metadataTargetPath);
-
                 FileHelper.CopyDirectory(sourceModelPath, metadataTargetPath);
 
-                string projectFilePath = CreateProjectFile(modelName, projectTargetPath);
+                var projectFilePath = CreateProjectFile(modelName, projectTargetPath);
 
                 MessageLogger.Info($"📁 Created project structure at: {projectRootPath}");
 
-                // Check if model already exists in profile environments
-                bool alreadyExists = profile.Models.Any(env =>
-                    env.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
+                var modelAlreadyExists = profile
+                    .GetAllModels()
+                    .Any(existing => string.Equals(existing.ModelName, modelName, StringComparison.OrdinalIgnoreCase));
 
-                if (!alreadyExists)
+                if (modelAlreadyExists)
                 {
-                    profile.Models.Add(new ProfileEnvironmentModel
+                    MessageLogger.Warning($"⚠️ Model '{modelName}' already exists in profile: {profile.ProfileName}");
+                }
+                else
+                {
+                    var newEnvironment = new ProfileEnvironmentModel
                     {
                         ModelName = modelName,
                         ModelRootFolder = projectRootPath,
                         MetadataFolder = metadataTargetPath,
                         ProjectFilePath = projectFilePath,
                         IsDeployed = false
-                    });
+                    };
+
+                    // If the projectRootPath is a git repo, store it in RepositoryModel
+                    if (GitHelper.IsGitRepository(projectRootPath, out var gitRemoteUrl))
+                    {
+                        var repositoryRootFolder = projectRootPath;
+
+                        profile.Repositories ??= new List<RepositoryModel>();
+
+                        // RepoKey = GitUrl if present, otherwise RepoRootFolder (handled internally)
+                        var repository = profile.Repositories
+                            .FirstOrDefault(r =>
+                                string.Equals(r.GetRepoKey(), RepositoryModel.NormalizeKey(gitRemoteUrl), StringComparison.OrdinalIgnoreCase));
+
+                        if (repository == null)
+                        {
+                            repository = new RepositoryModel
+                            {
+                                RepoRootFolder = repositoryRootFolder,
+                                GitUrl = gitRemoteUrl
+                            };
+
+                            // Centralized, sexy, deterministic
+                            repository.EnsureRepoId();
+                            repository.EnsureDisplayName();
+
+                            profile.Repositories.Add(repository);
+                        }
+
+                        repository.Models ??= new List<ProfileEnvironmentModel>();
+                        repository.Models.Add(newEnvironment);
+
+                        repository.LastKnownBranch = GitHelper.GetActiveBranch(repositoryRootFolder) ?? string.Empty;
+                    }
+                    else
+                    {
+                        // Non-git → standalone model
+                        profile.Models ??= new List<ProfileEnvironmentModel>();
+                        profile.Models.Add(newEnvironment);
+                    }
 
                     _fileService.SaveProfile(profile, updateExternal: true);
                     MessageLogger.Highlight($"✅ Model '{modelName}' added to profile: {profile.ProfileName}");
-                }
-                else
-                {
-                    MessageLogger.Warning($"⚠️ Model '{modelName}' already exists in profile: {profile.ProfileName}");
                 }
 
                 if (Directory.Exists(sourceModelPath))
@@ -551,15 +573,15 @@ namespace FODevManager.Services
                     MessageLogger.Highlight($"✅ Successfully deleted '{modelName}' from deployment path.");
                 }
 
-
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception exception)
             {
-                MessageLogger.Error($"❌ Failed to convert model: {ex.Message}");
+                MessageLogger.Error($"❌ Failed to convert model: {exception.Message}");
                 return false;
             }
         }
+
 
         private string CreateProjectFile(string modelName, string projectFolder)
         {
@@ -606,53 +628,122 @@ namespace FODevManager.Services
                 return false;
             }
 
-            model.PeriTask = periTask;
-            model.PeriTaskComment = comment;
+            var repository = profile.FindRepositoryForModel(model);
+            if (repository == null)
+            {
+                MessageLogger.Warning($"⚠️ Model '{model.ModelName}' is not mapped to a repository.");
+                return false;
+            }
+
+            repository.PeriTask = periTask;
+            repository.PeriTaskComment = comment;
+
             _fileService.SaveProfile(profile);
 
-            
-            // Attempt Git branch switch
-            
-            if (switchBranch)
+            if (!switchBranch)
+                return true;
+
+            var branchPrefix = $"feature/task-{periTask}";
+            var slug = Slugify(comment, 255, branchPrefix + "-");
+            var fullBranch = string.IsNullOrWhiteSpace(slug)
+                ? branchPrefix
+                : $"{branchPrefix}-{slug}";
+
+            var repoPath = profile.TryGetRepoRootFolder(model);
+
+            if (string.IsNullOrWhiteSpace(repoPath) || !Directory.Exists(repoPath))
             {
-                string branchPrefix = $"feature/task-{periTask}";
-                string slug = Slugify(comment, 255, branchPrefix + "-");
-                string fullBranch = string.IsNullOrWhiteSpace(slug)
-                    ? branchPrefix
-                    : $"{branchPrefix}-{slug}";
+                MessageLogger.Warning($"⚠️ Repo root folder not found for '{model.ModelName}'. Skipping branch switch.");
+                return true;
+            }
 
+            if (!GitHelper.IsGitRepository(repoPath))
+            {
+                MessageLogger.Warning($"⚠️ '{repoPath}' is not a Git repository. Skipping branch switch.");
+                return true;
+            }
 
-                var repoPath = profile.TryGetRepoRootFolder(model);
+            var autoStashIfDirty = true;
+            var stashMessage = $"FO Dev Manager: PeriTask {periTask} ({model.ModelName})";
 
-                if (string.IsNullOrWhiteSpace(repoPath) || !Directory.Exists(repoPath))
-                {
-                    MessageLogger.Warning($"⚠️ Repo root folder not found for '{model.ModelName}'. Skipping branch switch.");
-                    return true;
-                }
-
-                if (!GitHelper.IsGitRepository(repoPath))
-                {
-                    MessageLogger.Warning($"⚠️ '{repoPath}' is not a Git repository. Skipping branch switch.");
-                    return true;
-                }
-
-                // For AssignPeriTask, auto-stash is usually fine (user initiated action).
-                var autoStashIfDirty = true;
-                var stashMsg = $"FO Dev Manager: PeriTask {periTask} ({model.ModelName})";
-
-                if (GitHelper.ChangeBranch(repoPath, fullBranch, autoStashIfDirty, stashMsg))
-                {
-                    MessageLogger.Highlight($"✅ Switched to branch '{fullBranch}'.");
-                }
-                else
-                {
-                    MessageLogger.Warning($"⚠️ Failed to switch to branch '{fullBranch}'.");
-                }
+            if (GitHelper.ChangeBranch(repoPath, fullBranch, autoStashIfDirty, stashMessage))
+            {
+                repository.LastKnownBranch = GitHelper.GetActiveBranch(repoPath) ?? repository.LastKnownBranch;
+                _fileService.SaveProfile(profile);
+                MessageLogger.Highlight($"✅ Switched to branch '{fullBranch}'.");
+            }
+            else
+            {
+                MessageLogger.Warning($"⚠️ Failed to switch to branch '{fullBranch}'.");
             }
 
             return true;
         }
-      
+
+        public bool AssignPeriTaskToRepository(string profileName, string repoId, string periTask, string comment, bool switchBranch = true)
+        {
+            var profile = _fileService.LoadProfile(profileName);
+
+            if (string.IsNullOrWhiteSpace(periTask))
+            {
+                MessageLogger.Warning("⚠️ PeriTask cannot be empty.");
+                return false;
+            }
+
+            var repository = profile.Repositories
+                .FirstOrDefault(repo => string.Equals(repo.RepoId, repoId, StringComparison.OrdinalIgnoreCase));
+
+            if (repository == null)
+            {
+                MessageLogger.Warning($"⚠️ Repository '{repoId}' not found in profile '{profileName}'.");
+                return false;
+            }
+
+            repository.PeriTask = periTask;
+            repository.PeriTaskComment = comment;
+
+            _fileService.SaveProfile(profile);
+
+            if (!switchBranch)
+                return true;
+
+            var branchPrefix = $"feature/task-{periTask}";
+            var slug = Slugify(comment, 255, branchPrefix + "-");
+            var fullBranch = string.IsNullOrWhiteSpace(slug)
+                ? branchPrefix
+                : $"{branchPrefix}-{slug}";
+
+            var repoPath = (repository.RepoRootFolder ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(repoPath) || !Directory.Exists(repoPath))
+            {
+                MessageLogger.Warning($"⚠️ Repo root folder not found for repo '{repository.DisplayName}'. Skipping branch switch.");
+                return true;
+            }
+
+            if (!GitHelper.IsGitRepository(repoPath))
+            {
+                MessageLogger.Warning($"⚠️ '{repoPath}' is not a Git repository. Skipping branch switch.");
+                return true;
+            }
+
+            var stashMessage = $"FO Dev Manager: PeriTask {periTask} ({repository.DisplayName})";
+            var autoStashIfDirty = true;
+
+            if (GitHelper.ChangeBranch(repoPath, fullBranch, autoStashIfDirty, stashMessage, true))
+            {
+                repository.LastKnownBranch = GitHelper.GetActiveBranch(repoPath) ?? repository.LastKnownBranch;
+                _fileService.SaveProfile(profile);
+                MessageLogger.Highlight($"✅ Switched to branch '{fullBranch}'.");
+            }
+            else
+            {
+                MessageLogger.Warning($"⚠️ Failed to switch to branch '{fullBranch}'.");
+            }
+
+            return true;
+        }
+
+
 
         private static string Slugify(string input, int maxTotalLength, string branchPrefix)
         {
