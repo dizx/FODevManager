@@ -13,7 +13,7 @@ namespace FODevManager.Models
         public List<RepositoryModel> Repositories { get; set; } = new();
 
 
-        public List<ProfileEnvironmentModel> Environments { get; set; } = new();
+        public List<ProfileEnvironmentModel> Models { get; set; } = new();
 
         public string? DatabaseName { get; set; }
         
@@ -32,7 +32,7 @@ namespace FODevManager.Models
                 .SelectMany(r => r.Models ?? new List<ProfileEnvironmentModel>())
                 ?? Enumerable.Empty<ProfileEnvironmentModel>();
 
-            var standalone = profile.Environments ?? Enumerable.Empty<ProfileEnvironmentModel>();
+            var standalone = profile.Models ?? Enumerable.Empty<ProfileEnvironmentModel>();
 
             return repoModels.Concat(standalone);
         }
@@ -89,7 +89,7 @@ namespace FODevManager.Models
                 return profile.TryGetRepoRootFolder(repoModel);
 
             // Standalone
-            var standalone = profile.Environments?
+            var standalone = profile.Models?
                 .FirstOrDefault(m => string.Equals(m.ModelName, modelName, StringComparison.OrdinalIgnoreCase));
 
             return standalone == null ? null : profile.TryGetRepoRootFolder(standalone);
