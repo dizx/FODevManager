@@ -409,74 +409,69 @@ namespace FODevManager.WinUI
             }
         }
 
-        private async void AssignPeriTask_ForRepo_Click(object sender, RoutedEventArgs e)
+        private async void AssignPeriTask_ForRepo_Click(object sender, RoutedEventArgs eventArgs)
         {
             if (ProfilesDropdown.SelectedItem is not string profileName)
                 return;
 
-            if (sender is not Button btn)
+            if (sender is not Button button)
                 return;
 
-            // Get the group VM from the DataContext (preferred) or Tag fallback.
-            var group = btn.DataContext as RepoGroupViewModel
-                        ?? btn.Tag as RepoGroupViewModel;
+            var group = button.DataContext as RepoGroupViewModel
+                        ?? button.Tag as RepoGroupViewModel;
+
             if (group == null)
                 return;
 
-            // Same dialog UI as your per-model handler
+            var repository = group.Repository;
+            if (repository == null)
+                return;
+
             var dialog = new ContentDialog
             {
                 Title = $"Assign PeriTask to repository ({group.DisplayName})",
                 PrimaryButtonText = "Assign",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = this.Content.XamlRoot
+                XamlRoot = Content.XamlRoot
             };
 
-            var taskIdBox = new TextBox { PlaceholderText = "Enter PeriTask ID (e.g. 2145)" };
-            var commentBox = new TextBox { PlaceholderText = "Enter optional comment (e.g. fix performance)" };
-            dialog.Content = new StackPanel { Spacing = 8, Children = { taskIdBox, commentBox } };
+            var taskIdTextBox = new TextBox { PlaceholderText = "Enter PeriTask ID (e.g. 2145)" };
+            var commentTextBox = new TextBox { PlaceholderText = "Enter optional comment (e.g. fix performance)" };
+            dialog.Content = new StackPanel { Spacing = 8, Children = { taskIdTextBox, commentTextBox } };
 
-            var result = await dialog.ShowAsync();
-            if (result != ContentDialogResult.Primary || string.IsNullOrWhiteSpace(taskIdBox.Text))
+            var dialogResult = await dialog.ShowAsync();
+            if (dialogResult != ContentDialogResult.Primary)
                 return;
 
-            var taskId = taskIdBox.Text.Trim();
-            var comment = commentBox.Text?.Trim() ?? string.Empty;
+            var periTaskId = taskIdTextBox.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(periTaskId))
+                return;
+
+            var comment = commentTextBox.Text?.Trim() ?? string.Empty;
 
             try
             {
-                // Reuse your existing per-model method for every model in this group
-                int ok = 0, fail = 0;
-                var modelNames = group.Models
-                    .Select(m => m.ModelName)
-                    .Where(n => !string.IsNullOrWhiteSpace(n))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-
-
                 await RunOperationAsync(() =>
                 {
-                    var first = true;
-                    foreach (var modelName in modelNames)
-                    {
-                        _deploymentService.AssignPeriTask(profileName, modelName, taskId, comment, first);
-                        ok++;
-                        first = false; // only switch branch on first model
-                    }
+                    _deploymentService.AssignPeriTaskToRepository(
+                        profileName: profileName,
+                        repoId: repository.RepoId,
+                        periTask: periTaskId,
+                        comment: comment,
+                        switchBranch: true);
                 }, "Assign PeriTask");
 
-                UIMessageHelper.LogToUI($"✅ Assigned PeriTask '{taskId}' to {ok} model(s) in repo '{group.DisplayName}'.{(fail > 0 ? $" ({fail} failed)" : "")}");
-                
+                UIMessageHelper.LogToUI($"✅ Assigned PeriTask '{periTaskId}' to repo '{group.DisplayName}'.");
             }
-            catch (Exception ex)
+            catch (Exception exception)
             {
-                UIMessageHelper.LogToUI($"❌ Failed to assign PeriTask: {ex.Message}", MessageType.Error);
+                UIMessageHelper.LogToUI($"❌ Failed to assign PeriTask: {exception.Message}", MessageType.Error);
             }
 
-            // Refresh once
             LoadModelListViewData(profileName);
         }
+
 
         private void OpenPeriTask_ForRepo_Click(object sender, RoutedEventArgs eventArgs)
         {

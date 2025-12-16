@@ -93,6 +93,44 @@ namespace FODevManager.Models
 
             return standalone == null ? null : profile.TryGetRepoRootFolder(standalone);
         }
+
+        public static RepositoryModel? FindRepositoryByRoot(this ProfileModel profile, string repoRootFolder)
+        {
+            return (profile.Repositories ?? new List<RepositoryModel>())
+                .FirstOrDefault(repo => string.Equals(repo.RepoRootFolder, repoRootFolder, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public static RepositoryModel? FindRepositoryByGitUrl(this ProfileModel profile, string gitUrl)
+        {
+            if (string.IsNullOrWhiteSpace(gitUrl))
+                return null;
+
+            return (profile.Repositories ?? new List<RepositoryModel>())
+                .FirstOrDefault(repo => string.Equals(repo.GitUrl, gitUrl, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public static RepositoryModel? FindRepositoryByRepoKey(this ProfileModel profile, string repoKey)
+        {
+            var normalizedKey = RepositoryModel.NormalizeKey(repoKey);
+
+            return (profile.Repositories ?? new List<RepositoryModel>())
+                .FirstOrDefault(repo => string.Equals(repo.GetRepoKey(), normalizedKey, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public static RepositoryModel? FindRepositoryForModel(this ProfileModel profile, ProfileEnvironmentModel model)
+        {
+            if (profile.Repositories == null || profile.Repositories.Count == 0)
+                return null;
+
+            var metadataFolder = model.MetadataFolder ?? string.Empty;
+
+            return profile.Repositories.FirstOrDefault(repo =>
+                repo.Models != null &&
+                repo.Models.Any(repoModel =>
+                    string.Equals(repoModel.ModelName, model.ModelName, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(repoModel.MetadataFolder ?? string.Empty, metadataFolder, StringComparison.OrdinalIgnoreCase)));
+        }
+
     }
 }
 
