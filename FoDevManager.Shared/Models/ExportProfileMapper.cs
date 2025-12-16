@@ -1,4 +1,4 @@
-
+using FODevManager.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,150 +9,159 @@ namespace FODevManager.Models
     {
         public static ExportProfileModel ToExport(ProfileModel profile)
         {
-            if (profile == null)
-                throw new ArgumentNullException(nameof(profile));
+            if (profile == null) throw new ArgumentNullException(nameof(profile));
 
-            var export = new ExportProfileModel
+            return new ExportProfileModel
             {
-                ProfileName = profile.ProfileName ?? string.Empty,
+                ProfileName = profile.ProfileName,
                 DatabaseName = profile.DatabaseName,
-                SolutionFileRelativePath = null
+                SolutionFileRelativePath = ToSolutionRelativePath(profile),
+                Repositories = (profile.Repositories ?? new List<RepositoryModel>())
+                    .Select(ToExportRepository)
+                    .ToList(),
+                StandaloneModels = (profile.Models ?? new List<ProfileEnvironmentModel>())
+                    .Select(ToExportEnvironment)
+                    .ToList()
             };
-
-            if (profile.Repositories != null)
-            {
-                export.Repositories = profile.Repositories
-                    .Select(ToExport)
-                    .ToList();
-            }
-
-            if (profile.Models != null)
-            {
-                export.Models = profile.Models
-                    .Select(environment => ToExport(environment, explicitGitUrl: environment.GitUrl))
-                    .ToList();
-            }
-
-            return export;
         }
 
-        public static ProfileModel ToProfile(ExportProfileModel exportProfile)
+        public static ProfileModel FromExport(ExportProfileModel exportProfile, string? profileFilePath = null)
         {
-            if (exportProfile == null)
-                throw new ArgumentNullException(nameof(exportProfile));
+            if (exportProfile == null) throw new ArgumentNullException(nameof(exportProfile));
 
-            var profile = new ProfileModel
+            return new ProfileModel
             {
                 ProfileName = exportProfile.ProfileName ?? string.Empty,
                 DatabaseName = exportProfile.DatabaseName,
-                SolutionFilePath = string.Empty,
-                ProfileFilePath = string.Empty,
+                ProfileFilePath = profileFilePath ?? string.Empty,
                 IsActive = false,
-                Repositories = new List<RepositoryModel>(),
-                Models = new List<ProfileEnvironmentModel>()
+                SolutionFilePath = exportProfile.SolutionFileRelativePath ?? string.Empty,
+                Repositories = (exportProfile.Repositories ?? new List<ExportRepositoryModel>())
+                    .Select(ToRepositoryModel)
+                    .ToList(),
+
+                Models = (exportProfile.StandaloneModels ?? new List<ExportEnvironmentModel>())
+                    .Select(ToStandaloneProfileEnvironmentModel)
+                    .ToList()
             };
-
-            if (exportProfile.Repositories != null)
-            {
-                foreach (var exportRepository in exportProfile.Repositories)
-                {
-                    var repoModel = ToRepository(exportRepository);
-                    profile.Repositories.Add(repoModel);
-                }
-            }
-
-            if (exportProfile.Models != null)
-            {
-                foreach (var exportEnvironment in exportProfile.Models)
-                {
-                    profile.Models.Add(ToEnvironment(exportEnvironment, fallbackGitUrl: exportEnvironment.GitUrl));
-                }
-            }
-
-            return profile;
         }
 
-        private static ExportRepositoryModel ToExport(RepositoryModel repository)
+        private static ExportRepositoryModel ToExportRepository(RepositoryModel repository)
         {
-            var exportRepository = new ExportRepositoryModel
+            return new ExportRepositoryModel
             {
                 RepoId = repository.RepoId ?? string.Empty,
                 DisplayName = repository.DisplayName ?? string.Empty,
                 GitUrl = repository.GitUrl,
-                PreferredBranch = repository.PreferredBranch,
                 AutoCheckoutOnProfileLoad = repository.AutoCheckoutOnProfileLoad,
                 AutoStashOnDirtyCheckout = repository.AutoStashOnDirtyCheckout,
-                Models = new List<ExportProfileEnvironmentModel>()
+
+                Models = (repository.Models ?? new List<ProfileEnvironmentModel>())
+                    .Select(ToExportEnvironment)
+                    .ToList()
             };
-
-            if (repository.Models != null)
-            {
-                exportRepository.Models = repository.Models
-                    .Select(environment => ToExport(environment, explicitGitUrl: repository.GitUrl))
-                    .ToList();
-            }
-
-            return exportRepository;
         }
 
-        private static ExportProfileEnvironmentModel ToExport(ProfileEnvironmentModel environment, string? explicitGitUrl)
+        private static ExportEnvironmentModel ToExportEnvironment(ProfileEnvironmentModel environment)
         {
-            return new ExportProfileEnvironmentModel
+            return new ExportEnvironmentModel
             {
-                ModelName = environment.ModelName ?? string.Empty,
-                ModelType = environment.ModelType,
+                ModelName = environment.ModelName,
                 IsMainFOModel = environment.IsMainFOModel,
-                GitUrl = string.IsNullOrWhiteSpace(explicitGitUrl) ? null : explicitGitUrl
+                ModelType = environment.ModelType,                
             };
         }
 
-        private static RepositoryModel ToRepository(ExportRepositoryModel exportRepository)
+        private static RepositoryModel ToRepositoryModel(ExportRepositoryModel exportRepository)
         {
             var repository = new RepositoryModel
             {
                 RepoId = exportRepository.RepoId ?? string.Empty,
                 DisplayName = exportRepository.DisplayName ?? string.Empty,
-                RepoRootFolder = string.Empty,
                 GitUrl = exportRepository.GitUrl,
-                PreferredBranch = exportRepository.PreferredBranch,
                 AutoCheckoutOnProfileLoad = exportRepository.AutoCheckoutOnProfileLoad,
-                AutoStashOnDirtyCheckout = exportRepository.AutoStashOnDirtyCheckout,
-                LastKnownBranch = null,
-                LastKnownCommit = null,
-                PeriTask = string.Empty,
-                PeriTaskComment = string.Empty,
-                Models = new List<ProfileEnvironmentModel>()
+                AutoStashOnDirtyCheckout = exportRepository.AutoStashOnDirtyCheckout
             };
 
-            if (exportRepository.Models != null)
-            {
-                foreach (var exportEnvironment in exportRepository.Models)
-                {
-                    repository.Models.Add(ToEnvironment(exportEnvironment, fallbackGitUrl: exportRepository.GitUrl));
-                }
-            }
+            repository.Models = (exportRepository.Models ?? new List<ExportEnvironmentModel>())
+                .Select(exportEnvironment => ToProfileEnvironmentModel(exportEnvironment, exportRepository))
+                .ToList();
 
             return repository;
         }
 
-        private static ProfileEnvironmentModel ToEnvironment(ExportProfileEnvironmentModel exportEnvironment, string? fallbackGitUrl)
+        private static ProfileEnvironmentModel ToProfileEnvironmentModel(
+            ExportEnvironmentModel exportEnvironment,
+            ExportRepositoryModel exportRepository)
+        {
+
+            return new ProfileEnvironmentModel
+            {
+                ModelName = exportEnvironment.ModelName ?? string.Empty,
+                IsMainFOModel = exportEnvironment.IsMainFOModel,
+                ModelType = exportEnvironment.ModelType                
+            };
+        }
+
+        private static ProfileEnvironmentModel ToStandaloneProfileEnvironmentModel(ExportEnvironmentModel exportEnvironment)
         {
             return new ProfileEnvironmentModel
             {
                 ModelName = exportEnvironment.ModelName ?? string.Empty,
-                ModelType = exportEnvironment.ModelType,
                 IsMainFOModel = exportEnvironment.IsMainFOModel,
-                GitUrl = string.IsNullOrWhiteSpace(exportEnvironment.GitUrl) ? (fallbackGitUrl ?? string.Empty) : exportEnvironment.GitUrl,
-
-                ModelRootFolder = string.Empty,
-                ProjectFilePath = string.Empty,
-                MetadataFolder = string.Empty,
-                CompiledModelFolder = string.Empty,
-
-                PeriTask = string.Empty,
-                PeriTaskComment = string.Empty,
-                IsDeployed = false
+                ModelType = exportEnvironment.ModelType,
+                
             };
         }
+
+
+        private static string? ToSolutionRelativePath(ProfileModel profile)
+        {
+            var absoluteSolutionPath = profile.SolutionFilePath;
+            if (absoluteSolutionPath.IsNullOrEmpty())
+                return $"{profile.ProfileName}.sln";
+
+            string baseFolder = GetSolutionBaseFolder(profile);
+
+            try
+            {
+                var fullSolutionPath = Path.GetFullPath(absoluteSolutionPath);
+                var relative = Path.GetRelativePath(baseFolder, fullSolutionPath);
+
+                // Keep it git-friendly and consistent
+                return relative.Replace('\\', '/');
+            }
+            catch
+            {
+                // Worst-case: at least preserve solution name
+                return Path.GetFileName(absoluteSolutionPath);
+            }
+        }
+
+        private static string GetSolutionBaseFolder(ProfileModel profile)
+        {
+            // Prefer main FO repo root folder if available
+            var mainFoModel = profile.GetAllModels()
+                .FirstOrDefault(model => model.IsMainFOModel);
+
+            if (mainFoModel != null)
+            {
+                var repoRoot = profile.TryGetRepoRootFolder(mainFoModel);
+                if (!repoRoot.IsNullOrEmpty())
+                    return Path.GetFullPath(repoRoot);
+            }
+
+            // Fall back: profile folder under default source dir is not available here,
+            // so we just use solution's directory if we can.
+            if (!profile.SolutionFilePath.IsNullOrEmpty())
+            {
+                var solutionDirectory = Path.GetDirectoryName(Path.GetFullPath(profile.SolutionFilePath));
+                if (!solutionDirectory.IsNullOrEmpty())
+                    return solutionDirectory!;
+            }
+
+            return AppContext.BaseDirectory;
+        }
+
     }
 }

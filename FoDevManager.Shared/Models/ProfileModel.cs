@@ -1,4 +1,4 @@
-﻿using FODevManager.Models.FODevManager.Models;
+﻿
 using System.Collections.Generic;
 
 namespace FODevManager.Models

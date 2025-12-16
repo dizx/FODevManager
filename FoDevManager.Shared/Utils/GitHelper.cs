@@ -407,6 +407,36 @@ namespace FODevManager.Utils
             return null;
         }
 
+        public static string DeriveRepoDisplayName(string repoRootFolder, string gitUrl)
+        {
+            // Preferred: repo name from git url
+            var repoNameFromUrl = TryGetRepoNameFromGitUrl(gitUrl);
+            if (!repoNameFromUrl.IsNullOrEmpty())
+                return repoNameFromUrl!;
+
+            // Fallback: folder name
+            var folderName = Path.GetFileName(repoRootFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            return folderName.IsNullOrEmpty() ? "Repository" : folderName;
+        }
+
+        public static string? TryGetRepoNameFromGitUrl(string gitUrl)
+        {
+            if (gitUrl.IsNullOrEmpty())
+                return null;
+
+            // Handles:
+            // https://dev.azure.com/org/project/_git/repo
+            // https://org@dev.azure.com/org/project/_git/repo
+            // git@ssh.dev.azure.com:v3/org/project/repo
+            var normalized = gitUrl.Trim().Replace('\\', '/');
+
+            var lastSegment = normalized.Split('/').LastOrDefault();
+            if (lastSegment.IsNullOrEmpty())
+                return null;
+
+            return Uri.UnescapeDataString(lastSegment.Replace(".git", string.Empty, StringComparison.OrdinalIgnoreCase));
+        }
+
         private static string ConvertToHttpsUrl(string url)
         {
             if (url.StartsWith("git@"))

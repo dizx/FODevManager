@@ -1,5 +1,4 @@
 ﻿using FODevManager.Models;
-using FODevManager.Models.FODevManager.Models;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;

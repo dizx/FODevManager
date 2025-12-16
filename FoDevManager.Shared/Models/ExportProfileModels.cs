@@ -2,10 +2,6 @@ using System.Collections.Generic;
 
 namespace FODevManager.Models
 {
-    /// <summary>
-    /// Portable profile contract for Git syncing / sharing.
-    /// Contains only data required to reconstruct a profile on another machine.
-    /// </summary>
     public sealed class ExportProfileModel
     {
         public int ExportFormatVersion { get; set; } = 1;
@@ -14,14 +10,17 @@ namespace FODevManager.Models
 
         public string? DatabaseName { get; set; }
 
-        public List<ExportRepositoryModel> Repositories { get; set; } = new();
-
-        public List<ExportProfileEnvironmentModel> Models { get; set; } = new();
-
         /// <summary>
-        /// Optional. If present it must be relative (portable). Prefer leaving empty and letting import decide.
+        /// Optional. If set, it should be relative to the main repo root (or profile root) and resolved on import.
         /// </summary>
         public string? SolutionFileRelativePath { get; set; }
+
+        public List<ExportRepositoryModel> Repositories { get; set; } = new();
+
+        /// <summary>
+        /// Standalone models not tied to any repository.
+        /// </summary>
+        public List<ExportEnvironmentModel> StandaloneModels { get; set; } = new();
     }
 
     public sealed class ExportRepositoryModel
@@ -30,24 +29,20 @@ namespace FODevManager.Models
         public string DisplayName { get; set; } = "";
 
         public string? GitUrl { get; set; }
-        public string? PreferredBranch { get; set; }
-
+        
         public bool AutoCheckoutOnProfileLoad { get; set; } = true;
         public bool AutoStashOnDirtyCheckout { get; set; } = false;
 
-        public List<ExportProfileEnvironmentModel> Models { get; set; } = new();
+        public List<ExportEnvironmentModel> Models { get; set; } = new();
     }
 
-    public sealed class ExportProfileEnvironmentModel
+    public sealed class ExportEnvironmentModel
     {
         public string ModelName { get; set; } = "";
-        public ModelType ModelType { get; set; } = ModelType.Source;
+
         public bool IsMainFOModel { get; set; } = false;
 
-        /// <summary>
-        /// Optional; if set, must be a repo URL and should not be a local path.
-        /// Typically you keep GitUrl on the repository instead.
-        /// </summary>
-        public string? GitUrl { get; set; }
+        public ModelType ModelType { get; set; } = ModelType.Source;
+        
     }
 }
