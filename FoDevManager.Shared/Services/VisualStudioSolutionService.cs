@@ -30,7 +30,7 @@ namespace FODevManager.Services
             if (!string.IsNullOrWhiteSpace(profile.SolutionFilePath))
                 return Path.GetFullPath(profile.SolutionFilePath);
 
-            var mainEnv = profile.Environments?.FirstOrDefault(e => e.IsMainFOModel);
+            var mainEnv = profile.Models?.FirstOrDefault(e => e.IsMainFOModel);
             if (mainEnv != null && !string.IsNullOrWhiteSpace(mainEnv.ModelRootFolder))
                 return Path.Combine(mainEnv.ModelRootFolder, $"{profile.ProfileName}.sln");
 
@@ -44,7 +44,7 @@ namespace FODevManager.Services
             if (!string.IsNullOrWhiteSpace(profile.SolutionFilePath))
                 return Path.GetDirectoryName(Path.GetFullPath(profile.SolutionFilePath))!;
 
-            var mainEnv = profile.Environments?.FirstOrDefault(e => e.IsMainFOModel);
+            var mainEnv = profile.Models?.FirstOrDefault(e => e.IsMainFOModel);
             if (mainEnv != null && !string.IsNullOrWhiteSpace(mainEnv.ModelRootFolder))
                 return mainEnv.ModelRootFolder;
 

@@ -69,7 +69,7 @@ namespace FODevManager.Services
 
                 bool anyUndeployed = false;
 
-                foreach (var model in profile.Environments)
+                foreach (var model in profile.Models)
                 {
                     string linkPath = Path.Combine(_deploymentBasePath, model.ModelName);
 
@@ -155,7 +155,7 @@ namespace FODevManager.Services
                 var profile = _fileService.LoadProfile(profileName);
                 bool anyDeployed = false;
 
-                foreach (var model in profile.Environments)
+                foreach (var model in profile.Models)
                 {
                     string linkPath = Path.Combine(_deploymentBasePath, model.ModelName);
 
@@ -239,7 +239,7 @@ namespace FODevManager.Services
                 return repoModel;
 
             // 2) Standalone models (disk-only)
-            var standalone = profile.Environments?
+            var standalone = profile.Models?
                 .FirstOrDefault(m => m.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
 
             if (standalone != null)
@@ -429,9 +429,9 @@ namespace FODevManager.Services
                 File.WriteAllText(descriptorPath, modelXml, Encoding.UTF8);
 
                 // Register in profile
-                if (!profile.Environments.Any(e => e.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase)))
+                if (!profile.Models.Any(e => e.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase)))
                 {
-                    profile.Environments.Add(new ProfileEnvironmentModel
+                    profile.Models.Add(new ProfileEnvironmentModel
                     {
                         ModelName = modelName,
                         ModelRootFolder = modelRoot,
@@ -479,12 +479,12 @@ namespace FODevManager.Services
                 MessageLogger.Info($"📁 Created project structure at: {projectRootPath}");
 
                 // Check if model already exists in profile environments
-                bool alreadyExists = profile.Environments.Any(env =>
+                bool alreadyExists = profile.Models.Any(env =>
                     env.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
 
                 if (!alreadyExists)
                 {
-                    profile.Environments.Add(new ProfileEnvironmentModel
+                    profile.Models.Add(new ProfileEnvironmentModel
                     {
                         ModelName = modelName,
                         ModelRootFolder = projectRootPath,

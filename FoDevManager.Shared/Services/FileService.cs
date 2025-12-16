@@ -109,7 +109,7 @@ namespace FODevManager.Services
                 var clone = SerializedClone(profile);
                 clone.ProfileFilePath = string.Empty;
                 clone.IsActive = false;
-                foreach (var env in clone.Environments)
+                foreach (var env in clone.Models)
                 {
                     env.PeriTask = "";
                     env.PeriTaskComment = "";

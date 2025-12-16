@@ -148,11 +148,11 @@ namespace FODevManager.Services
             var result = new ModelSyncResult();
 
             var currentNames = new HashSet<string>(
-                current.Environments.Select(e => e.ModelName),
+                current.Models.Select(e => e.ModelName),
                 StringComparer.OrdinalIgnoreCase);
 
             var importedNames = new HashSet<string>(
-                imported.Environments.Select(e => e.ModelName),
+                imported.Models.Select(e => e.ModelName),
                 StringComparer.OrdinalIgnoreCase);
 
             // Added models (in imported but not in current)
@@ -211,18 +211,14 @@ namespace FODevManager.Services
 
                 var diff = GetEnvironmentDiff(currentProfile, importedProfile);
 
-                if (!diff.HasChanges)
-                {
-                    MessageLogger.Info("CheckProfileModelChanges: No added or removed models detected.");
-                }
-                else
+                if (diff.HasChanges)
                 {
                     if (diff.AddedModels.Any())
                         MessageLogger.Info($"CheckProfileModelChanges: Added models: {string.Join(", ", diff.AddedModels)}");
 
                     if (diff.RemovedModels.Any())
                         MessageLogger.Info($"CheckProfileModelChanges: Removed models: {string.Join(", ", diff.RemovedModels)}");
-                }
+                }                
 
                 return diff;
             }
@@ -236,15 +232,14 @@ namespace FODevManager.Services
 
         public ProfileModel ImportProfile(string importPath)
         {
-            if (!File.Exists(importPath))
+            if(!_fileService.ExistProfile(importPath))
             {
-                MessageLogger.Error($"Profile file not found: {importPath}");
-                return null!;
+                throw new Exception($"Profile '{importPath}' does not exist.");
             }
 
             try
-            {
-                var sourceProfile = FileHelper.LoadJson<ProfileModel>(importPath);
+            { 
+                var sourceProfile = _fileService.LoadProfile(importPath);
 
                 if (sourceProfile == null || string.IsNullOrWhiteSpace(sourceProfile.ProfileName))
                 {
@@ -265,7 +260,7 @@ namespace FODevManager.Services
 
                 var sourceEnvironments = new List<ProfileEnvironmentModel>();
 
-                foreach (var environment in sourceProfile.Environments)
+                foreach (var environment in sourceProfile.Models)
                 {
                     var modelFolderName = environment.GitUrl.IsNullOrEmpty()
                         ? environment.ModelName
@@ -308,7 +303,7 @@ namespace FODevManager.Services
                 if(sourceProfile.SolutionFilePath.IsNullOrEmpty())
                 {
                     // Decide on the solution path now (before adding projects)
-                    var mainFoEnvironment = sourceProfile.Environments.FirstOrDefault(e => e.IsMainFOModel && !string.IsNullOrWhiteSpace(e.ModelRootFolder));
+                    var mainFoEnvironment = sourceProfile.Models.FirstOrDefault(e => e.IsMainFOModel && !string.IsNullOrWhiteSpace(e.ModelRootFolder));
 
                     if (mainFoEnvironment != null)
                     {
@@ -642,7 +637,7 @@ namespace FODevManager.Services
 
             var profile = _fileService.LoadProfile(profileName);
 
-            if (profile.Environments.Any(e => e.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase)))
+            if (profile.Models.Any(e => e.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase)))
             {
                 MessageLogger.Warning($"⚠️ Model '{modelName}' is already in the profile '{profileName}'. Skipping add.");
                 return;
@@ -651,7 +646,7 @@ namespace FODevManager.Services
             string deploymentLinkPath = Path.Combine(_deploymentBasePath, modelName);
             bool isAlreadyDeployed = Directory.Exists(deploymentLinkPath);
 
-            profile.Environments.Add(new ProfileEnvironmentModel
+            profile.Models.Add(new ProfileEnvironmentModel
             {
                 ModelName = modelName,
                 ModelRootFolder = modelRootPath,
@@ -679,7 +674,7 @@ namespace FODevManager.Services
         private void AddProjectToVsSolution(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
-            var newModel = profile.Environments.Find(e => e.ModelName == modelName);
+            var newModel = profile.Models.Find(e => e.ModelName == modelName);
             if (newModel == null)
             {
                 MessageLogger.Error($"❌ Error: Model '{modelName}' not found in profile after creation.");
@@ -760,7 +755,7 @@ namespace FODevManager.Services
             }
 
             MessageLogger.Info($"Profile: {profile.ProfileName}");
-            foreach (var env in profile.Environments)
+            foreach (var env in profile.Models)
             {
                 _modelDeploymentService.CheckModelDeployment(profileName, env.ModelName);
                 _modelDeploymentService.CheckIfGitRepository(profileName, env.ModelName);
@@ -771,7 +766,7 @@ namespace FODevManager.Services
             var profile = _fileService.LoadProfile(profileName);
 
             MessageLogger.Info($"Fetch Git for profile: {profile.ProfileName}");
-            foreach (var env in profile.Environments)
+            foreach (var env in profile.Models)
             {
                 if (!env.ModelRootFolder.IsNullOrEmpty())
                 {
@@ -787,7 +782,7 @@ namespace FODevManager.Services
             var profile = _fileService.LoadProfile(profileName);
 
             // Remove each project from the solution before deleting the profile
-            foreach (var model in profile.Environments)
+            foreach (var model in profile.Models)
             {
                 _solutionService.RemoveProjectFromSolution(profileName, model.ModelName);
             }
@@ -807,7 +802,7 @@ namespace FODevManager.Services
         public void RemoveModelFromProfile(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
-            var model = profile.Environments.Find(m => m.ModelName == modelName);
+            var model = profile.Models.Find(m => m.ModelName == modelName);
 
             if (model == null)
             {
@@ -817,7 +812,7 @@ namespace FODevManager.Services
 
             _solutionService.RemoveProjectFromSolution(profileName, model.ModelName);
 
-            profile.Environments.Remove(model);
+            profile.Models.Remove(model);
 
             _fileService.SaveProfile(profile, updateExternal: true);
 
@@ -839,14 +834,14 @@ namespace FODevManager.Services
         {
             var profile = _fileService.LoadProfile(profileName);
 
-            if (profile.Environments.Count == 0)
+            if (profile.Models.Count == 0)
             {
                 MessageLogger.Warning($"No models found in profile '{profileName}'.");
                 return;
             }
 
             MessageLogger.Info($"Models in Profile '{profileName}':");
-            foreach (var model in profile.Environments)
+            foreach (var model in profile.Models)
             {
                 string status = model.IsDeployed ? "✅ Deployed" : "❌ Not Deployed";
                 string gitStatus = model.GitUrl.IsNullOrEmpty() ? "" : "✅ Git Repo" ; 
@@ -872,21 +867,21 @@ namespace FODevManager.Services
         public List<ProfileEnvironmentModel> GetModelsInProfile(string profileName)
         {
             var profile = _fileService.LoadProfile(profileName);
-            if (profile.Environments.Count == 0)
+            if (profile.Models.Count == 0)
             {
                 return new List<ProfileEnvironmentModel>();
             }
-            return profile.Environments;
+            return profile.Models;
         }
 
         public ProfileEnvironmentModel GetModel(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
-            if (profile.Environments.Count == 0)
+            if (profile.Models.Count == 0)
             {
                 return new ProfileEnvironmentModel();
             }
-            return profile.Environments.FirstOrDefault(x => x.ModelName == modelName);
+            return profile.Models.FirstOrDefault(x => x.ModelName == modelName);
         }
 
         public void UpdateDeploymentStatus(string profileName)
@@ -894,7 +889,7 @@ namespace FODevManager.Services
             bool updated = false;
             var profile = _fileService.LoadProfile(profileName);
 
-            foreach (var model in profile.Environments)
+            foreach (var model in profile.Models)
             {
                 bool shouldBeMarkedAsDeployed = _modelDeploymentService.IsModelActuallyDeployed(model);
                 if (model.IsDeployed != shouldBeMarkedAsDeployed)
@@ -916,12 +911,12 @@ namespace FODevManager.Services
             if (profile.Repositories != null && profile.Repositories.Count > 0)
                 return false;
 
-            if (profile.Environments == null || profile.Environments.Count == 0)
+            if (profile.Models == null || profile.Models.Count == 0)
                 return false;
 
             var repoMap = new Dictionary<string, RepositoryModel>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var m in profile.Environments)
+            foreach (var m in profile.Models)
             {
                 // Your current ModelRootFolder is already the repo root folder in most flows
                 // (it’s used for git checks and cloning). :contentReference[oaicite:2]{index=2}

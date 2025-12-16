@@ -12,7 +12,6 @@ namespace FODevManager.Models
 
         public List<RepositoryModel> Repositories { get; set; } = new();
 
-
         public List<ProfileEnvironmentModel> Models { get; set; } = new();
 
         public string? DatabaseName { get; set; }
