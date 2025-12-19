@@ -454,10 +454,10 @@ namespace FODevManager.WinUI
             {
                 await RunOperationAsync(() =>
                 {
-                    _deploymentService.AssignPeriTaskToRepository(
+                    _deploymentService.AssignTaskToRepository(
                         profileName: profileName,
                         repoId: repository.RepoId,
-                        periTask: periTaskId,
+                        task: periTaskId,
                         comment: comment,
                         switchBranch: true);
                 }, "Assign PeriTask");

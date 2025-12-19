@@ -235,19 +235,7 @@ namespace FODevManager.Services
             }
         }
 
-        private ProfileEnvironmentModel GetProfileModel(ProfileModel profile, string modelName)
-        {
-            if (profile == null)
-                throw new ArgumentNullException(nameof(profile));
-
-            if (string.IsNullOrWhiteSpace(modelName))
-                throw new ArgumentException("Model name is required.", nameof(modelName));
-
-            return profile.FindModel(modelName);
-        }
-
-
-
+      
         public void CheckModelDeployment(string profileName, string modelName, bool updateProfile = false)
         {
             var profile = _fileService.LoadProfile(profileName);
@@ -437,20 +425,29 @@ namespace FODevManager.Services
                 string descriptorPath = Path.Combine(descriptorFolder, $"{modelName}.xml");
                 File.WriteAllText(descriptorPath, modelXml, Encoding.UTF8);
 
-                // Register in profile
-                if (!profile.StandaloneModels.Any(e => e.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase)))
+                var newModel = new ProfileEnvironmentModel
                 {
-                    profile.StandaloneModels.Add(new ProfileEnvironmentModel
-                    {
-                        ModelName = modelName,
-                        ModelRootFolder = modelRoot,
-                        ProjectFilePath = projectFilePath,
-                        MetadataFolder = metadataFolder,
-                        IsDeployed = false
-                    });
+                    ModelName = modelName,
+                    ModelRootFolder = modelRoot,
+                    ProjectFilePath = projectFilePath,
+                    MetadataFolder = metadataFolder,
+                    IsDeployed = false
+                };
 
-                    _fileService.SaveProfile(profile, updateExternal: true);
+                if (GitHelper.IsGitRepository(modelRoot, out var gitRemoteUrl))
+                {
+                    
+                    var repository = FindOrCreateRepository(profile, modelRoot, gitRemoteUrl);
+                    repository.Models.Add(newModel);
+
                 }
+                else
+                {
+                    // Non-git → standalone model
+                    profile.StandaloneModels.Add(newModel);
+                }
+
+                _fileService.SaveProfile(profile, updateExternal: true);
 
                 MessageLogger.Highlight($"✅ Model '{modelName}' created successfully at: {modelRoot}");
                 return true;
@@ -508,37 +505,13 @@ namespace FODevManager.Services
                     {
                         var repositoryRootFolder = projectRootPath;
 
-                        profile.Repositories ??= new List<RepositoryModel>();
-
-                        // RepoKey = GitUrl if present, otherwise RepoRootFolder (handled internally)
-                        var repository = profile.Repositories
-                            .FirstOrDefault(r =>
-                                string.Equals(r.GetRepoKey(), RepositoryModel.NormalizeKey(gitRemoteUrl), StringComparison.OrdinalIgnoreCase));
-
-                        if (repository == null)
-                        {
-                            repository = new RepositoryModel
-                            {
-                                RepoRootFolder = repositoryRootFolder,
-                                GitUrl = gitRemoteUrl
-                            };
-
-                            // Centralized, sexy, deterministic
-                            repository.EnsureRepoId();
-                            repository.EnsureDisplayName();
-
-                            profile.Repositories.Add(repository);
-                        }
-
-                        repository.Models ??= new List<ProfileEnvironmentModel>();
+                        var repository = FindOrCreateRepository(profile, repositoryRootFolder, gitRemoteUrl);
                         repository.Models.Add(newEnvironment);
-
-                        repository.LastKnownBranch = GitHelper.GetActiveBranch(repositoryRootFolder) ?? string.Empty;
+                        
                     }
                     else
                     {
                         // Non-git → standalone model
-                        profile.StandaloneModels ??= new List<ProfileEnvironmentModel>();
                         profile.StandaloneModels.Add(newEnvironment);
                     }
 
@@ -568,7 +541,27 @@ namespace FODevManager.Services
             }
         }
 
+        private RepositoryModel FindOrCreateRepository(ProfileModel profile, string repoRootFolder, string gitRemoteUrl)
+        {
+            var repository = profile.FindRepositoryByGitUrl(gitRemoteUrl);
 
+            if (repository == null)
+            {
+                repository = new RepositoryModel
+                {
+                    RepoRootFolder = repoRootFolder,
+                    GitUrl = gitRemoteUrl
+                };
+
+                repository.EnsureRepoId();
+                repository.EnsureDisplayName();
+
+                profile.Repositories.Add(repository);
+            }
+            repository.LastKnownBranch = GitHelper.GetActiveBranch(repoRootFolder) ?? string.Empty;
+
+            return repository;
+        }
         private string CreateProjectFile(string modelName, string projectFolder)
         {
             FileHelper.EnsureDirectoryExists(projectFolder);
@@ -671,15 +664,9 @@ namespace FODevManager.Services
             return true;
         }
 
-        public bool AssignPeriTaskToRepository(string profileName, string repoId, string periTask, string comment, bool switchBranch = true)
+        public bool AssignTaskToRepository(string profileName, string repoId, string task, string comment, bool switchBranch = true)
         {
             var profile = _fileService.LoadProfile(profileName);
-
-            if (string.IsNullOrWhiteSpace(periTask))
-            {
-                MessageLogger.Warning("⚠️ PeriTask cannot be empty.");
-                return false;
-            }
 
             var repository = profile.Repositories
                 .FirstOrDefault(repo => string.Equals(repo.RepoId, repoId, StringComparison.OrdinalIgnoreCase));
@@ -690,7 +677,7 @@ namespace FODevManager.Services
                 return false;
             }
 
-            repository.PeriTask = periTask;
+            repository.PeriTask = task;
             repository.PeriTaskComment = comment;
 
             _fileService.SaveProfile(profile);
@@ -698,9 +685,9 @@ namespace FODevManager.Services
             if (!switchBranch)
                 return true;
 
-            var branchPrefix = $"feature/task-{periTask}";
+            var branchPrefix = task.IsNullOrEmpty() ? $"feature/task" : $"feature/task-{task}";
             var slug = Slugify(comment, 255, branchPrefix + "-");
-            var fullBranch = string.IsNullOrWhiteSpace(slug)
+            var fullBranch = slug.IsNullOrEmpty()
                 ? branchPrefix
                 : $"{branchPrefix}-{slug}";
 
@@ -717,7 +704,7 @@ namespace FODevManager.Services
                 return true;
             }
 
-            var stashMessage = $"FO Dev Manager: PeriTask {periTask} ({repository.DisplayName})";
+            var stashMessage = $"FO Dev Manager: PeriTask {task} ({repository.DisplayName})";
             var autoStashIfDirty = true;
 
             if (GitHelper.ChangeBranch(repoPath, fullBranch, autoStashIfDirty, stashMessage, true))
@@ -757,7 +744,6 @@ namespace FODevManager.Services
                 ? slug.Substring(0, remainingLength)
                 : slug;
         }
-
     }
 }
 
