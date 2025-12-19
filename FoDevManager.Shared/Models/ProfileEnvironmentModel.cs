@@ -1,4 +1,6 @@
-﻿namespace FODevManager.Models
+﻿using FODevManager.Shared.Models;
+
+namespace FODevManager.Models
 {
     public class ProfileEnvironmentModel
     {
@@ -30,4 +32,5 @@
         Compiled  
     }
 
+   
 }

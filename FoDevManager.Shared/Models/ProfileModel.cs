@@ -1,5 +1,7 @@
 ﻿
+using FODevManager.Shared.Models;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace FODevManager.Models
 {
@@ -12,28 +14,54 @@ namespace FODevManager.Models
 
         public List<RepositoryModel> Repositories { get; set; } = new();
 
-
-        public List<ProfileEnvironmentModel> Models { get; set; } = new();
+        public List<ProfileEnvironmentModel> StandaloneModels { get; set; } = new();
 
         public string? DatabaseName { get; set; }
         
         public bool IsActive { get; set; } = false;
-        
+
+        [JsonIgnore]
+        public List<ProfileModelEntry> AllModelEntries
+        {
+            get
+            {
+                var repositories = Repositories ?? new List<RepositoryModel>();
+                var standaloneModels = StandaloneModels ?? new List<ProfileEnvironmentModel>();
+
+                var repositoryEntries = repositories
+                    .SelectMany(repository =>
+                        (repository.Models ?? new List<ProfileEnvironmentModel>())
+                            .Select(environment => new ProfileModelEntry(repository, environment)));
+
+                var standaloneEntries = standaloneModels
+                    .Select(environment => new ProfileModelEntry(null, environment));
+
+                return repositoryEntries
+                    .Concat(standaloneEntries)
+                    .ToList();
+            }
+        }
+
+        [JsonIgnore]
+        public List<ProfileEnvironmentModel> AllModels => AllModelEntries.Select(entry => entry.Model).ToList();
     }
 
     public static class ProfileModelExtensions
     {
-        public static IEnumerable<ProfileEnvironmentModel> GetAllModels(this ProfileModel profile)
+        public static ProfileEnvironmentModel? FindModel(this ProfileModel profile, string modelName)
         {
-            if (profile == null)
-                return Enumerable.Empty<ProfileEnvironmentModel>();
+            if (profile == null || string.IsNullOrWhiteSpace(modelName))
+                return null;
 
-            var repoModels = profile.Repositories?
-                .SelectMany(r => r.Models ?? new List<ProfileEnvironmentModel>()) ?? Enumerable.Empty<ProfileEnvironmentModel>();
+            return profile.AllModels.FirstOrDefault(model => model.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
+        }
 
-            var standalone = profile.Models ?? Enumerable.Empty<ProfileEnvironmentModel>();
+        public static ProfileModelEntry? FindModelEntry(this ProfileModel profile, string modelName)
+        {
+            if (profile == null || string.IsNullOrWhiteSpace(modelName))
+                return null;
 
-            return repoModels.Concat(standalone);
+            return profile.AllModelEntries.FirstOrDefault(model => model.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
         }
 
         public static IEnumerable<RepositoryModel> GetRepositories(this ProfileModel profile)
@@ -88,7 +116,7 @@ namespace FODevManager.Models
                 return profile.TryGetRepoRootFolder(repoModel);
 
             // Standalone
-            var standalone = profile.Models?
+            var standalone = profile.StandaloneModels?
                 .FirstOrDefault(m => string.Equals(m.ModelName, modelName, StringComparison.OrdinalIgnoreCase));
 
             return standalone == null ? null : profile.TryGetRepoRootFolder(standalone);

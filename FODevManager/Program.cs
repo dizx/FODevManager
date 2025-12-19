@@ -134,7 +134,7 @@ class Program
                     TryCatch(() => modelService.UnDeployModel(commandParser.ProfileName, commandParser.ModelName));
                     break;
                 case "check":
-                    TryCatch(() => modelService.CheckModelDeployment(commandParser.ProfileName, commandParser.ModelName));
+                    TryCatch(() => modelService.CheckModelDeployment(commandParser.ProfileName, commandParser.ModelName, true));
                     break;
                 case "git-status":
                     TryCatch(() => modelService.CheckIfGitRepository(commandParser.ProfileName, commandParser.ModelName));

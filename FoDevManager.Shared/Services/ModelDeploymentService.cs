@@ -1,15 +1,16 @@
+using FODevManager.Messages;
+using FODevManager.Models;
+using FODevManager.Shared.Models;
+using FODevManager.Utils;
 using System;
 using System.Diagnostics;
-using System.IO;
-using System.Runtime.InteropServices;
-using System.Text.Json;
-using FODevManager.Models;
-using FODevManager.Utils;
-using FODevManager.Messages;
-using System.Reflection;
 using System.Dynamic;
-using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.IO;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace FODevManager.Services
 {
@@ -47,7 +48,8 @@ namespace FODevManager.Services
 
                 if(DeploySingleModel(profile, modelName))
                 {
-                    UpdateProfileFile(profileName, new ProfileEnvironmentModel { ModelName = modelName, IsDeployed = true });
+                    profile.FindModel(modelName)!.IsDeployed = true;
+                    _fileService.SaveProfile(profile);                    
                 }
                 
             }
@@ -69,7 +71,7 @@ namespace FODevManager.Services
 
                 bool anyUndeployed = false;
 
-                foreach (var model in profile.Models)
+                foreach (var model in profile.AllModels)
                 {
                     string linkPath = Path.Combine(_deploymentBasePath, model.ModelName);
 
@@ -114,7 +116,12 @@ namespace FODevManager.Services
             try
             {
                 var profile = _fileService.LoadProfile(profileName);
-                var environment = GetProfileModel(profile, modelName);
+                var model = profile.FindModel(modelName); 
+                if (model == null)
+                {
+                    MessageLogger.Error($"❌ Model '{modelName}' not found in profile '{profileName}'.");
+                    return;
+                }
                 string linkPath = Path.Combine(_deploymentBasePath, modelName);
 
                 if (!Directory.Exists(linkPath))
@@ -130,7 +137,7 @@ namespace FODevManager.Services
                     MessageLogger.Highlight($"✅ Model '{modelName}' successfully undeployed.");
 
                     // Update profile status
-                    environment.IsDeployed = false;
+                    model.IsDeployed = false;
                     _fileService.SaveProfile(profile);
                 }
                 catch (Exception ex)
@@ -155,7 +162,7 @@ namespace FODevManager.Services
                 var profile = _fileService.LoadProfile(profileName);
                 bool anyDeployed = false;
 
-                foreach (var model in profile.Models)
+                foreach (var model in profile.AllModels)
                 {
                     string linkPath = Path.Combine(_deploymentBasePath, model.ModelName);
 
@@ -192,11 +199,17 @@ namespace FODevManager.Services
         {
             try
             {
-                var environment = GetProfileModel(profile, modelName);
+                var model = profile.FindModel(modelName);
+                if (model == null)
+                {
+                    MessageLogger.Error($"❌ Model '{modelName}' not found in profile '{profile.ProfileName}'.");
+                    return false;
+                }
+                
                 string targetDir = Path.Combine(_deploymentBasePath, modelName);
 
                 string linkPath = targetDir;
-                string sourcePath = environment.ModelType == ModelType.Compiled ? environment.CompiledModelFolder : environment.MetadataFolder;
+                string sourcePath = model.ModelType == ModelType.Compiled ? model.CompiledModelFolder : model.MetadataFolder;
 
                 if (!Directory.Exists(sourcePath))
                 {
@@ -230,60 +243,38 @@ namespace FODevManager.Services
             if (string.IsNullOrWhiteSpace(modelName))
                 throw new ArgumentException("Model name is required.", nameof(modelName));
 
-            // 1) Repository models
-            var repoModel = profile.Repositories?
-                .SelectMany(r => r.Models ?? new List<ProfileEnvironmentModel>())
-                .FirstOrDefault(m => m.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
-
-            if (repoModel != null)
-                return repoModel;
-
-            // 2) Standalone models (disk-only)
-            var standalone = profile.Models?
-                .FirstOrDefault(m => m.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
-
-            if (standalone != null)
-                return standalone;
-
-            throw new Exception($"Model '{modelName}' not found in profile '{profile.ProfileName}'.");
+            return profile.FindModel(modelName);
         }
 
-        private void UpdateProfileFile(string profileName, ProfileEnvironmentModel updatedEnvironment)
+
+
+        public void CheckModelDeployment(string profileName, string modelName, bool updateProfile = false)
         {
             var profile = _fileService.LoadProfile(profileName);
 
-            // Find the model in the profile
-            var existingEnvironment = GetProfileModel(profile, updatedEnvironment.ModelName);
-
-            if (!updatedEnvironment.ModelRootFolder.IsNullOrEmpty())
-                existingEnvironment.ModelRootFolder = updatedEnvironment.ModelRootFolder;
-
-            // Update the existing model entry
-            if (!updatedEnvironment.ProjectFilePath.IsNullOrEmpty())
-                existingEnvironment.ProjectFilePath = updatedEnvironment.ProjectFilePath;
-            existingEnvironment.IsDeployed = updatedEnvironment.IsDeployed;
-
-            // Save the updated profile
-            _fileService.SaveProfile(profile, updateExternal: true);
-            MessageLogger.Info($"✅ Updated model '{updatedEnvironment.ModelName}' in profile '{profileName}'.");
         }
 
-        public void CheckModelDeployment(string profileName, string modelName)
+        public void CheckModelDeployment(ProfileModel profile, string modelName, bool updateProfile = false)
         {
-            var env = GetProfileModel(_fileService.LoadProfile(profileName), modelName);
-
-            if(env.ModelRootFolder.IsNullOrEmpty())
+            var model = profile.FindModel(modelName);
+            if (model == null)
             {
-                string modelRootPath = FileHelper.GetModelRootFolder(env.ProjectFilePath);
+                MessageLogger.Error($"❌ Model '{modelName}' not found in profile '{profile.ProfileName}'.");
+                return;
+            }
+
+            if (model.ModelRootFolder.IsNullOrEmpty())
+            {
+                string modelRootPath = FileHelper.GetModelRootFolder(model.ProjectFilePath);
                 if (!Directory.Exists(modelRootPath))
                 {
                     MessageLogger.Error($"❌ Error: Model root folder not found at {modelRootPath}.");
                     return;
                 }
-                env.ModelRootFolder = modelRootPath;
+                model.ModelRootFolder = modelRootPath;
             }
 
-            MessageLogger.Info($"✅ Model '{env.ModelName}' source path exists: {File.Exists(env.ProjectFilePath)}");
+            MessageLogger.Info($"✅ Model '{model.ModelName}' source path exists: {File.Exists(model.ProjectFilePath)}");
 
             string linkPath = Path.Combine(_deploymentBasePath, modelName);
 
@@ -291,23 +282,24 @@ namespace FODevManager.Services
             {
                 MessageLogger.Info($"✅ Model '{modelName}' is deployed at {linkPath}.");
                 
-                if (env.IsDeployed == false)
+                if (model.IsDeployed == false)
                 {
-                    env.IsDeployed = true;
-                    UpdateProfileFile(profileName, env);
+                    profile.FindModel(modelName)!.IsDeployed = true;
+                    
+                    if (updateProfile) _fileService.SaveProfile(profile);                    
                 }
             }
             else
             {
                 MessageLogger.Warning($"❌ Model '{modelName}' is NOT deployed.");
-                if(env.IsDeployed == true)
+                if(model.IsDeployed == true)
                 {
-                    env.IsDeployed = false;
-                    UpdateProfileFile(profileName, env);
+                    profile.FindModel(modelName)!.IsDeployed = true;
+                    if (updateProfile) _fileService.SaveProfile(profile);
                 }
             }
 
-            UpdateProfileFile(profileName, env);
+            if (updateProfile) _fileService.SaveProfile(profile);
         }
 
         public bool IsModelActuallyDeployed(ProfileEnvironmentModel env)
@@ -323,18 +315,14 @@ namespace FODevManager.Services
         {
             var profile = _fileService.LoadProfile(profileName); 
 
-            var model = profile
-                .GetAllModels()
-                .FirstOrDefault(candidate =>
-                    string.Equals(candidate.ModelName, modelName, StringComparison.OrdinalIgnoreCase));
-
+            var model = profile.AllModelEntries.FirstOrDefault(model => model.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
             if (model == null)
             {
                 MessageLogger.Warning($"❌ Model '{modelName}' not found in profile '{profileName}'.");
                 return false;
             }
 
-            var repository = profile.FindRepositoryForModel(model);
+            var repository = model.Repository;
             if (repository == null)
             {
                 MessageLogger.Warning($"❌ Model '{modelName}' is not mapped to a repository in profile '{profileName}'.");
@@ -403,7 +391,7 @@ namespace FODevManager.Services
         public void OpenGitRepositoryUrl(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
-            var model = GetProfileModel(profile, modelName);
+            var model = profile.FindModelEntry(modelName);
 
             if (model == null)
             {
@@ -411,9 +399,9 @@ namespace FODevManager.Services
                 return;
             }
 
-            if (GitHelper.IsGitRepository(profile.TryGetRepoRootFolder(model)))
+            if (GitHelper.IsGitRepository(model.Repository?.RepoRootFolder))
             {
-                GitHelper.OpenGitRemoteUrl(profile.TryGetRepoRootFolder(model));
+                GitHelper.OpenGitRemoteUrl(model.Repository?.RepoRootFolder);
             }
             else
             {
@@ -450,9 +438,9 @@ namespace FODevManager.Services
                 File.WriteAllText(descriptorPath, modelXml, Encoding.UTF8);
 
                 // Register in profile
-                if (!profile.Models.Any(e => e.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase)))
+                if (!profile.StandaloneModels.Any(e => e.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase)))
                 {
-                    profile.Models.Add(new ProfileEnvironmentModel
+                    profile.StandaloneModels.Add(new ProfileEnvironmentModel
                     {
                         ModelName = modelName,
                         ModelRootFolder = modelRoot,
@@ -498,9 +486,7 @@ namespace FODevManager.Services
 
                 MessageLogger.Info($"📁 Created project structure at: {projectRootPath}");
 
-                var modelAlreadyExists = profile
-                    .GetAllModels()
-                    .Any(existing => string.Equals(existing.ModelName, modelName, StringComparison.OrdinalIgnoreCase));
+                var modelAlreadyExists = profile.AllModels.Any(existing => existing.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
 
                 if (modelAlreadyExists)
                 {
@@ -552,8 +538,8 @@ namespace FODevManager.Services
                     else
                     {
                         // Non-git → standalone model
-                        profile.Models ??= new List<ProfileEnvironmentModel>();
-                        profile.Models.Add(newEnvironment);
+                        profile.StandaloneModels ??= new List<ProfileEnvironmentModel>();
+                        profile.StandaloneModels.Add(newEnvironment);
                     }
 
                     _fileService.SaveProfile(profile, updateExternal: true);
@@ -620,7 +606,12 @@ namespace FODevManager.Services
         public bool AssignPeriTask(string profileName, string modelName, string periTask, string comment, bool switchBranch = true)
         {
             var profile = _fileService.LoadProfile(profileName);
-            var model = GetProfileModel(profile, modelName);
+            var model = profile.FindModel(modelName);
+            if (model == null)
+            {
+                MessageLogger.Error($"❌ Model '{modelName}' not found in profile '{profile.ProfileName}'.");
+                return false;
+            }
 
             if (string.IsNullOrWhiteSpace(periTask))
             {
@@ -742,8 +733,6 @@ namespace FODevManager.Services
 
             return true;
         }
-
-
 
         private static string Slugify(string input, int maxTotalLength, string branchPrefix)
         {

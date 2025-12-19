@@ -6,6 +6,7 @@ using FODevManager.Utils;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using static System.Runtime.InteropServices.JavaScript.JSType;
@@ -79,7 +80,7 @@ namespace FODevManager.Services
                 var currentProfile = _fileService.LoadProfile(currentProfileName);
                 
                 if(EnsureRepositories(currentProfile))
-                    _fileService.SaveProfile(currentProfile);
+                    _fileService.SaveProfile(currentProfile, updateExternal: true);
 
                 if (_checkUncommittedBeforeSwitch)
                 {
@@ -105,7 +106,7 @@ namespace FODevManager.Services
             var newProfile = _fileService.LoadProfile(newProfileName);
             
             if (EnsureRepositories(newProfile))
-                _fileService.SaveProfile(newProfile);
+                _fileService.SaveProfile(newProfile, updateExternal: true);
 
 
             SwitchBranchesInProfile(newProfile);
@@ -152,11 +153,11 @@ namespace FODevManager.Services
             var result = new ModelSyncResult();
 
             var currentNames = new HashSet<string>(
-                current.Models.Select(e => e.ModelName),
+                current.AllModels.Select(e => e.ModelName),
                 StringComparer.OrdinalIgnoreCase);
 
             var importedNames = new HashSet<string>(
-                imported.Models.Select(e => e.ModelName),
+                imported.AllModels.Select(e => e.ModelName),
                 StringComparer.OrdinalIgnoreCase);
 
             // Added models (in imported but not in current)
@@ -206,12 +207,12 @@ namespace FODevManager.Services
 
             try
             {
-                var importedProfile = FileHelper.LoadJson<ProfileModel>(importPath);
-                if (importedProfile == null || string.IsNullOrWhiteSpace(importedProfile.ProfileName))
+                if (!TryLoadExternalProfile(importPath, out var importedProfile))
                 {
                     MessageLogger.Error("CheckProfileModelChanges: Imported profile is invalid.");
                     return new ModelSyncResult();
                 }
+
 
                 var diff = GetEnvironmentDiff(currentProfile, importedProfile);
 
@@ -267,7 +268,7 @@ namespace FODevManager.Services
                 }
 
                 // 2) Import standalone models (non-repo)
-                foreach (var standaloneModel in sourceProfile.Models ?? new List<ProfileEnvironmentModel>())
+                foreach (var standaloneModel in sourceProfile.StandaloneModels ?? new List<ProfileEnvironmentModel>())
                 {
                     ImportStandaloneModel(standaloneModel);
                 }
@@ -277,8 +278,7 @@ namespace FODevManager.Services
                 // 3) Ensure SolutionFilePath (prefer main FO repo solution if present)
                 if (sourceProfile.SolutionFilePath.IsNullOrEmpty())
                 {
-                    var mainFoModel = sourceProfile
-                        .GetAllModels()
+                    var mainFoModel = sourceProfile.AllModels
                         .FirstOrDefault(model => model.IsMainFOModel && !string.IsNullOrWhiteSpace(model.ModelRootFolder));
 
                     if (mainFoModel != null)
@@ -301,7 +301,7 @@ namespace FODevManager.Services
                 }
 
                 // 4) Add ALL source models to the solution (no extra list)
-                foreach (var model in sourceProfile.GetAllModels())
+                foreach (var model in sourceProfile.AllModels)
                 {
                     if (model.ModelType == ModelType.Source)
                     {
@@ -380,8 +380,7 @@ namespace FODevManager.Services
 
         private string ResolveSolutionBaseFolder(ProfileModel profile)
         {
-            var mainFoModel = profile.GetAllModels()
-                .FirstOrDefault(model => model.IsMainFOModel);
+            var mainFoModel = profile.AllModels.FirstOrDefault(model => model.IsMainFOModel);
 
             if (mainFoModel != null)
             {
@@ -455,7 +454,7 @@ namespace FODevManager.Services
         {
             var profile = _fileService.LoadProfile(profileName);
             profile.DatabaseName = dbName;
-            _fileService.SaveProfile(profile);
+            _fileService.SaveProfile(profile, updateExternal: true);
             MessageLogger.Info($"✅ Database name '{dbName}' set for profile '{profileName}'.");
         }
 
@@ -717,7 +716,7 @@ namespace FODevManager.Services
 
             var profile = _fileService.LoadProfile(profileName);
 
-            if (profile.Models.Any(e => e.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase)))
+            if (profile.StandaloneModels.Any(e => e.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase)))
             {
                 MessageLogger.Warning($"⚠️ Model '{modelName}' is already in the profile '{profileName}'. Skipping add.");
                 return;
@@ -726,7 +725,7 @@ namespace FODevManager.Services
             string deploymentLinkPath = Path.Combine(_deploymentBasePath, modelName);
             bool isAlreadyDeployed = Directory.Exists(deploymentLinkPath);
 
-            profile.Models.Add(new ProfileEnvironmentModel
+            profile.StandaloneModels.Add(new ProfileEnvironmentModel
             {
                 ModelName = modelName,
                 ModelRootFolder = modelRootPath,
@@ -754,7 +753,7 @@ namespace FODevManager.Services
         private void AddProjectToVsSolution(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
-            var newModel = profile.Models.Find(e => e.ModelName == modelName);
+            var newModel = profile.AllModels.Find(e => e.ModelName == modelName);
             if (newModel == null)
             {
                 MessageLogger.Error($"❌ Error: Model '{modelName}' not found in profile after creation.");
@@ -835,18 +834,19 @@ namespace FODevManager.Services
             }
 
             MessageLogger.Info($"Profile: {profile.ProfileName}");
-            foreach (var env in profile.Models)
+            foreach (var model in profile.AllModels)
             {
-                _modelDeploymentService.CheckModelDeployment(profileName, env.ModelName);
-                _modelDeploymentService.CheckIfGitRepository(profileName, env.ModelName);
+                _modelDeploymentService.CheckModelDeployment(profile, model.ModelName);
+                _modelDeploymentService.CheckIfGitRepository(profileName, model.ModelName);
             }
+            _fileService.SaveProfile(profile, updateExternal: true);
         }
         public void GitFetchLatest(string profileName)
         {
             var profile = _fileService.LoadProfile(profileName);
 
             MessageLogger.Info($"Fetch Git for profile: {profile.ProfileName}");
-            foreach (var env in profile.Models)
+            foreach (var env in profile.StandaloneModels)
             {
                 if (!env.ModelRootFolder.IsNullOrEmpty())
                 {
@@ -862,7 +862,7 @@ namespace FODevManager.Services
             var profile = _fileService.LoadProfile(profileName);
 
             // Remove each project from the solution before deleting the profile
-            foreach (var model in profile.Models)
+            foreach (var model in profile.AllModels)
             {
                 _solutionService.RemoveProjectFromSolution(profileName, model.ModelName);
             }
@@ -882,8 +882,7 @@ namespace FODevManager.Services
         public void RemoveModelFromProfile(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
-            var model = profile.Models.Find(m => m.ModelName == modelName);
-
+            var model = profile.FindModel(modelName);
             if (model == null)
             {
                 MessageLogger.Warning($"Model '{modelName}' not found in profile '{profileName}'.");
@@ -892,7 +891,7 @@ namespace FODevManager.Services
 
             _solutionService.RemoveProjectFromSolution(profileName, model.ModelName);
 
-            profile.Models.Remove(model);
+            profile.StandaloneModels.Remove(model);
 
             _fileService.SaveProfile(profile, updateExternal: true);
 
@@ -915,24 +914,54 @@ namespace FODevManager.Services
             var profile = _fileService.LoadProfile(profileName);
 
             if(EnsureRepositories(profile))
-                _fileService.SaveProfile(profile);
+                _fileService.SaveProfile(profile, updateExternal: true);
+
+            UpdateGitBranchesInProfile(profile);
 
             return profile;
 
         }
 
+        public void UpdateGitBranchesInProfile(ProfileModel profile)
+        {
+            foreach (var repo in profile.Repositories)
+            {
+                UpdateLastKnownGitState(repo);
+            }
+
+            _fileService.SaveProfile(profile);
+        }
+
+
+        private static void UpdateLastKnownGitState(RepositoryModel repository)
+        {
+            if (repository == null)
+                throw new ArgumentNullException(nameof(repository));
+
+            if (repository.RepoRootFolder.IsNullOrEmpty() || !GitHelper.IsGitRepository(repository.RepoRootFolder))
+            {
+                repository.LastKnownBranch = null;
+                repository.LastKnownCommit = null;
+                return;
+            }
+
+            repository.LastKnownBranch = GitHelper.GetActiveBranch(repository.RepoRootFolder);
+            repository.LastKnownCommit = GitHelper.GetHeadCommit(repository.RepoRootFolder);
+        }
+
+
         public void ListModelsInProfile(string profileName)
         {
             var profile = _fileService.LoadProfile(profileName);
 
-            if (profile.Models.Count == 0)
+            if (profile.AllModels.Count == 0)
             {
                 MessageLogger.Warning($"No models found in profile '{profileName}'.");
                 return;
             }
 
             MessageLogger.Info($"Models in Profile '{profileName}':");
-            foreach (var model in profile.Models)
+            foreach (var model in profile.AllModels)
             {
                 string status = model.IsDeployed ? "✅ Deployed" : "❌ Not Deployed";
                 string gitStatus = model.GitUrl.IsNullOrEmpty() ? "" : "✅ Git Repo" ; 
@@ -958,29 +987,23 @@ namespace FODevManager.Services
         public List<ProfileEnvironmentModel> GetModelsInProfile(string profileName)
         {
             var profile = LoadProfile(profileName);
-
-            return profile
-                .GetAllModels()
-                .ToList();
+            return profile.AllModels;
         }
 
-        public ProfileEnvironmentModel GetModel(string profileName, string modelName)
+        public ProfileEnvironmentModel? GetModel(string profileName, string modelName)
         {
             var profile = LoadProfile(profileName);
-
-            return profile
-                .GetAllModels()
-                .FirstOrDefault(model => string.Equals(model.ModelName, modelName, StringComparison.OrdinalIgnoreCase))
-                ?? new ProfileEnvironmentModel();
+            return profile.FindModel(modelName);
         }
 
+       
         public void UpdateDeploymentStatus(string profileName)
         {
             var profile = LoadProfile(profileName);
 
             var updated = false;
 
-            foreach (var model in profile.GetAllModels())
+            foreach (var model in profile.AllModels)
             {
                 var shouldBeMarkedAsDeployed = _modelDeploymentService.IsModelActuallyDeployed(model);
                 if (model.IsDeployed != shouldBeMarkedAsDeployed)
@@ -1006,13 +1029,13 @@ namespace FODevManager.Services
             if (profile.Repositories != null && profile.Repositories.Count > 0)
                 return false;
 
-            if (profile.Models == null || profile.Models.Count == 0)
+            if (profile.StandaloneModels == null || profile.StandaloneModels.Count == 0)
                 return false;
 
             var repoMap = new Dictionary<string, RepositoryModel>(StringComparer.OrdinalIgnoreCase);
             var standaloneModels = new List<ProfileEnvironmentModel>();
 
-            foreach (var environmentModel in profile.Models)
+            foreach (var environmentModel in profile.StandaloneModels)
             {
                 if (environmentModel == null)
                     continue;
@@ -1059,9 +1082,9 @@ namespace FODevManager.Services
                 .ToList();
 
             // ✅ IMPORTANT: remove repo-backed models from the standalone list
-            profile.Models = standaloneModels;
+            profile.StandaloneModels = standaloneModels;
 
-            MessageLogger.Info($"📦 Repositories built: {profile.Repositories.Count}. Standalone models: {profile.Models.Count}");
+            MessageLogger.Info($"📦 Repositories built: {profile.Repositories.Count}. Standalone models: {profile.StandaloneModels.Count}");
             return true;
         }
 

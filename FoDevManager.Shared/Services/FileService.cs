@@ -104,14 +104,10 @@ namespace FODevManager.Services
 
             FileHelper.SaveJson(profilePath, profile);
 
-            
             if (updateExternal && !profile.ProfileFilePath.IsNullOrEmpty())
             {
                 var externalSavePath = profile.ProfileFilePath;
 
-                // Write a portable export format to the repository file:
-                // - No absolute paths
-                // - No runtime/local state (deployment, PeriTask, IsActive, etc.)
                 var exportProfile = ExportProfileMapper.ToExport(profile);
 
                 FileHelper.SaveJson(externalSavePath, exportProfile);

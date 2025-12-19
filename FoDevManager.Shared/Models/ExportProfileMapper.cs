@@ -19,7 +19,7 @@ namespace FODevManager.Models
                 Repositories = (profile.Repositories ?? new List<RepositoryModel>())
                     .Select(ToExportRepository)
                     .ToList(),
-                StandaloneModels = (profile.Models ?? new List<ProfileEnvironmentModel>())
+                StandaloneModels = (profile.StandaloneModels ?? new List<ProfileEnvironmentModel>())
                     .Select(ToExportEnvironment)
                     .ToList()
             };
@@ -40,7 +40,7 @@ namespace FODevManager.Models
                     .Select(ToRepositoryModel)
                     .ToList(),
 
-                Models = (exportProfile.StandaloneModels ?? new List<ExportEnvironmentModel>())
+                StandaloneModels = (exportProfile.StandaloneModels ?? new List<ExportEnvironmentModel>())
                     .Select(ToStandaloneProfileEnvironmentModel)
                     .ToList()
             };
@@ -141,8 +141,7 @@ namespace FODevManager.Models
         private static string GetSolutionBaseFolder(ProfileModel profile)
         {
             // Prefer main FO repo root folder if available
-            var mainFoModel = profile.GetAllModels()
-                .FirstOrDefault(model => model.IsMainFOModel);
+            var mainFoModel = profile.AllModels.FirstOrDefault(model => model.IsMainFOModel);
 
             if (mainFoModel != null)
             {
