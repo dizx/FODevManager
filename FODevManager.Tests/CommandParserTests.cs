@@ -55,7 +55,7 @@ namespace FODevManager.Tests
                 Assert.That(parser.ProfileName, Is.EqualTo("MyProfile"));
                 Assert.That(parser.ModelName, Is.EqualTo("MyModel"));
                 Assert.That(parser.Command, Is.EqualTo("peri"));
-                Assert.That(parser.FilePath, Is.EqualTo("Task1234")); // Reused as PeriTask holder
+                Assert.That(parser.FilePath, Is.EqualTo("Task1234")); // Reused as Task holder
             }
         }
 

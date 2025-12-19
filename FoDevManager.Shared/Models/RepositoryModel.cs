@@ -25,9 +25,9 @@ namespace FODevManager.Models
         // Models that belong to this repo
         public List<ProfileEnvironmentModel> Models { get; set; } = new();
 
-        // Optional: repo-level PeriTask (you already have repo-level UI actions)
-        public string PeriTask { get; set; } = "";
-        public string PeriTaskComment { get; set; } = "";
+        // Optional: repo-level Task (you already have repo-level UI actions)
+        public string Task { get; set; } = "";
+        public string TaskComment { get; set; } = "";
     }
 
     public partial class RepositoryModel

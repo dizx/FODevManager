@@ -16,11 +16,11 @@ namespace FODevManager.WinUI.ViewModel
 
         public string RepoRootFolder => Repository.RepoRootFolder;
 
-        public string PeriTask => Repository.PeriTask;
+        public string Task => Repository.Task;
 
-        public string PeriTaskComment => Repository.PeriTaskComment;
+        public string TaskComment => Repository.TaskComment;
 
-        public bool HasPeriTask => !string.IsNullOrWhiteSpace(PeriTask);
+        public bool HasTask => !string.IsNullOrWhiteSpace(Task);
 
         public ReadOnlyCollection<ProfileEnvironmentViewModel> Models { get; }
 

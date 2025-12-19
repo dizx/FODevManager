@@ -352,7 +352,7 @@ namespace FODevManager.WinUI
         }
 
 
-        private async void AssignPeriTask_Click(object sender, RoutedEventArgs e)
+        private async void AssignTask_Click(object sender, RoutedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is not string profileName)
                 return;
@@ -361,7 +361,7 @@ namespace FODevManager.WinUI
             {
                 var dialog = new ContentDialog
                 {
-                    Title = $"Assign PeriTask to {modelName}",
+                    Title = $"Assign Task to {modelName}",
                     PrimaryButtonText = "Assign",
                     CloseButtonText = "Cancel",
                     DefaultButton = ContentDialogButton.Primary,
@@ -370,7 +370,7 @@ namespace FODevManager.WinUI
 
                 var taskIdBox = new TextBox
                 {
-                    PlaceholderText = "Enter PeriTask ID (e.g. 2145)"
+                    PlaceholderText = "Enter Task ID (e.g. 2145)"
                 };
 
                 var commentBox = new TextBox
@@ -394,12 +394,12 @@ namespace FODevManager.WinUI
                         var taskId = taskIdBox.Text.Trim();
                         var comment = commentBox.Text.Trim();
 
-                        await AssignPeriTask(profileName, modelName, taskId, comment);
-                        UIMessageHelper.LogToUI($"🔧 Assigned PeriTask '{taskId}' with comment: '{comment}' to model '{modelName}'");
+                        await AssignTask(profileName, modelName, taskId, comment);
+                        UIMessageHelper.LogToUI($"🔧 Assigned Task '{taskId}' with comment: '{comment}' to model '{modelName}'");
                     }
                     catch (Exception ex)
                     {
-                        UIMessageHelper.LogToUI($"❌ Failed to assign PeriTask: {ex.Message}", MessageType.Error);
+                        UIMessageHelper.LogToUI($"❌ Failed to assign Task: {ex.Message}", MessageType.Error);
                     }
 
                     // Refresh models to reflect any updates
@@ -409,7 +409,7 @@ namespace FODevManager.WinUI
             }
         }
 
-        private async void AssignPeriTask_ForRepo_Click(object sender, RoutedEventArgs eventArgs)
+        private async void AssignTask_ForRepo_Click(object sender, RoutedEventArgs eventArgs)
         {
             if (ProfilesDropdown.SelectedItem is not string profileName)
                 return;
@@ -429,14 +429,14 @@ namespace FODevManager.WinUI
 
             var dialog = new ContentDialog
             {
-                Title = $"Assign PeriTask to repository ({group.DisplayName})",
+                Title = $"Assign Task to repository ({group.DisplayName})",
                 PrimaryButtonText = "Assign",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,
                 XamlRoot = Content.XamlRoot
             };
 
-            var taskIdTextBox = new TextBox { PlaceholderText = "Enter PeriTask ID (e.g. 2145)" };
+            var taskIdTextBox = new TextBox { PlaceholderText = "Enter Task ID (e.g. 2145)" };
             var commentTextBox = new TextBox { PlaceholderText = "Enter optional comment (e.g. fix performance)" };
             dialog.Content = new StackPanel { Spacing = 8, Children = { taskIdTextBox, commentTextBox } };
 
@@ -460,20 +460,20 @@ namespace FODevManager.WinUI
                         task: periTaskId,
                         comment: comment,
                         switchBranch: true);
-                }, "Assign PeriTask");
+                }, "Assign Task");
 
-                UIMessageHelper.LogToUI($"✅ Assigned PeriTask '{periTaskId}' to repo '{group.DisplayName}'.");
+                UIMessageHelper.LogToUI($"✅ Assigned Task '{periTaskId}' to repo '{group.DisplayName}'.");
             }
             catch (Exception exception)
             {
-                UIMessageHelper.LogToUI($"❌ Failed to assign PeriTask: {exception.Message}", MessageType.Error);
+                UIMessageHelper.LogToUI($"❌ Failed to assign Task: {exception.Message}", MessageType.Error);
             }
 
             LoadModelListViewData(profileName);
         }
 
 
-        private void OpenPeriTask_ForRepo_Click(object sender, RoutedEventArgs eventArgs)
+        private void OpenTask_ForRepo_Click(object sender, RoutedEventArgs eventArgs)
         {
             if (sender is not Button button)
                 return;
@@ -481,22 +481,22 @@ namespace FODevManager.WinUI
             if (button.DataContext is not RepoGroupViewModel repoGroup)
                 return;
 
-            var periTaskId = repoGroup.Repository?.PeriTask;
+            var periTaskId = repoGroup.Repository?.Task;
 
             if (string.IsNullOrWhiteSpace(periTaskId))
                 return;
 
-            var url = $"{_appConfig.PeriTaskUrl}/{periTaskId}";
+            var url = $"{_appConfig.TaskUrl}/{periTaskId}";
             ServiceHelper.OpenUrl(url);
         }
 
 
 
-        private void OpenPeriTask_Click(object sender, RoutedEventArgs e)
+        private void OpenTask_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button button && button.Tag is string taskId && !string.IsNullOrWhiteSpace(taskId))
             {
-                var url = $"{_appConfig.PeriTaskUrl}/{taskId}";
+                var url = $"{_appConfig.TaskUrl}/{taskId}";
                 ServiceHelper.OpenUrl(url);
             }
         }
@@ -973,9 +973,9 @@ namespace FODevManager.WinUI
             return await RunOperationAsync(() => _deploymentService.UnDeployAllModels(profileName), "Undeploy all models");
         }
 
-        private async Task<bool> AssignPeriTask(string profileName, string modelName, string taskId, string comment, bool switchBranch = true)
+        private async Task<bool> AssignTask(string profileName, string modelName, string taskId, string comment, bool switchBranch = true)
         {
-            return await RunOperationAsync(() => _deploymentService.AssignPeriTask(profileName, modelName, taskId, comment, switchBranch), "Assign PeriTask");
+            return await RunOperationAsync(() => _deploymentService.AssignTask(profileName, modelName, taskId, comment, switchBranch), "Assign Task");
         }
 
         private string? GetActiveGitBranch(string profileName, string modelName)

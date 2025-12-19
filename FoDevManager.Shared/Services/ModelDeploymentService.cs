@@ -596,7 +596,7 @@ namespace FODevManager.Services
             string template = File.ReadAllText(path);
             return template.Replace("{modelName}", modelName).Replace("{modelId}", modelId.ToString());
         }
-        public bool AssignPeriTask(string profileName, string modelName, string periTask, string comment, bool switchBranch = true)
+        public bool AssignTask(string profileName, string modelName, string periTask, string comment, bool switchBranch = true)
         {
             var profile = _fileService.LoadProfile(profileName);
             var model = profile.FindModel(modelName);
@@ -608,7 +608,7 @@ namespace FODevManager.Services
 
             if (string.IsNullOrWhiteSpace(periTask))
             {
-                MessageLogger.Warning("⚠️ PeriTask cannot be empty.");
+                MessageLogger.Warning("⚠️ Task cannot be empty.");
                 return false;
             }
 
@@ -619,8 +619,8 @@ namespace FODevManager.Services
                 return false;
             }
 
-            repository.PeriTask = periTask;
-            repository.PeriTaskComment = comment;
+            repository.Task = periTask;
+            repository.TaskComment = comment;
 
             _fileService.SaveProfile(profile);
 
@@ -648,7 +648,7 @@ namespace FODevManager.Services
             }
 
             var autoStashIfDirty = true;
-            var stashMessage = $"FO Dev Manager: PeriTask {periTask} ({model.ModelName})";
+            var stashMessage = $"FO Dev Manager: Task {periTask} ({model.ModelName})";
 
             if (GitHelper.ChangeBranch(repoPath, fullBranch, autoStashIfDirty, stashMessage))
             {
@@ -677,8 +677,8 @@ namespace FODevManager.Services
                 return false;
             }
 
-            repository.PeriTask = task;
-            repository.PeriTaskComment = comment;
+            repository.Task = task;
+            repository.TaskComment = comment;
 
             _fileService.SaveProfile(profile);
 
@@ -704,7 +704,7 @@ namespace FODevManager.Services
                 return true;
             }
 
-            var stashMessage = $"FO Dev Manager: PeriTask {task} ({repository.DisplayName})";
+            var stashMessage = $"FO Dev Manager: Task {task} ({repository.DisplayName})";
             var autoStashIfDirty = true;
 
             if (GitHelper.ChangeBranch(repoPath, fullBranch, autoStashIfDirty, stashMessage, true))
