@@ -2,6 +2,7 @@ using FODevManager.Logging;
 using FODevManager.Messages;
 using FODevManager.Models;
 using FODevManager.Services;
+using FODevManager.Shared.Models;
 using FODevManager.Shared.Utils;
 using FODevManager.Utils;
 using FODevManager.WinUI.Framework;
@@ -28,6 +29,7 @@ using System.Threading.Tasks;
 using Windows.System;
 using Windows.UI.Text;
 using WinRT;
+using static FODevManager.WinUI.ViewModel.RepoGroupViewModel;
 
 
 namespace FODevManager.WinUI
@@ -203,13 +205,13 @@ namespace FODevManager.WinUI
         {
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(20), token);
+                await Task.Delay(TimeSpan.FromSeconds(30), token);
 
                 while (!token.IsCancellationRequested)
                 {
                     if (ShouldRunBackgroundTask())
                     {
-                        await RunGitFetchAllAsync(profile, token);
+                        await RunGitHealthCheckAndUpdates(profile, token);
                     }
 
                     await Task.Delay(TimeSpan.FromSeconds(10), token);
@@ -219,7 +221,7 @@ namespace FODevManager.WinUI
                         await RunModelSyncCheckAsync(profile);
                     }
 
-                    await Task.Delay(TimeSpan.FromMinutes(2), token);
+                    await Task.Delay(TimeSpan.FromMinutes(1), token);
                 }
             }
             catch (TaskCanceledException)
@@ -232,7 +234,7 @@ namespace FODevManager.WinUI
             }
         }
 
-        private async Task RunGitFetchAllAsync(ProfileModel profile, CancellationToken token)
+        private async Task RunGitHealthCheckAndUpdates(ProfileModel profile, CancellationToken token)
         {
             var busyHandler = Singleton<BusyHandler>.Instance;
 
@@ -244,55 +246,63 @@ namespace FODevManager.WinUI
                 if (busyHandler.IsBusy)
                     return;
 
-                if (repository.RepoRootFolder.IsNullOrEmpty())
-                    continue;
+                await RefreshRepositoryHealthAsync(repository, token);
 
+            }
+        }
 
-                bool hasUpdates;
-                string currentBranch;
+        private async Task RefreshRepositoryHealthAsync(RepositoryModel repository, CancellationToken token)
+        {
+            if (repository.RepoRootFolder.IsNullOrEmpty())
+                return;
 
-                try
+            try
+            {
+                var repoRootFolder = repository.RepoRootFolder;
+                var mainBranchName = repository.MainBranchName.IsNullOrEmpty() ? "main" : repository.MainBranchName;
+
+                (bool hasUpdates, string currentBranch, RepoBranchHealth branchHealth) result;
+
+                // Do git checks off the UI thread
+                result = await Task.Run(() =>
                 {
-                    (hasUpdates, currentBranch) = await Task.Run(() =>
-                    {
-                        var updates = GitHelper.HasMainChanges(repository.RepoRootFolder, repository.MainBranchName); 
-                        var branch = GitHelper.GetActiveBranch(repository.RepoRootFolder) ?? string.Empty;
+                    var updates = GitHelper.HasMainChanges(repository.RepoRootFolder, repository.MainBranchName);
+                    var branch = GitHelper.GetActiveBranch(repository.RepoRootFolder) ?? string.Empty;
+                    var health = GitHelper.GetBranchHealth(repository.RepoRootFolder);
 
-                        return (updates, branch);
-                    }, token);
-                }
-                catch (Exception ex)
-                {
-                    MessageLogger.Warning($"Git fetch failed for repo '{repository.RepoRootFolder}': {ex.Message}");
-                    continue;
-                }
+                    return (updates, branch, health);
+                }, token);
 
-                var enqSucceded = DispatcherQueue.TryEnqueue(() =>
+                // Update the VM on the UI thread
+                _ = DispatcherQueue.TryEnqueue(() =>
                 {
-                    // grouping VM might have been rebuilt while we were fetching
                     if (_groupingVm?.GitGroups == null)
                         return;
 
                     var repoGroupVm = _groupingVm.GitGroups.FirstOrDefault(group =>
-                        group.Repository?.RepoRootFolder.SameAs(repository.RepoRootFolder) == true);
+                        group.Repository?.RepoRootFolder.SameAs(repoRootFolder) == true);
 
                     if (repoGroupVm == null)
                         return;
-                    
-                    repoGroupVm.HasMainUpdates = hasUpdates;
-                    repoGroupVm.Repository.LastKnownBranch = currentBranch;
-                    repoGroupVm.Branch = currentBranch;
 
+                    repoGroupVm.Branch = result.currentBranch;
+                    repoGroupVm.HasMainUpdates = result.hasUpdates;
+                    repoGroupVm.BranchHealth = result.branchHealth;
+
+                    if (repoGroupVm.Repository != null)
+                    {
+                        repoGroupVm.Repository.LastKnownBranch = result.currentBranch;
+                    }
                 });
 
-                if (!enqSucceded)
-                {
-                    MessageLogger.Warning("DispatcherQueue.TryEnqueue returned false (UI queue not available).");
-                }
+                
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Warning($"RefreshRepositoryHealthAsync failed for '{repository.RepoRootFolder}': {ex.Message}");
             }
         }
 
-        
 
         private async Task<bool> EnsureMergedWithMainAsync(RepositoryModel repository)
         {
@@ -304,7 +314,14 @@ namespace FODevManager.WinUI
             if (!confirm)
                 return false;
 
-            return await RunOperationAsync(() => GitHelper.MergeMainIntoCurrentBranch(repository.RepoRootFolder, repository.MainBranchName), "Merge main into current branch");
+            var merged = await RunOperationAsync(() => GitHelper.MergeMainIntoCurrentBranch(repository.RepoRootFolder, repository.MainBranchName), "Merge main into current branch");
+
+            if (!merged)
+                return false;
+
+            await RefreshRepositoryHealthAsync(repository, CancellationToken.None);
+
+            return true;
         }
 
 
@@ -1083,6 +1100,19 @@ namespace FODevManager.WinUI
                 DatabaseNameTextBox.IsReadOnly = true;
                 MessageLogger.Highlight($"✅ Database name updated to: {newDbString}");
             });
+        }
+
+        private async void RepoHeader_SingleTapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
+        {
+            var frameworkElement = e.OriginalSource as FrameworkElement ?? sender as FrameworkElement;
+            if (frameworkElement?.DataContext is RepoGroupViewModel repoGroup)
+            {
+                if (repoGroup.Repository != null && repoGroup.HasMainUpdates)
+                {
+                    await EnsureMergedWithMainAsync(repoGroup.Repository);
+                }
+            }
+
         }
 
         private async void RepoHeader_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)

@@ -1,4 +1,5 @@
 ﻿using FODevManager.Models;
+using FODevManager.Shared.Models;
 using FODevManager.Utils;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -7,6 +8,7 @@ namespace FODevManager.WinUI.ViewModel
 {
     public sealed class RepoGroupViewModel : INotifyPropertyChanged
     {
+        
         public RepositoryModel Repository { get; }
 
         public string DisplayName { get; }
@@ -25,6 +27,22 @@ namespace FODevManager.WinUI.ViewModel
                 OnPropertyChanged(nameof(Branch));
             }
         }
+
+        private RepoBranchHealth _branchHealth;
+
+        public RepoBranchHealth BranchHealth
+        {
+            get => _branchHealth;
+            set
+            {
+                if (_branchHealth == value)
+                    return;
+
+                _branchHealth = value;
+                OnPropertyChanged(nameof(BranchHealth));
+            }
+        }
+
 
         public string? GitUrl => Repository.GitUrl;
 

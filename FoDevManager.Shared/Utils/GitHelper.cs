@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
 using FODevManager.Messages;
+using FODevManager.Shared.Models;
 
 namespace FODevManager.Utils
 {
@@ -192,6 +193,59 @@ namespace FODevManager.Utils
 
             return null;
         }
+
+        public static bool IsWorkingTreeDirty(string repositoryRootFolder)
+        {
+            if (!RunGitCommand(
+                    repositoryRootFolder,
+                    "status --porcelain",
+                    out var output,
+                    logOnSuccess: false,
+                    logOnFailure: false))
+                return false;
+
+            return !output.Trim().IsNullOrEmpty();
+        }
+
+        public static RepoBranchHealth GetBranchHealth(string repositoryRootFolder)
+        {
+            if (RequiresAttention(repositoryRootFolder))
+                return RepoBranchHealth.NeedsAttention;
+
+            if (IsWorkingTreeDirty(repositoryRootFolder))
+                return RepoBranchHealth.Dirty;
+
+            return RepoBranchHealth.Clean;
+        }
+
+        public static bool RequiresAttention(string repositoryRootFolder)
+        {
+            // Merge conflicts: unmerged files
+            if (RunGitCommand(
+                    repositoryRootFolder,
+                    "diff --name-only --diff-filter=U",
+                    out var conflicts,
+                    logOnSuccess: false,
+                    logOnFailure: false))
+            {
+                if (!conflicts.Trim().IsNullOrEmpty())
+                    return true;
+            }
+
+            // Merge in progress (MERGE_HEAD exists)
+            if (RunGitCommand(
+                    repositoryRootFolder,
+                    "rev-parse -q --verify MERGE_HEAD",
+                    out _,
+                    logOnSuccess: false,
+                    logOnFailure: false))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
 
         public static bool HasMainChanges(string repositoryRootFolder, string mainBranchName = "main")
         {
