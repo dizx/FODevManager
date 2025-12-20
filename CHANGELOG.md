@@ -14,7 +14,8 @@ The focus of 1.0 is safe Git workflows, profile/repository alignment, and determ
   - Created **inside the main FO model repository**
   - Reused automatically if an existing solution already exists
 
----
+We now have a new three level profile files: Profile, Repository and Model - to better integrate with GIT during development.
+Also a brand new export format, that removes all filepaths that causing issues between different environments
 
 ### 🔀 Git Workflows (Repo & Profile Level)
 
