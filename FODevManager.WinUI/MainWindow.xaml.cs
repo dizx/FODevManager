@@ -46,7 +46,7 @@ namespace FODevManager.WinUI
         private AppWindow _appWindow;
         private CancellationTokenSource? _profileSyncCts;
         private ModelsGroupingViewModel? _groupingVm;
-
+        private readonly SemaphoreSlim _mergePromptSemaphore = new(1, 1);
         public BusyOverlayViewModel BusyOverlayVm { get; }
         public ProfileModel ActiveProfile { get; set; }
 
@@ -309,19 +309,29 @@ namespace FODevManager.WinUI
             if (!GitHelper.HasMainChanges(repository.RepoRootFolder))
                 return true;
 
-            var confirm = await DialogHelper.ConfirmAsync(this, "Git update available", "Changes detected in main.\n\nMerge main into your current branch?");
+            await _mergePromptSemaphore.WaitAsync();
 
-            if (!confirm)
-                return false;
+            try
+            {
+                var confirm = await DialogHelper.ConfirmAsync(this, "Git update available", "Changes detected in main.\n\nMerge main into your current branch?");
 
-            var merged = await RunOperationAsync(() => GitHelper.MergeMainIntoCurrentBranch(repository.RepoRootFolder, repository.MainBranchName), "Merge main into current branch");
+                if (!confirm)
+                    return false;
 
-            if (!merged)
-                return false;
+                var merged = await RunOperationAsync(() => GitHelper.MergeMainIntoCurrentBranch(repository.RepoRootFolder, repository.MainBranchName), "Merge main into current branch");
 
-            await RefreshRepositoryHealthAsync(repository, CancellationToken.None);
+                if (!merged)
+                    return false;
 
-            return true;
+                await RefreshRepositoryHealthAsync(repository, CancellationToken.None);
+
+                return true;
+            }
+            finally
+            {
+                _mergePromptSemaphore.Release();
+            }
+
         }
 
 
