@@ -1,5 +1,7 @@
+using FODevManager.Messages;
 using FODevManager.Services;
 using FODevManager.Shared.Utils;
+using FODevManager.Shared.Utils.FODevManager.WinUI.Services;
 using FODevManager.Utils;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -108,6 +110,8 @@ namespace FODevManager.WinUI
             var deploymentService = Services.GetRequiredService<ModelDeploymentService>();
             var appConfig = Services.GetRequiredService<AppConfig>();
 
+            InitializeW3CState();
+
             try
             {
                 var mainWindow = new MainWindow(profileService, fileService, deploymentService, appConfig);
@@ -119,6 +123,31 @@ namespace FODevManager.WinUI
                 throw;
             }
 
+        }
+
+        public static void InitializeW3CState()
+        {
+            var w3cServiceState = Singleton<W3cServiceState>.Instance;
+
+            try
+            {
+                var isRunning = ServiceHelper.IsW3cRunning();
+
+                lock (w3cServiceState.SyncRoot)
+                {
+                    w3cServiceState.IsRunning = isRunning;
+                }
+                
+            }
+            catch (Exception exception)
+            {
+                lock (w3cServiceState.SyncRoot)
+                {
+                    w3cServiceState.IsRunning = false;
+                }
+
+                MessageLogger.Warning($"W3C: could not read initial service state. Defaulting to Stopped. {exception.Message}");
+            }
         }
 
     }

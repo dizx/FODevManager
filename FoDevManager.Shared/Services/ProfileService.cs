@@ -108,7 +108,6 @@ namespace FODevManager.Services
             if (EnsureRepositories(newProfile))
                 _fileService.SaveProfile(newProfile, updateExternal: true);
 
-
             SwitchBranchesInProfile(newProfile);
 
             UpdateDeploymentStatus(newProfileName);
@@ -291,7 +290,6 @@ namespace FODevManager.Services
             return true;
         }
 
-
         public ProfileModel ImportProfile(string importPath)
         {
             if (!File.Exists(importPath))
@@ -379,7 +377,6 @@ namespace FODevManager.Services
                 return null!;
             }
         }
-
 
         private void ImportRepository(RepositoryModel repository)
         {
@@ -510,7 +507,6 @@ namespace FODevManager.Services
             return preferred ?? jsonFiles[0];
         }
 
-
         private string ResolveSolutionBaseFolder(ProfileModel profile)
         {
             var mainFoModel = profile.AllModels.FirstOrDefault(model => model.IsMainFOModel);
@@ -539,7 +535,6 @@ namespace FODevManager.Services
             profile.SolutionFilePath = Path.GetFullPath(Path.Combine(baseFolder, relative));
         }
 
-
         private void ConfigureModelPathsAndDeployment(ProfileEnvironmentModel model, string modelRootFolder)
         {
             if (model.ModelType == ModelType.Source)
@@ -555,7 +550,6 @@ namespace FODevManager.Services
             var deploymentLinkPath = Path.Combine(_deploymentBasePath, model.ModelName);
             model.IsDeployed = Directory.Exists(deploymentLinkPath);
         }
-
 
         private static string? FindExistingSolutionFile(string repoRoot, string profileName)
         {
@@ -578,7 +572,6 @@ namespace FODevManager.Services
                 return null;
             }
         }
-
 
         public void SetDatabaseName(string profileName, string dbName)
         {
@@ -615,7 +608,6 @@ namespace FODevManager.Services
             return null;
         }
 
-
         public void ApplyDatabase(string profileName)
         {
             var profile = _fileService.LoadProfile(profileName);
@@ -636,9 +628,8 @@ namespace FODevManager.Services
 
             try
             {
-                MessageLogger.Info("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
+                
                 ServiceHelper.StopW3SVC();
-
                 WebConfigHelper.UpdateWebConfigDatabase(profile.DatabaseName);
             }
             catch (Exception ex)
@@ -718,7 +709,6 @@ namespace FODevManager.Services
                 
         }
 
-
         private static bool IsCompiledModelFolder(string path, out string modelName)
         {
             modelName = "";
@@ -766,7 +756,6 @@ namespace FODevManager.Services
             return false;
         }
 
-
         public void CreateModel(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
@@ -798,7 +787,6 @@ namespace FODevManager.Services
             MessageLogger.Highlight($"✅ Converted model '{modelName}' registered into solution.");
         }
 
-
         private void AddProjectToVsSolution(string profileName, string modelName) => AddProjectToVsSolution(_fileService.LoadProfile(profileName), modelName);  
 
         private void AddProjectToVsSolution(ProfileModel profile, string modelName)
@@ -816,13 +804,6 @@ namespace FODevManager.Services
         }
 
         private bool IsInstalledModel(string path) => path.StartsWith(_deploymentBasePath);
-
-      
-
-       
-
-        
-
 
         public void OpenVisualStudioSolution(string profileName)
         {
@@ -847,7 +828,6 @@ namespace FODevManager.Services
             }
             _fileService.SaveProfile(profile, updateExternal: true);
         }
-
 
         public void GitFetchLatest(string profileName)
         {
@@ -997,7 +977,6 @@ namespace FODevManager.Services
             _fileService.SaveProfile(profile);
         }
 
-
         private static void UpdateLastKnownGitState(RepositoryModel repository)
         {
             if (repository == null)
@@ -1013,7 +992,6 @@ namespace FODevManager.Services
             repository.LastKnownBranch = GitHelper.GetActiveBranch(repository.RepoRootFolder);
             repository.LastKnownCommit = GitHelper.GetHeadCommit(repository.RepoRootFolder);
         }
-
 
         public void ListModelsInProfile(string profileName)
         {
@@ -1032,21 +1010,6 @@ namespace FODevManager.Services
                 string gitStatus = model.GitUrl.IsNullOrEmpty() ? "" : "✅ Git Repo" ; 
                 MessageLogger.Info($"   - {model.ModelName}\t\t - {status} - { gitStatus }");
             }
-        }
-
-        public ProfileModel? GetActiveProfile()
-        {
-            var profiles = _fileService.GetAllProfiles();
-
-            var activeProfile = profiles.FirstOrDefault(p => p.IsActive);
-
-            if (activeProfile == null)
-            {
-                MessageLogger.Warning("⚠️ No active profile found.");
-                return null;
-            }
-
-            return activeProfile;
         }
 
         public List<ProfileEnvironmentModel> GetModelsInProfile(string profileName)
@@ -1125,7 +1088,10 @@ namespace FODevManager.Services
 
                 var repoKey = !environmentModel.GitUrl.IsNullOrEmpty() ? environmentModel.GitUrl : repoRootFolder;
 
-                if (!repoMap.TryGetValue(repoKey, out var repository))
+                var normalizedRepoKey = RepositoryModel.NormalizeKey(repoKey);
+
+
+                if (!repoMap.TryGetValue(normalizedRepoKey, out var repository))
                 {
                     repository = new RepositoryModel
                     {
@@ -1146,7 +1112,6 @@ namespace FODevManager.Services
                 .OrderBy(repository => repository.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            // ✅ IMPORTANT: remove repo-backed models from the standalone list
             profile.StandaloneModels = standaloneModels;
 
             MessageLogger.Info($"📦 Repositories built: {profile.Repositories.Count}. Standalone models: {profile.StandaloneModels.Count}");
