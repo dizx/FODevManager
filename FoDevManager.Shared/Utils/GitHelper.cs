@@ -276,7 +276,7 @@ namespace FODevManager.Utils
         }
 
 
-        private static bool FetchAll(string repoPath)
+        public static bool FetchAll(string repoPath)
         {
             try
             {

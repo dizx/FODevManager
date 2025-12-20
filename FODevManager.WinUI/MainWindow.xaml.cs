@@ -196,39 +196,86 @@ namespace FODevManager.WinUI
             _profileSyncCts = new CancellationTokenSource();
 
             // Fire-and-forget
-            _ = RunProfileSyncLoopAsync(profile, _profileSyncCts.Token);
+            _ = RunBackgroundTasks(profile, _profileSyncCts.Token);
         }
 
-        private async Task RunProfileSyncLoopAsync(ProfileModel profile, CancellationToken token)
+        private async Task RunBackgroundTasks(ProfileModel profile, CancellationToken token)
         {
             try
             {
-                // Initial delay after selection
-                await Task.Delay(TimeSpan.FromSeconds(15), token);
-                if (token.IsCancellationRequested)
-                    return;
+                await Task.Delay(TimeSpan.FromSeconds(20), token);
 
-                await RunModelSyncCheckAsync(profile);
-
-                // Repeat every 5 minutes
                 while (!token.IsCancellationRequested)
                 {
-                    await Task.Delay(TimeSpan.FromMinutes(2), token);
-                    if (token.IsCancellationRequested)
-                        break;
+                    if (ShouldRunBackgroundTask())
+                    {
+                        await RunGitFetchAllAsync(profile, token);
+                    }
 
-                    await RunModelSyncCheckAsync(profile);
+                    await Task.Delay(TimeSpan.FromSeconds(10), token);
+
+                    if (ShouldRunBackgroundTask())
+                    {
+                        await RunModelSyncCheckAsync(profile);
+                    }
+
+                    await Task.Delay(TimeSpan.FromMinutes(2), token);
                 }
             }
             catch (TaskCanceledException)
             {
-                // Expected when switching profiles or closing app
+                // Expected on shutdown/profile switch
             }
             catch (Exception ex)
             {
                 MessageLogger.Error($"RunProfileSyncLoopAsync failed: {ex.Message}");
             }
         }
+
+        private async Task RunGitFetchAllAsync(ProfileModel profile, CancellationToken token)
+        {
+            var busyHandler = Singleton<BusyHandler>.Instance;
+
+            foreach (var repository in profile.Repositories ?? Enumerable.Empty<RepositoryModel>())
+            {
+                if (token.IsCancellationRequested)
+                    return;
+
+                if (busyHandler.IsBusy)
+                    return;
+
+                if (repository.RepoRootFolder.IsNullOrEmpty())
+                    continue;
+
+                try
+                {
+                    await Task.Run(() =>
+                    {
+                        GitHelper.FetchAll(repository.RepoRootFolder);
+                    }, token);
+
+                    MessageLogger.Info($"Fetched updates for repo: {repository.RepoRootFolder}");
+                }
+                catch (Exception ex)
+                {
+                    MessageLogger.Warning(
+                        $"Git fetch failed for repo '{repository.RepoRootFolder}': {ex.Message}");
+                }
+            }
+        }
+
+
+        private bool ShouldRunBackgroundTask()
+        {
+            var busyHandler = Singleton<BusyHandler>.Instance;
+
+            if (busyHandler.IsBusy)
+                return false;
+
+            var timeSinceBusyEnded = DateTime.UtcNow - busyHandler.LastBusyEndedUtc;
+            return timeSinceBusyEnded >= TimeSpan.FromSeconds(30);
+        }
+
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
@@ -352,62 +399,7 @@ namespace FODevManager.WinUI
         }
 
 
-        private async void AssignTask_Click(object sender, RoutedEventArgs e)
-        {
-            if (ProfilesDropdown.SelectedItem is not string profileName)
-                return;
-
-            if (sender is Button button && button.Tag is string modelName)
-            {
-                var dialog = new ContentDialog
-                {
-                    Title = $"Assign Task to {modelName}",
-                    PrimaryButtonText = "Assign",
-                    CloseButtonText = "Cancel",
-                    DefaultButton = ContentDialogButton.Primary,
-                    XamlRoot = this.Content.XamlRoot
-                };
-
-                var taskIdBox = new TextBox
-                {
-                    PlaceholderText = "Enter Task ID (e.g. 2145)"
-                };
-
-                var commentBox = new TextBox
-                {
-                    PlaceholderText = "Enter optional comment (e.g. fix performance)"
-                };
-
-                var stack = new StackPanel
-                {
-                    Spacing = 8,
-                    Children = { taskIdBox, commentBox }
-                };
-
-                dialog.Content = stack;
-
-                var result = await dialog.ShowAsync();
-                if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(taskIdBox.Text))
-                {
-                    try
-                    {
-                        var taskId = taskIdBox.Text.Trim();
-                        var comment = commentBox.Text.Trim();
-
-                        await AssignTask(profileName, modelName, taskId, comment);
-                        UIMessageHelper.LogToUI($"🔧 Assigned Task '{taskId}' with comment: '{comment}' to model '{modelName}'");
-                    }
-                    catch (Exception ex)
-                    {
-                        UIMessageHelper.LogToUI($"❌ Failed to assign Task: {ex.Message}", MessageType.Error);
-                    }
-
-                    // Refresh models to reflect any updates
-                    LoadModelListViewData(profileName);
-                    //ModelsListView.ItemsSource = _profileService.GetModelsInProfile(profileName);
-                }
-            }
-        }
+        
 
         private async void AssignTask_ForRepo_Click(object sender, RoutedEventArgs eventArgs)
         {
@@ -692,7 +684,7 @@ namespace FODevManager.WinUI
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
-                await CreateProfile(profileName);
+                await UnDeployAllModels(profileName);
                 UpdateStatus($"🧹 Undeployment complete for '{profileName}'.");
             }
         }
@@ -932,19 +924,7 @@ namespace FODevManager.WinUI
             return await RunOperationAsync(() => _profileService.CheckProfile(profileName), "Check profile");
         }
 
-        private List<ProfileEnvironmentModel> GetModelsInProfile(string profileName)
-        {
-            List<ProfileEnvironmentModel> models = new();
-            TryCatch(() => models = _profileService.GetModelsInProfile(profileName));
-            return models;
-        }
-
-        private ProfileEnvironmentModel? GetModel(string profileName, string modelName)
-        {
-            ProfileEnvironmentModel? model = null;
-            TryCatch(() => model = _profileService.GetModel(profileName, modelName));
-            return model;
-        }
+       
 
         private async Task<bool> SwitchProfile(string profileName)
         {
