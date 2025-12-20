@@ -193,8 +193,15 @@ namespace FODevManager.Services
 
             if (string.IsNullOrWhiteSpace(currentProfile.ProfileFilePath))
             {
-                MessageLogger.Warning("CheckProfileModelChanges: ProfileFilePath is not set. Skipping model sync check.");
-                return new ModelSyncResult();
+                MessageLogger.Warning("CheckProfileModelChanges: ProfileFilePath is not set. Attempting first-time export to repo Artifacts...");
+
+                if (!TryCreateExternalProfileExport(currentProfile, out var bootstrappedPath))
+                {
+                    MessageLogger.Warning("CheckProfileModelChanges: Create profile export failed. Skipping model sync check.");
+                    return new ModelSyncResult();
+                }
+
+                MessageLogger.Info($"CheckProfileModelChanges: Profile export OK. Using '{bootstrappedPath}'.");
             }
 
             var importPath = currentProfile.ProfileFilePath;
@@ -233,6 +240,57 @@ namespace FODevManager.Services
                 return new ModelSyncResult();
             }
         }
+
+        private bool TryCreateExternalProfileExport(ProfileModel currentProfile, out string exportedProfilePath)
+        {
+            exportedProfilePath = string.Empty;
+
+            if (currentProfile == null)
+                throw new ArgumentNullException(nameof(currentProfile));
+
+            // Ensure repo map exists so TryGetRepoRootFolder can resolve cleanly
+            EnsureRepositories(currentProfile);
+
+            var mainFoModel = currentProfile
+                .AllModels
+                .FirstOrDefault(model =>
+                    model.IsMainFOModel &&
+                    !string.IsNullOrWhiteSpace(model.ModelRootFolder));
+
+            if (mainFoModel == null)
+            {
+                MessageLogger.Warning("Profile export: No Main FO model found. Cannot export external profile.");
+                return false;
+            }
+
+            var repoRootFolder = currentProfile.TryGetRepoRootFolder(mainFoModel) ?? mainFoModel.ModelRootFolder;
+            if (string.IsNullOrWhiteSpace(repoRootFolder) || !Directory.Exists(repoRootFolder))
+            {
+                MessageLogger.Error($"Profile export: Repo root folder not found: '{repoRootFolder}'.");
+                return false;
+            }
+
+            var artifactsFolder = Path.Combine(repoRootFolder, "Artifacts");
+            FileHelper.EnsureDirectoryExists(artifactsFolder);
+
+            exportedProfilePath = Path.Combine(artifactsFolder, $"{currentProfile.ProfileName}.json");
+
+            // Set ProfileFilePath so the rest of the system uses it, then export
+            currentProfile.ProfileFilePath = exportedProfilePath;
+
+            // Persist local + write external export
+            _fileService.SaveProfile(currentProfile, updateExternal: true);
+
+            if (!File.Exists(exportedProfilePath))
+            {
+                MessageLogger.Error($"Profile export: Failed to export profile to '{exportedProfilePath}'.");
+                return false;
+            }
+
+            MessageLogger.Highlight($"✅ Profile export: Exported external profile to '{exportedProfilePath}'.");
+            return true;
+        }
+
 
         public ProfileModel ImportProfile(string importPath)
         {
