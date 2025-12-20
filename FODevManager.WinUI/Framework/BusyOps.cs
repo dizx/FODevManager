@@ -1,4 +1,5 @@
 ﻿using FODevManager.Messages;
+using FODevManager.Shared.Utils.FODevManager.WinUI.Services;
 using FODevManager.Utils;
 using FODevManager.WinUI;
 using FODevManager.WinUI.Framework;
@@ -15,7 +16,7 @@ namespace FODevManager.WinUI.Framework
 
         public static async Task<TryResult<T>> TryCatchAsync<T>(Func<Task<T>> func, string operationName, T fallback = default)
         {
-            var minVisibleMs = 750;
+            var minVisibleMs = 2000;
             var busy = Singleton<BusyHandler>.Instance;
             var opId = Guid.NewGuid();
             var stopWatch = Stopwatch.StartNew();
@@ -28,7 +29,15 @@ namespace FODevManager.WinUI.Framework
                     await Task.Yield(); // let UI render overlay
                     MessageLogger.Highlight($"▶ {operationName} started.");
 
+                    ServiceHelper.StopW3SVC();
+
+                    Singleton<W3cServiceState>.Instance.InOperation = true;
+
                     var result = await func().ConfigureAwait(true);
+
+                    Singleton<W3cServiceState>.Instance.InOperation = false;
+
+                    ServiceHelper.StartW3SVC();
 
                     MessageLogger.Highlight($"✓ {operationName} completed.");
                     return new(true, result);
@@ -48,6 +57,7 @@ namespace FODevManager.WinUI.Framework
                 }
                 finally
                 {
+
                     stopWatch.Stop();
                     var remaining = minVisibleMs - (int)stopWatch.ElapsedMilliseconds;
                     if (remaining > 0)

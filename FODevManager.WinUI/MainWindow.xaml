@@ -160,7 +160,7 @@
                             <StackPanel Spacing="8" Margin="0,2,0,2">
 
                                 <!-- Header (double-click to toggle) -->
-                                <Grid Margin="0,4,0,2" Background="{ThemeResource SystemFillColorNeutralBackgroundBrush}" DoubleTapped="RepoHeader_DoubleTapped" Tapped="RepoHeader_SingleTapped"  Padding="6">
+                                <Grid Margin="0,4,0,2" Background="{ThemeResource SystemFillColorNeutralBackgroundBrush}" DoubleTapped="RepoHeader_DoubleTapped" Padding="6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="240"/>
                                         <ColumnDefinition Width="24"/>
