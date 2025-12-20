@@ -1,5 +1,119 @@
 # FO Dev Manager Changelog
 
+## [1.0.0] – 2025-12-XX
+
+🎉 First stable release
+
+The focus of 1.0 is safe Git workflows, profile/repository alignment, and deterministic solution & model handling across multi-repo setups.
+
+## ✨ Major Features
+
+### 🧠 Main FO Model & Solution Ownership
+- Introduced **`IsMainFOModel`** to explicitly mark the primary FO model in a profile.
+- Visual Studio solution files (`.sln`) are now:
+  - Created **inside the main FO model repository**
+  - Reused automatically if an existing solution already exists
+
+---
+
+### 🔀 Git Workflows (Repo & Profile Level)
+
+#### Merge main into current branch
+- Detects when `origin/<main>` has new commits.
+- Prompts the user to **merge main into the active branch**.
+- Automatically fetches before merging.
+- Re-runs repository health checks after merge.
+- Merge conflicts are surfaced clearly and require manual resolution.
+
+#### Safe Git reset (profile-wide)
+- New **“Git reset profile”** action across all repositories.
+- For each repo:
+  - Stashes uncommitted changes (including untracked files).
+  - Checks out the configured main branch.
+  - Fetches latest changes.
+  - Updates using **fast-forward-only pull**.
+- This is **not** a destructive `reset --hard`; it is a safe recovery/update workflow.
+
+#### Improved Git safety
+- Optional blocking of profile switching if uncommitted changes exist.
+- Branch switching supports:
+  - Auto-stash
+  - Configurable behavior per repository
+- Active branch and remote URL tracking is stable and cached.
+
+---
+
+### 📥 Import & Sync from Repository
+
+#### Import profile from repository
+- Profiles can be imported directly from a Git repository.
+- Flow:
+  - Clone (or reuse) repository.
+  - Locate profile JSON under `Artifact/` or `Artifacts/`.
+  - Import and configure profile automatically.
+- Imported profiles behave exactly like local profiles afterward.
+
+#### Profile ↔ repo synchronization
+- Background detection of changes in repo-stored profile files:
+  - Added models
+  - Removed models
+- User is prompted to **re-import profile** when differences are detected.
+- Runs shortly after profile activation and periodically while active.
+- Introduced `ModelSyncResult` to keep sync logic UI-independent.
+
+### 📦 Model Handling Improvements
+
+#### Compiled model support
+- Full support for compiled (non-source) FO models:
+  - Auto-detected under `Libs/<ModelName>` via `.xref`.
+- Compiled and source models can coexist in the same repository.
+- New `ModelType` (`Source`, `Compiled`) on environments.
+- Compiled models are visually distinguished in the UI.
+
+#### Create & convert models
+- Create FO models from scratch:
+  - Full folder structure
+  - `.rnrproj`
+  - Descriptor XML with valid model ID
+- Convert installed models from `PackagesLocalDirectory` into project models.
+- Automatically cleans up installed model after conversion.
+
+### 📂 Repository-Aware Profiles
+- Models are grouped by Git repository automatically.
+- Repository metadata tracked per group:
+  - Repo root
+  - Git URL
+  - Preferred branch
+  - Auto-checkout & auto-stash settings
+- Repo-level Task support (external task system):
+  - One Task ID/comment applied across all models in the repo.
+
+### 🔄 Profile Switching (Deterministic)
+Switching profiles now performs a **fully ordered, safe sequence**:
+1. Optional Git dirty check (abort if configured).
+2. Undeploy current profile’s models.
+3. Switch Git branches per repository.
+4. Update deployment status.
+5. Deploy required models.
+6. Apply profile database to `web.config`.
+7. Mark new profile as active.
+
+---
+
+## 🧰 Internal & Technical Improvements
+- All output routed through `MessageLogger`.
+- Clean separation between service, UI, and shared layers.
+- Deep-clone support for profiles and environments.
+- Centralized helpers for Git, file discovery, config, and database switching.
+
+---
+
+## 🧹 Fixes & Stability
+- Fixed duplicate project entries in `.sln` files.
+- Eliminated solution drift across profiles.
+- Improved Git error handling and messaging.
+- Deployment state always reflects actual filesystem state.
+
 
 ## [0.9.2] – 2025-11-19
 
