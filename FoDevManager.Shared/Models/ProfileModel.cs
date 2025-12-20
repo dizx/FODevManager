@@ -129,9 +129,9 @@ namespace FODevManager.Models
                 .FirstOrDefault(repo => repo.RepoRootFolder.SameAs(repoRootFolder));
         }
 
-        public static RepositoryModel? FindRepositoryByGitUrl(this ProfileModel profile, string gitUrl)
+        public static RepositoryModel? FindRepositoryByGitUrl(this ProfileModel profile, string? gitUrl)
         {
-            if (string.IsNullOrWhiteSpace(gitUrl))
+            if (gitUrl.IsNullOrEmpty())
                 return null;
 
             return (profile.Repositories ?? new List<RepositoryModel>())

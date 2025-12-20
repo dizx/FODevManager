@@ -732,16 +732,18 @@ namespace FODevManager.Services
             }
             _fileService.SaveProfile(profile, updateExternal: true);
         }
+
+
         public void GitFetchLatest(string profileName)
         {
             var profile = _fileService.LoadProfile(profileName);
 
             MessageLogger.Info($"Fetch Git for profile: {profile.ProfileName}");
-            foreach (var env in profile.StandaloneModels)
+            foreach (var repo in profile.Repositories)
             {
-                if (!env.ModelRootFolder.IsNullOrEmpty())
+                if (!repo.RepoRootFolder.IsNullOrEmpty())
                 {
-                    GitHelper.FetchFromRemote(env.ModelName, env.ModelRootFolder);
+                    GitHelper.FetchFromRemote(repo.DisplayName, repo.RepoRootFolder);
                 }    
             }
         }

@@ -19,8 +19,12 @@ namespace FODevManager.Models
         public string? LastKnownBranch { get; set; }          // saved/observed branch
         public string? LastKnownCommit { get; set; }          // optional
 
+        public string MainBranchName { get; set; } = "main";
+
         public bool AutoCheckoutOnProfileLoad { get; set; } = true;
         public bool AutoStashOnDirtyCheckout { get; set; } = false;
+
+        public bool AutoApplyStashAfterCheckout { get; set; } = false;
 
         // Models that belong to this repo
         public List<ProfileEnvironmentModel> Models { get; set; } = new();
@@ -76,9 +80,6 @@ namespace FODevManager.Models
 
             return normalized.ToLowerInvariant();
         }
-
-        
-
 
         public void EnsureDisplayName()
         {

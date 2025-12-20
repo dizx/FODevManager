@@ -107,11 +107,11 @@ namespace FODevManager.Utils
             if(repoPath.IsNullOrEmpty())
                 return false;
 
-            string noOutput = "";
+            string? noOutput = "";
             return IsGitRepository(repoPath, out noOutput);
         }
 
-        public static bool IsGitRepository(string? repoPath, out string remoteUrl)
+        public static bool IsGitRepository(string? repoPath, out string? remoteUrl)
         {
 
             remoteUrl = string.Empty;
@@ -192,6 +192,38 @@ namespace FODevManager.Utils
 
             return null;
         }
+
+        public static bool HasMainChanges(string repositoryRootFolder, string mainBranchName = "main")
+        {
+            FetchAll(repositoryRootFolder);
+
+            if (!RunGitCommand(repositoryRootFolder, $"merge-base HEAD origin/{mainBranchName}", out var mergeBase))
+                return false;
+
+            if (!RunGitCommand(repositoryRootFolder, $"rev-parse origin/{mainBranchName}", out var mainHead))
+                return false;
+
+            return !mergeBase.Trim().SameAs(mainHead.Trim());
+        }
+
+        public static bool MergeMainIntoCurrentBranch(string repositoryRootFolder, string mainBranchName = "main")
+        {
+            var currentBranch = GetActiveBranch(repositoryRootFolder);
+
+            if (currentBranch.IsNullOrEmpty())
+                throw new Exception("Unable to determine current branch.");
+
+            if (currentBranch.SameAs(mainBranchName))
+                throw new Exception("Already on main branch.");
+
+            return RunGitCommand(
+                repositoryRootFolder,
+                $"merge origin/{mainBranchName}",
+                out _,
+                logOnSuccess: true,
+                logOnFailure: true);
+        }
+
 
         public static bool HasUncommittedChanges(string repoPath)
         {

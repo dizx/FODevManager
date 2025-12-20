@@ -22,6 +22,22 @@ namespace FODevManager.WinUI.ViewModel
 
         public bool HasTask => !string.IsNullOrWhiteSpace(Task);
 
+        private bool _hasMainUpdates;
+
+        public bool HasMainUpdates
+        {
+            get => _hasMainUpdates;
+            set
+            {
+                if (_hasMainUpdates == value)
+                    return;
+
+                _hasMainUpdates = value;
+                OnPropertyChanged(nameof(HasMainUpdates));
+            }
+        }
+
+
         public ReadOnlyCollection<ProfileEnvironmentViewModel> Models { get; }
 
         private bool _isExpanded;

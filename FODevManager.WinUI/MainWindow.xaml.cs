@@ -247,22 +247,57 @@ namespace FODevManager.WinUI
                 if (repository.RepoRootFolder.IsNullOrEmpty())
                     continue;
 
+
+                bool hasUpdates;
+
                 try
                 {
-                    await Task.Run(() =>
+                    hasUpdates = await Task.Run(() =>
                     {
-                        GitHelper.FetchAll(repository.RepoRootFolder);
+                        return GitHelper.HasMainChanges(repository.RepoRootFolder, repository.MainBranchName); 
                     }, token);
-
-                    MessageLogger.Info($"Fetched updates for repo: {repository.RepoRootFolder}");
                 }
                 catch (Exception ex)
                 {
-                    MessageLogger.Warning(
-                        $"Git fetch failed for repo '{repository.RepoRootFolder}': {ex.Message}");
+                    MessageLogger.Warning($"Git fetch failed for repo '{repository.RepoRootFolder}': {ex.Message}");
+                    continue;
+                }
+
+                var enqSucceded = DispatcherQueue.TryEnqueue(() =>
+                {
+                    // grouping VM might have been rebuilt while we were fetching
+                    if (_groupingVm?.GitGroups == null)
+                        return;
+
+                    var repoGroupVm = _groupingVm.GitGroups.FirstOrDefault(group =>
+                        group.Repository?.RepoRootFolder.SameAs(repository.RepoRootFolder) == true);
+
+                    if (repoGroupVm != null)
+                        repoGroupVm.HasMainUpdates = hasUpdates;
+                });
+
+                if (!enqSucceded)
+                {
+                    MessageLogger.Warning("DispatcherQueue.TryEnqueue returned false (UI queue not available).");
                 }
             }
         }
+
+        
+
+        private async Task<bool> EnsureMergedWithMainAsync(RepositoryModel repository)
+        {
+            if (!GitHelper.HasMainChanges(repository.RepoRootFolder))
+                return true;
+
+            var confirm = await DialogHelper.ConfirmAsync(this, "Git update available", "Changes detected in main.\n\nMerge main into your current branch?");
+
+            if (!confirm)
+                return false;
+
+            return await RunOperationAsync(() => GitHelper.MergeMainIntoCurrentBranch(repository.RepoRootFolder, repository.MainBranchName), "Merge main into current branch");
+        }
+
 
 
         private bool ShouldRunBackgroundTask()
@@ -965,12 +1000,7 @@ namespace FODevManager.WinUI
             return branch;
         }
 
-        private bool IsGitRepo(string profileName, string modelName)
-        {
-            bool result = false;
-            TryCatch(() => result = _deploymentService.CheckIfGitRepository(profileName, modelName));
-            return result;
-        }
+       
 
         private void OpenGitRepo(string profileName, string modelName)
         {
@@ -1046,16 +1076,23 @@ namespace FODevManager.WinUI
             });
         }
 
-        private void RepoHeader_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
+        private async void RepoHeader_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
         {
-            var fe = e.OriginalSource as FrameworkElement ?? sender as FrameworkElement;
-            if (fe?.DataContext is RepoGroupViewModel repo)
+            var frameworkElement = e.OriginalSource as FrameworkElement ?? sender as FrameworkElement;
+            if (frameworkElement?.DataContext is RepoGroupViewModel repoGroup)
             {
-                repo.IsExpanded = !repo.IsExpanded;
+                repoGroup.IsExpanded = !repoGroup.IsExpanded;
                 e.Handled = true;
+
+                if (!repoGroup.IsExpanded)
+                    return;
+
+                if (repoGroup.Repository != null && repoGroup.HasMainUpdates)
+                {
+                    await EnsureMergedWithMainAsync(repoGroup.Repository);
+                }
             }
         }
-
         private async void DeleteProfile_Click(object sender, RoutedEventArgs e)
         {
             string selectedProfileName = string.Empty;
