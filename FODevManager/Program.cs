@@ -69,7 +69,7 @@ class Program
         var profileService = host.Services.GetRequiredService<ProfileService>();
         var modelService = host.Services.GetRequiredService<ModelDeploymentService>();
 
-        if (commandParser.ModelName == null && !commandParser.Command.Equals("add")) // Profile level
+        if (commandParser.ModelName == null && !commandParser.Command.SameAs("add")) // Profile level
         {
             switch (commandParser.Command)
             {
@@ -122,7 +122,7 @@ class Program
             switch (commandParser.Command)
             {
                 case "add":
-                    TryCatch(() => profileService.AddEnvironment(commandParser.ProfileName, commandParser.ModelName, commandParser.FilePath));
+                    TryCatch(() => profileService.AddModel(commandParser.ProfileName, commandParser.ModelName, commandParser.FilePath));
                     break;
                 case "remove":
                     TryCatch(() => profileService.RemoveModelFromProfile(commandParser.ProfileName, commandParser.ModelName));

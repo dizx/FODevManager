@@ -143,9 +143,9 @@ namespace FODevManager.Utils
 
 
             // Ensure required arguments are present
-            IsValid = (!Command.IsNullOrEmpty() && Command.Equals("list"))
+            IsValid = (!Command.IsNullOrEmpty() && Command.SameAs("list"))
                 || (!Command.IsNullOrEmpty() && ProfileName.IsNullOrEmpty())
-                || (!Command.IsNullOrEmpty() && Command.Equals("import") && !FilePath.IsNullOrEmpty());
+                || (!Command.IsNullOrEmpty() && Command.SameAs("import") && !FilePath.IsNullOrEmpty());
 
             if (!IsValid)
             {

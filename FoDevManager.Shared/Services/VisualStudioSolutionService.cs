@@ -97,12 +97,12 @@ namespace FODevManager.Services
             return solutionFilePath;
         }
 
-        public void AddProjectToSolution(ProfileModel profile, ProfileEnvironmentModel environment)
+        public void AddProjectToSolution(ProfileModel profile, ProfileEnvironmentModel model)
         {
             if (profile == null) throw new ArgumentNullException(nameof(profile));
-            if (environment == null) throw new ArgumentNullException(nameof(environment));
+            if (model == null) throw new ArgumentNullException(nameof(model));
 
-            var projectFilePath = environment.ProjectFilePath;
+            var projectFilePath = model.ProjectFilePath;
             if (string.IsNullOrWhiteSpace(projectFilePath))
             {
                 MessageLogger.Error("Environment has no ProjectFilePath.");
@@ -130,11 +130,11 @@ namespace FODevManager.Services
             var alreadyInSolution = lines
                 .Select(TryGetProjectNameFromLine)
                 .Where(name => !name.IsNullOrEmpty())
-                .Any(name => name!.Contains(environment.ModelName, StringComparison.OrdinalIgnoreCase));
+                .Any(name => name!.Contains(model.ModelName));
 
             if (alreadyInSolution)
             {
-                MessageLogger.Warning($"Project '{environment.ModelName}' already in solution.");
+                MessageLogger.Warning($"Project '{model.ModelName}' already in solution.");
                 return;
             }
 
@@ -149,18 +149,18 @@ namespace FODevManager.Services
             var projectGuid = Guid.NewGuid().ToString("B").ToUpper();
 
             var sb = new StringBuilder(File.ReadAllText(solutionFilePath));
-            sb.AppendLine($"Project(\"{projectTypeGuid}\") = \"{environment.ModelName}\",    \"{relativePath}\", \"{projectGuid}\"");
+            sb.AppendLine($"Project(\"{projectTypeGuid}\") = \"{model.ModelName}\",    \"{relativePath}\", \"{projectGuid}\"");
             sb.AppendLine("EndProject");
 
             File.WriteAllText(solutionFilePath, sb.ToString());
-            MessageLogger.Info($"Added project '{environment.ModelName}' to solution '{profile.ProfileName}.sln'.");
+            MessageLogger.Info($"Added project '{model.ModelName}' to solution '{profile.ProfileName}.sln'.");
         }
 
         private static string? TryGetProjectNameFromLine(string line)
         {
             // Example line:
             // Project("{TYPE-GUID}") = "MyModelName", "MyModelName\MyModelName.rnrproj", "{PROJECT-GUID}"
-            if (!line.TrimStart().StartsWith("Project(", StringComparison.OrdinalIgnoreCase))
+            if (!line.TrimStart().StartsWith("Project("))
                 return null;
 
             var parts = line.Split('"');

@@ -12,5 +12,8 @@ namespace FODevManager.Utils
         {
             return string.IsNullOrEmpty(value) || string.IsNullOrWhiteSpace(value);
         }
+        public static bool SameAs(this string? left, string? right) =>
+            string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
     }
 }

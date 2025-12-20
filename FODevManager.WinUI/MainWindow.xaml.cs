@@ -757,7 +757,7 @@ namespace FODevManager.WinUI
             if (ProfilesDropdown.SelectedItem is string profileName && !string.IsNullOrWhiteSpace(ModelPathTextBox.Text))
             {
                 var path = ModelPathTextBox.Text;
-                await AddEnvironmentToProfile(profileName, path);
+                await AddModelToProfile(profileName, path);
                 LoadModelListViewData(profileName);
                 ModelPathTextBox.Text = string.Empty;
             }
@@ -899,9 +899,9 @@ namespace FODevManager.WinUI
             return await RunOperationAsync(() => _profileService.RemoveModelFromProfile(profileName, modelName), "Remove Model From Profile");
         }
 
-        private async Task<bool> AddEnvironmentToProfile(string profileName, string path)
+        private async Task<bool> AddModelToProfile(string profileName, string path)
         {
-            var ret = await RunOperationAsync(() => _profileService.AddEnvironment(profileName, string.Empty, path), "Add Environment to profile");
+            var ret = await RunOperationAsync(() => _profileService.AddModel(profileName, string.Empty, path), "Add Model to profile");
             if (!ret) return false;
             //await CheckProfile(profileName);
             LoadModelListViewData(profileName);
@@ -1023,7 +1023,7 @@ namespace FODevManager.WinUI
             if(ActiveProfile == null) return;
 
             var newDbString = (DatabaseNameTextBox.Text ?? string.Empty).Trim();
-            if (newDbString.Equals(ActiveProfile.DatabaseName, StringComparison.Ordinal))
+            if (newDbString.SameAs(ActiveProfile.DatabaseName))
             {
                 // nothing changed—do nothing
                 MessageLogger.Info("Database name unchanged.");

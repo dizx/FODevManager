@@ -435,10 +435,7 @@ namespace FODevManager.Services
 
                 if (slns.Length == 0) return null;
 
-                var preferred = slns.FirstOrDefault(s =>
-                    string.Equals(Path.GetFileNameWithoutExtension(s),
-                                  profileName,
-                                  StringComparison.OrdinalIgnoreCase));
+                var preferred = slns.FirstOrDefault(s => Path.GetFileNameWithoutExtension(s).SameAs(profileName));
 
                 return preferred ?? slns.First();
             }
@@ -464,7 +461,7 @@ namespace FODevManager.Services
             {
                 if (profile is null) continue;
 
-                profile.IsActive = string.Equals(profile.ProfileName, profileName, StringComparison.OrdinalIgnoreCase);
+                profile.IsActive = profile.ProfileName.SameAs(profileName);
                 _fileService.SaveProfile(profile);
             }
 
@@ -498,7 +495,7 @@ namespace FODevManager.Services
             
             var currentDb = WebConfigHelper.GetCurrentDatabaseName();
 
-            if (string.Equals(currentDb, profile.DatabaseName, StringComparison.OrdinalIgnoreCase))
+            if (currentDb.SameAs(profile.DatabaseName))
             {
                 MessageLogger.Info($"ℹ️ Database is already set to '{currentDb}'. No change needed.");
                 return;
@@ -521,8 +518,10 @@ namespace FODevManager.Services
             }
         }
 
-        public void AddEnvironment(string profileName, string modelName, string environmentPath)
+        public void AddModel(string profileName, string modelName, string environmentPath)
         {
+            var isGit = GitHelper.IsGitRepository(environmentPath);
+
             if (IsInstalledModel(environmentPath))
             {
                 HandleInstalledModel(profileName, modelName, environmentPath);
@@ -540,7 +539,7 @@ namespace FODevManager.Services
                 {
                     if (IsCompiledModelFolder(folder, out var detectedName))
                     {
-                        AddModelToProfileIfNotExists(profileName, detectedName, folder, ModelType.Compiled);
+                        _modelDeploymentService.AddModelToProfileIfNotExists(profileName, detectedName, folder, ModelType.Compiled);
                         anyAdded = true;
                     }
                 }
@@ -554,7 +553,8 @@ namespace FODevManager.Services
                 foreach (var folder in sourceFolders)
                 {
                     var detectedName = Path.GetFileName(folder);
-                    AddModelToProfileIfNotExists(profileName, detectedName, environmentPath, ModelType.Source);
+                    _modelDeploymentService.AddModelToProfileIfNotExists(profileName, detectedName, environmentPath, ModelType.Source);
+                    AddProjectToVsSolution(profileName, detectedName);
                     anyAdded = true;
                 }
             }
@@ -562,22 +562,27 @@ namespace FODevManager.Services
             // 3. Direct compiled model folder
             if (!anyAdded && IsCompiledModelFolder(environmentPath, out var compiledName))
             {
-                AddModelToProfileIfNotExists(profileName, compiledName, environmentPath, ModelType.Compiled);
+                _modelDeploymentService.AddModelToProfileIfNotExists(profileName, compiledName, environmentPath, ModelType.Compiled);
                 return;
             }
 
             // 4. Direct source model folder
             var parent = Directory.GetParent(environmentPath)?.Name;
-            if (!anyAdded && string.Equals(parent, "Metadata", StringComparison.OrdinalIgnoreCase))
+            if (!anyAdded && parent.SameAs("Metadata"))
             {
                 var sourceName = Path.GetFileName(environmentPath);
-                AddModelToProfileIfNotExists(profileName, sourceName, Path.GetDirectoryName(Path.GetDirectoryName(environmentPath))!, ModelType.Source);
+                _modelDeploymentService.AddModelToProfileIfNotExists(profileName, sourceName, Path.GetDirectoryName(Path.GetDirectoryName(environmentPath))!, ModelType.Source);
+                AddProjectToVsSolution(profileName, sourceName);
                 return;
             }
 
             // 5. Fallback
             if (!anyAdded)
-                AddModelToProfileIfNotExists(profileName, modelName, environmentPath, ModelType.Source);
+            {
+                _modelDeploymentService.AddModelToProfileIfNotExists(profileName, modelName, environmentPath, ModelType.Source);
+                AddProjectToVsSolution(profileName, modelName);
+            }
+                
         }
 
 
@@ -635,8 +640,7 @@ namespace FODevManager.Services
             
             if (_modelDeploymentService.CreateModel(modelName, profile))
             {
-                AddProjectToVsSolution(profileName, modelName);
-                _modelDeploymentService.CheckIfGitRepository(profileName, modelName);
+                AddProjectToVsSolution(profile, modelName);                
             }
             
         }
@@ -656,146 +660,33 @@ namespace FODevManager.Services
                 return;
             }
 
-            RegisterModelToSolution(profile, modelName);
-        }
-
-        private void RegisterModelToSolution(ProfileModel profile, string modelName)
-        {
-            AddProjectToVsSolution(profile.ProfileName, modelName);
-            _modelDeploymentService.CheckIfGitRepository(profile.ProfileName, modelName);
+            AddProjectToVsSolution(profile, modelName);
 
             MessageLogger.Highlight($"✅ Converted model '{modelName}' registered into solution.");
         }
 
 
-        private void AddModelToProfileIfNotExists(string profileName, string modelName, string environmentPath, ModelType modelType)
+        private void AddProjectToVsSolution(string profileName, string modelName) => AddProjectToVsSolution(_fileService.LoadProfile(profileName), modelName);  
+
+        private void AddProjectToVsSolution(ProfileModel profile, string modelName)
         {
-            var projectFilePath = string.Empty;
-            var metaDataFolder = string.Empty;
-            var compiledModelFolder = string.Empty;
-            var modelRootPath = FileHelper.GetModelRootFolder(environmentPath);
-            if (!Directory.Exists(modelRootPath))
-            {
-                MessageLogger.Error($"❌ Error: Model root folder not found at {modelRootPath}.");
-                return;
-            }
-
-            if (modelType == ModelType.Source)
-            {
-                if (modelName.IsNullOrEmpty())
-                {
-                    modelName = DetectModelNameFromMetadata(modelRootPath);
-                    if (modelName.IsNullOrEmpty())
-                    {
-                        throw new Exception("❌ Unable to find model name from Metadata folder.");
-                    }
-                }
-
-                projectFilePath = GetProjectFilePath(modelName, modelRootPath);
-                if (!File.Exists(projectFilePath))
-                {
-                    MessageLogger.Info($"{projectFilePath} does not exist.");
-                    if (Singleton<Engine>.Instance.EnvironmentType == EnvironmentType.Console)
-                        MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" add \"ProjectFilePath\"");
-                    return;
-                }
-
-                metaDataFolder = FileHelper.GetMetadataFolder(modelName, modelRootPath);
-                if (!Directory.Exists(metaDataFolder))
-                {
-                    MessageLogger.Error($"❌ Error: Metadata folder not found at {metaDataFolder}.");
-                    return;
-                }
-            }
-            else
-            {
-                compiledModelFolder = environmentPath;
-                projectFilePath = string.Empty;
-                metaDataFolder = string.Empty;
-            }
-
-            var profile = _fileService.LoadProfile(profileName);
-
-            if (profile.StandaloneModels.Any(e => e.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase)))
-            {
-                MessageLogger.Warning($"⚠️ Model '{modelName}' is already in the profile '{profileName}'. Skipping add.");
-                return;
-            }
-
-            string deploymentLinkPath = Path.Combine(_deploymentBasePath, modelName);
-            bool isAlreadyDeployed = Directory.Exists(deploymentLinkPath);
-
-            profile.StandaloneModels.Add(new ProfileEnvironmentModel
-            {
-                ModelName = modelName,
-                ModelRootFolder = modelRootPath,
-                ProjectFilePath = projectFilePath,
-                MetadataFolder = metaDataFolder,
-                CompiledModelFolder = compiledModelFolder,
-                IsDeployed = isAlreadyDeployed,
-                ModelType = modelType
-
-            });
-
-            _fileService.SaveProfile(profile, updateExternal: true);
-            _modelDeploymentService.CheckIfGitRepository(profileName, modelName);
-
-            if (modelType == ModelType.Source)
-            {
-                AddProjectToVsSolution(profileName, modelName);
-            }
-            else
-            {
-                MessageLogger.Info($"✅ Compiled Model '{modelName}' added to profile");
-            }
-        }
-
-        private void AddProjectToVsSolution(string profileName, string modelName)
-        {
-            var profile = _fileService.LoadProfile(profileName);
-            var newModel = profile.AllModels.Find(e => e.ModelName == modelName);
-            if (newModel == null)
+            var model = profile.FindModel(modelName);
+            if (model == null)
             {
                 MessageLogger.Error($"❌ Error: Model '{modelName}' not found in profile after creation.");
                 return;
             }
-            _solutionService.AddProjectToSolution(profile, newModel);
+            _solutionService.AddProjectToSolution(profile, model);
 
-            MessageLogger.Info($"✅ Model '{modelName}' added to profile '{profileName}' and included in solution.");
+            MessageLogger.Info($"✅ Model '{modelName}' added to profile '{profile.ProfileName}' and included in solution.");
 
         }
 
-        private bool IsInstalledModel(string path) => path.StartsWith(_deploymentBasePath, StringComparison.OrdinalIgnoreCase);
+        private bool IsInstalledModel(string path) => path.StartsWith(_deploymentBasePath);
 
-        private string DetectModelNameFromMetadata(string modelRootPath)
-        {
-            string metadataPath = Path.Combine(modelRootPath, "Metadata");
+      
 
-            if (!Directory.Exists(metadataPath))
-                metadataPath = Path.Combine(Path.GetDirectoryName(modelRootPath), "Metadata");
-
-            if (Directory.Exists(metadataPath))
-            {
-                var subfolder = Directory.GetDirectories(metadataPath).FirstOrDefault();
-                if (!subfolder.IsNullOrEmpty())
-                    return Path.GetFileName(subfolder);
-            }
-
-            return string.Empty;
-        }
-
-
-        private string GetProjectFilePath(string modelName, string projectFilePath)
-        {
-            if (projectFilePath.IsNullOrEmpty())
-            {
-                if(FileHelper.TryFilePath(Path.Combine(_defaultSourceDirectory, modelName, "Project", $"{modelName}.rnrproj"), out string returnPath))
-                { 
-                    return returnPath; 
-                }
-            }
-            return FileHelper.GetProjectFilePath(modelName, projectFilePath);
-        }
+       
 
         private static string ExtractAzureDevOpsProject(string gitUrl)
         {

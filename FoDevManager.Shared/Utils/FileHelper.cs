@@ -1,4 +1,4 @@
-﻿using FODevManager.Messages;
+using FODevManager.Messages;
 using FODevManager.Models;
 using System;
 using System.IO;

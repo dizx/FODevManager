@@ -1,4 +1,4 @@
-﻿using FODevManager.Models;
+using FODevManager.Models;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -144,7 +144,7 @@ namespace FODevManager.WinUI.ViewModel
             if (string.IsNullOrWhiteSpace(name)) return string.Empty;
 
             var trimmedName = name.Trim();
-            if (trimmedName.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+            if (trimmedName.EndsWith(".git"))
                 trimmedName = trimmedName.Substring(0, trimmedName.Length - 4);
 
             return trimmedName;

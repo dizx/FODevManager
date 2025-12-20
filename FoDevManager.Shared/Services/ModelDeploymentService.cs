@@ -1,6 +1,7 @@
 using FODevManager.Messages;
 using FODevManager.Models;
 using FODevManager.Shared.Models;
+using FODevManager.Shared.Utils;
 using FODevManager.Utils;
 using System;
 using System.Diagnostics;
@@ -303,7 +304,7 @@ namespace FODevManager.Services
         {
             var profile = _fileService.LoadProfile(profileName); 
 
-            var model = profile.AllModelEntries.FirstOrDefault(model => model.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
+            var model = profile.AllModelEntries.FirstOrDefault(model => model.ModelName.SameAs(modelName));
             if (model == null)
             {
                 MessageLogger.Warning($"❌ Model '{modelName}' not found in profile '{profileName}'.");
@@ -337,8 +338,8 @@ namespace FODevManager.Services
                 MessageLogger.Info($"✅ Repo Git remote: {gitRemoteUrl}");
                 MessageLogger.Info($"✅ Repo active branch: {activeBranch}");
 
-                var gitUrlChanged = !string.Equals(repository.GitUrl, gitRemoteUrl, StringComparison.OrdinalIgnoreCase);
-                var branchChanged = !string.Equals(repository.LastKnownBranch, activeBranch, StringComparison.OrdinalIgnoreCase);
+                var gitUrlChanged = !repository.GitUrl.SameAs(gitRemoteUrl);
+                var branchChanged = !repository.LastKnownBranch.SameAs(activeBranch);
 
                 if (gitUrlChanged)
                     repository.GitUrl = gitRemoteUrl;
@@ -483,7 +484,7 @@ namespace FODevManager.Services
 
                 MessageLogger.Info($"📁 Created project structure at: {projectRootPath}");
 
-                var modelAlreadyExists = profile.AllModels.Any(existing => existing.ModelName.Equals(modelName, StringComparison.OrdinalIgnoreCase));
+                var modelAlreadyExists = profile.AllModels.Any(existing => existing.ModelName.SameAs(modelName));
 
                 if (modelAlreadyExists)
                 {
@@ -540,6 +541,130 @@ namespace FODevManager.Services
                 return false;
             }
         }
+
+        public void AddModelToProfileIfNotExists(string profileName, string modelName, string environmentPath, ModelType modelType)
+        {
+            var projectFilePath = string.Empty;
+            var metaDataFolder = string.Empty;
+            var compiledModelFolder = string.Empty;
+            var modelRootPath = FileHelper.GetModelRootFolder(environmentPath);
+            if (!Directory.Exists(modelRootPath))
+            {
+                MessageLogger.Error($"❌ Error: Model root folder not found at {modelRootPath}.");
+                return;
+            }
+
+            if (modelType == ModelType.Source)
+            {
+                if (modelName.IsNullOrEmpty())
+                {
+                    modelName = DetectModelNameFromMetadata(modelRootPath);
+                    if (modelName.IsNullOrEmpty())
+                    {
+                        throw new Exception("❌ Unable to find model name from Metadata folder.");
+                    }
+                }
+
+                projectFilePath = GetProjectFilePath(modelName, modelRootPath);
+                if (!File.Exists(projectFilePath))
+                {
+                    MessageLogger.Info($"{projectFilePath} does not exist.");
+                    if (Singleton<Engine>.Instance.EnvironmentType == EnvironmentType.Console)
+                        MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" add \"ProjectFilePath\"");
+                    return;
+                }
+
+                metaDataFolder = FileHelper.GetMetadataFolder(modelName, modelRootPath);
+                if (!Directory.Exists(metaDataFolder))
+                {
+                    MessageLogger.Error($"❌ Error: Metadata folder not found at {metaDataFolder}.");
+                    return;
+                }
+            }
+            else
+            {
+                compiledModelFolder = environmentPath;
+                projectFilePath = string.Empty;
+                metaDataFolder = string.Empty;
+            }
+
+            var profile = _fileService.LoadProfile(profileName);
+
+            if (profile.AllModels.Any(e => e.ModelName.SameAs(modelName)))
+            {
+                MessageLogger.Warning($"⚠️ Model '{modelName}' is already in the profile '{profileName}'. Skipping add.");
+                return;
+            }
+
+            string deploymentLinkPath = Path.Combine(_deploymentBasePath, modelName);
+            bool isAlreadyDeployed = Directory.Exists(deploymentLinkPath);
+
+            var newModel = new ProfileEnvironmentModel
+            {
+                ModelName = modelName,
+                ModelRootFolder = modelRootPath,
+                ProjectFilePath = projectFilePath,
+                MetadataFolder = metaDataFolder,
+                CompiledModelFolder = compiledModelFolder,
+                IsDeployed = isAlreadyDeployed,
+                ModelType = modelType
+            };
+
+            AddEnvironmentToProfile(profile, newModel);
+
+            _fileService.SaveProfile(profile, updateExternal: true);
+            
+            if (modelType == ModelType.Source)
+            {
+                MessageLogger.Info($"✅ Model '{modelName}' added to profile");
+            }
+            else
+            {
+                MessageLogger.Info($"✅ Compiled Model '{modelName}' added to profile");
+            }
+        }
+
+        private string GetProjectFilePath(string modelName, string projectFilePath)
+        {
+            if (projectFilePath.IsNullOrEmpty())
+            {
+                if (FileHelper.TryFilePath(Path.Combine(_defaultSourceDirectory, modelName, "Project", $"{modelName}.rnrproj"), out string returnPath))
+                {
+                    return returnPath;
+                }
+            }
+            return FileHelper.GetProjectFilePath(modelName, projectFilePath);
+        }
+
+        private void AddEnvironmentToProfile(ProfileModel profile, ProfileEnvironmentModel model)
+        {
+            if (GitHelper.IsGitRepository(model.ModelRootFolder, out var gitRemoteUrl))
+            {
+                var repository = FindOrCreateRepository(profile, model.ModelRootFolder, gitRemoteUrl);
+                repository.Models.Add(model);
+                return;
+            }
+
+            profile.StandaloneModels.Add(model);
+        }
+
+        private string DetectModelNameFromMetadata(string modelRootPath)
+        {
+            string metadataPath = Path.Combine(modelRootPath, "Metadata");
+
+            if (!Directory.Exists(metadataPath))
+                metadataPath = Path.Combine(Path.GetDirectoryName(modelRootPath), "Metadata");
+
+            if (Directory.Exists(metadataPath))
+            {
+                var subfolder = Directory.GetDirectories(metadataPath).FirstOrDefault();
+                if (!subfolder.IsNullOrEmpty())
+                    return Path.GetFileName(subfolder);
+            }
+
+            return string.Empty;
+        }
+
 
         private RepositoryModel FindOrCreateRepository(ProfileModel profile, string repoRootFolder, string gitRemoteUrl)
         {
@@ -669,7 +794,7 @@ namespace FODevManager.Services
             var profile = _fileService.LoadProfile(profileName);
 
             var repository = profile.Repositories
-                .FirstOrDefault(repo => string.Equals(repo.RepoId, repoId, StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(repo => repo.RepoId.SameAs(repoId));
 
             if (repository == null)
             {

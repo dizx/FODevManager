@@ -113,6 +113,7 @@ namespace FODevManager.Utils
 
         public static bool IsGitRepository(string? repoPath, out string remoteUrl)
         {
+
             remoteUrl = string.Empty;
 
             if (repoPath.IsNullOrEmpty())
@@ -227,7 +228,7 @@ namespace FODevManager.Utils
 
             var state = GetRepoState(repoPath);
             if (!state.Branch.IsNullOrEmpty() &&
-                string.Equals(state.Branch, branchName, StringComparison.OrdinalIgnoreCase))
+                state.Branch.SameAs(branchName))
             {
                 MessageLogger.Info($"ℹ️ Already on branch: {branchName}");
                 return true;
