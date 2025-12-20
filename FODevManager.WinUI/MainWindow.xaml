@@ -160,7 +160,7 @@
                                     
                                     <TextBlock Grid.Column="0" Text="{x:Bind DisplayName}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                     <TextBlock Grid.Column="1" FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center" Text="{x:Bind ChevronGlyph, Mode=OneWay}" />
-                                    <TextBlock Grid.Column="2" Text="{x:Bind Branch}" FontStyle="Italic" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="{x:Bind Branch, Mode=OneWay}" FontStyle="Italic" VerticalAlignment="Center"/>
 
                                     <Button Grid.Column="3" Content="Assign Task" Click="AssignTask_ForRepo_Click" Margin="6,0,0,0"/>
                                     <Button Grid.Column="4" Content="Open Task" Click="OpenTask_ForRepo_Click" IsEnabled="{x:Bind HasTask}" Margin="6,0,0,0"/>

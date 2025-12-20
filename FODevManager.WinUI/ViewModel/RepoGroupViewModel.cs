@@ -1,4 +1,5 @@
 ﻿using FODevManager.Models;
+using FODevManager.Utils;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 
@@ -10,7 +11,20 @@ namespace FODevManager.WinUI.ViewModel
 
         public string DisplayName { get; }
 
-        public string? Branch => Repository.LastKnownBranch;
+        private string? _branch;
+
+        public string? Branch
+        {
+            get => _branch;
+            set
+            {
+                if (_branch.SameAs(value))
+                    return;
+
+                _branch = value;
+                OnPropertyChanged(nameof(Branch));
+            }
+        }
 
         public string? GitUrl => Repository.GitUrl;
 
@@ -36,7 +50,7 @@ namespace FODevManager.WinUI.ViewModel
                 OnPropertyChanged(nameof(HasMainUpdates));
             }
         }
-
+      
 
         public ReadOnlyCollection<ProfileEnvironmentViewModel> Models { get; }
 
@@ -70,6 +84,7 @@ namespace FODevManager.WinUI.ViewModel
         public RepoGroupViewModel(RepositoryModel repository, string displayName, ReadOnlyCollection<ProfileEnvironmentViewModel> models)
         {
             Repository = repository;
+            Branch = repository.LastKnownBranch;
             DisplayName = displayName;
             Models = models;
         }

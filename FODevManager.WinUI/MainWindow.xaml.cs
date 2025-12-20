@@ -249,12 +249,16 @@ namespace FODevManager.WinUI
 
 
                 bool hasUpdates;
+                string currentBranch;
 
                 try
                 {
-                    hasUpdates = await Task.Run(() =>
+                    (hasUpdates, currentBranch) = await Task.Run(() =>
                     {
-                        return GitHelper.HasMainChanges(repository.RepoRootFolder, repository.MainBranchName); 
+                        var updates = GitHelper.HasMainChanges(repository.RepoRootFolder, repository.MainBranchName); 
+                        var branch = GitHelper.GetActiveBranch(repository.RepoRootFolder) ?? string.Empty;
+
+                        return (updates, branch);
                     }, token);
                 }
                 catch (Exception ex)
@@ -272,8 +276,13 @@ namespace FODevManager.WinUI
                     var repoGroupVm = _groupingVm.GitGroups.FirstOrDefault(group =>
                         group.Repository?.RepoRootFolder.SameAs(repository.RepoRootFolder) == true);
 
-                    if (repoGroupVm != null)
-                        repoGroupVm.HasMainUpdates = hasUpdates;
+                    if (repoGroupVm == null)
+                        return;
+                    
+                    repoGroupVm.HasMainUpdates = hasUpdates;
+                    repoGroupVm.Repository.LastKnownBranch = currentBranch;
+                    repoGroupVm.Branch = currentBranch;
+
                 });
 
                 if (!enqSucceded)

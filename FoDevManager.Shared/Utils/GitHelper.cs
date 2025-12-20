@@ -183,7 +183,7 @@ namespace FODevManager.Utils
             {
 ;               var result = string.Empty;
                 if (RunGitCommand(repoPath, "rev-parse --abbrev-ref HEAD", out result))
-                    return result;
+                    return result.Trim();
             }
             catch (Exception ex)
             {
@@ -315,7 +315,6 @@ namespace FODevManager.Utils
                 string result;
                 if (RunGitCommand(repoPath, "fetch --all --prune", out result))
                 {
-                    MessageLogger.Info("✅ Fetch completed.");
                     return true;
                 }
             }
