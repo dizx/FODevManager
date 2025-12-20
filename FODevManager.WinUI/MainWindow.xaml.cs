@@ -1113,14 +1113,11 @@ namespace FODevManager.WinUI
             var frameworkElement = e.OriginalSource as FrameworkElement ?? sender as FrameworkElement;
             if (frameworkElement?.DataContext is RepoGroupViewModel repoGroup)
             {
-                if (repoGroup.Repository != null && repoGroup.HasMainUpdates)
-                {
-                    await EnsureMergedWithMainAsync(repoGroup.Repository);
-                }
+                
             }
 
         }
-        private async void RepoHeader_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
+        private void RepoHeader_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
         {
             var frameworkElement = e.OriginalSource as FrameworkElement ?? sender as FrameworkElement;
             if (frameworkElement?.DataContext is RepoGroupViewModel repoGroup)
@@ -1130,13 +1127,56 @@ namespace FODevManager.WinUI
 
                 if (!repoGroup.IsExpanded)
                     return;
-
-                if (repoGroup.Repository != null && repoGroup.HasMainUpdates)
-                {
-                    await EnsureMergedWithMainAsync(repoGroup.Repository);
-                }
+                
             }
         }
+
+        private async void RepoHeader_GitMerge_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not FrameworkElement frameworkElement)
+                return;
+
+            if (frameworkElement.DataContext is not RepoGroupViewModel repoGroup)
+                return;
+
+            if (!repoGroup.HasMainUpdates)
+                return;
+
+            if (repoGroup.Repository == null)
+                return;
+
+            await EnsureMergedWithMainAsync(repoGroup.Repository);
+        }
+
+        private async void GitResetProfile_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfilesDropdown.SelectedItem is not string profileName)
+                return;
+
+            var profile = LoadProfileByName(profileName);
+            if (profile == null)
+                return;
+
+            var confirm = await DialogHelper.ConfirmAsync(
+                this,
+                "Git reset profile",
+                "This will go through all repositories in the profile.\n\n" +
+                "• Stash any uncommitted changes\n" +
+                "• Checkout main\n" +
+                "• Fetch and pull\n\n" +
+                "Continue?");
+
+            if (!confirm)
+                return;
+
+            await RunOperationAsync(() => _profileService.GitResetProfile(profile), "Git reset profile");
+
+            // Reload view models (branch info, grouping, etc.)
+            UIRefresh(profileName);
+        }
+
+
+
         private async void DeleteProfile_Click(object sender, RoutedEventArgs e)
         {
             string selectedProfileName = string.Empty;

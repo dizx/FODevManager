@@ -91,7 +91,7 @@ namespace FODevManager.Services
 
                         if (GitHelper.HasUncommittedChanges(repo.RepoRootFolder))
                         {
-                            MessageLogger.Error($"❌ Uncommitted Git changes found in repo '{repo.RepoId}'. Switch aborted.");
+                            MessageLogger.Error($"❌ Uncommitted Git changes found in repo '{repo.DisplayName}'. Switch aborted.");
                             return false;
                         }
                     }
@@ -388,7 +388,7 @@ namespace FODevManager.Services
 
             if (repository.GitUrl.IsNullOrEmpty())
             {
-                MessageLogger.Warning($"Repo '{repository.RepoId}' has no GitUrl. Skipping clone.");
+                MessageLogger.Warning($"Repo '{repository.DisplayName}' has no GitUrl. Skipping clone.");
                 return;
             }
 
@@ -407,7 +407,7 @@ namespace FODevManager.Services
             {
                 if (!GitHelper.CloneRepository(repository.GitUrl, repoRootFolder))
                 {
-                    MessageLogger.Error($"Failed to clone repository '{repository.RepoId}'.");
+                    MessageLogger.Error($"Failed to clone repository '{repository.DisplayName}'.");
                     return;
                 }
             }
@@ -829,6 +829,63 @@ namespace FODevManager.Services
             MessageLogger.Info($"Profile '{profileName}' and all associated models removed.");
         }
 
+        public bool GitResetProfile(ProfileModel profile)
+        {
+            if (profile == null)
+            {
+                MessageLogger.Error("GitResetProfile: profile is null.");
+                return false;
+            }
+
+            EnsureRepositories(profile);
+
+            if (profile.Repositories == null || profile.Repositories.Count == 0)
+            {
+                MessageLogger.Info("ℹ️ Git reset: No repositories found in profile.");
+                return true;
+            }
+
+            var succeeded = 0;
+            var failedRepos = new List<string>();
+
+            MessageLogger.Highlight($"🔄 Git reset profile: {profile.ProfileName}");
+
+            foreach (var repository in profile.Repositories)
+            {
+                if (repository?.RepoRootFolder.IsNullOrEmpty() != false)
+                    continue;
+
+                if (!GitHelper.IsGitRepository(repository.RepoRootFolder))
+                    continue;
+
+                var mainBranchName = repository.MainBranchName.IsNullOrEmpty() ? "main" : repository.MainBranchName;
+
+                MessageLogger.Info($"➡️ {repository.DisplayName}: stash → checkout {mainBranchName} → fetch → pull");
+
+                var ok = GitHelper.ResetToMainAndUpdate(repository.RepoRootFolder, mainBranchName);
+                if (ok)
+                {
+                    succeeded++;
+                    repository.LastKnownBranch = GitHelper.GetActiveBranch(repository.RepoRootFolder);
+                }
+                else
+                {
+                    failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
+                }
+            }
+
+            _fileService.SaveProfile(profile);
+
+            if (failedRepos.Count > 0)
+            {
+                MessageLogger.Warning($"⚠️ Git reset finished with errors. OK: {succeeded}, Failed: {failedRepos.Count}");
+                MessageLogger.Warning($"Failed repos: {string.Join(", ", failedRepos)}");
+                return false;
+            }
+
+            MessageLogger.Highlight($"✅ Git reset finished. Repos updated: {succeeded}");
+            return true;
+        }
 
         public void RemoveModelFromProfile(string profileName, string modelName)
         {
@@ -1097,7 +1154,7 @@ namespace FODevManager.Services
             var profile = _fileService.LoadProfile(profileName);
 
             var existingRepository = profile.Repositories
-                .FirstOrDefault(repository => string.Equals(repository.RepoId, updatedRepository.RepoId, StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(repository => repository.RepoId.SameAs(updatedRepository.RepoId));
 
             if (existingRepository == null)
             {

@@ -361,6 +361,81 @@ namespace FODevManager.Utils
             return Checkout(repoPath, $"-b {branchName}");
         }
 
+        public static bool Pull(string repoPath, string remoteName, string branchName)
+        {
+            if (repoPath.IsNullOrEmpty())
+            {
+                MessageLogger.Error("❌ Pull: repoPath is empty.");
+                return false;
+            }
+
+            remoteName = remoteName?.Trim() ?? "origin";
+            if (remoteName.IsNullOrEmpty())
+                remoteName = "origin";
+
+            branchName = branchName?.Trim() ?? "";
+            if (branchName.IsNullOrEmpty())
+            {
+                MessageLogger.Error("❌ Pull: branchName is empty.");
+                return false;
+            }
+
+            try
+            {
+                string result;
+
+                // ff-only = safe default; no accidental merge commits.
+                if (RunGitCommand(repoPath, $"pull --ff-only {remoteName} {branchName}", out result))
+                {
+                    MessageLogger.Highlight($"✅ Pull completed ({remoteName}/{branchName}).");
+                    return true;
+                }
+
+                MessageLogger.Error($"❌ Pull failed ({remoteName}/{branchName}).");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Error during pull: {ex.Message}");
+                return false;
+            }
+        }
+
+        public static bool ResetToMainAndUpdate(string repoPath, string mainBranchName)
+        {
+            if (!IsGitRepository(repoPath))
+            {
+                MessageLogger.Warning("⚠️ ResetToMainAndUpdate: Not a Git repository.");
+                return false;
+            }
+
+            var safeMainBranchName = mainBranchName.IsNullOrEmpty() ? "main" : mainBranchName;
+
+            // Always stash if there are changes (user requested "stack it")
+            if (HasUncommittedChanges(repoPath))
+            {
+                var stashMessage = $"FO Dev Manager: profile git reset ({DateTime.Now:yyyy-MM-dd HH:mm:ss})";
+                MessageLogger.Warning("⚠️ Repo has uncommitted changes. Stashing before reset.");
+                if (!Stash(repoPath, stashMessage, includeUntracked: true))
+                {
+                    MessageLogger.Error("❌ Stash failed. Skipping repo.");
+                    return false;
+                }
+            }
+
+            if (!ChangeBranch(repoPath, safeMainBranchName, autoStashIfDirty: false))
+                return false;
+
+            // Fetch + Pull
+            if (!FetchAll(repoPath))
+            {
+                MessageLogger.Warning("⚠️ Fetch failed. Skipping pull.");
+                return false;
+            }
+
+            return Pull(repoPath, "origin", safeMainBranchName);
+        }
+
 
         public static bool FetchAll(string repoPath)
         {

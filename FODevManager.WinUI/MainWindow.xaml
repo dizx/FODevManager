@@ -110,6 +110,13 @@
                         </StackPanel>
                     </Button>
 
+                    <Button Click="GitResetProfile_Click" ToolTipService.ToolTip="Stash changes in all repos, checkout main, fetch and pull">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE777;" FontSize="14" />
+                            <TextBlock Text="Git Reset" />
+                        </StackPanel>
+                    </Button>
+
                     <Button Click="DeleteProfile_Click" ToolTipService.ToolTip="Delete the selected profile (removes the profile file)">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE74D;" FontSize="14" />
@@ -158,6 +165,7 @@
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
 
                                     <TextBlock Grid.Column="0" Text="{x:Bind DisplayName}" FontWeight="SemiBold" VerticalAlignment="Center"/>
@@ -174,6 +182,17 @@
                                     <Button Grid.Column="4" Content="Assign Task" Click="AssignTask_ForRepo_Click" Margin="6,0,0,0"/>
                                     <Button Grid.Column="5" Content="Open Task" Click="OpenTask_ForRepo_Click" IsEnabled="{x:Bind HasTask}" Margin="6,0,0,0"/>
                                     <Button Grid.Column="6" Content="DevOps" Click="OpenGitForRepo_Click" Margin="20,0,0,0"/>
+                                    <Button x:Name="GridMergeButton" Grid.Column="7" ToolTipService.ToolTip="Merge main into current branch" Click="RepoHeader_GitMerge_Click" x:Load="{x:Bind HasMainUpdates, Mode=OneWay}" 
+                                             Margin="8,0,0,0" Padding="12,6" FontWeight="SemiBold">
+
+
+                                        <Button.Content>
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE8B5;" FontFamily="Segoe MDL2 Assets" />
+                                                <TextBlock Text="Git Merge" />
+                                            </StackPanel>
+                                        </Button.Content>
+                                    </Button>
                                 </Grid>
 
                                 <!-- Models (collapse with computed Visibility) -->
