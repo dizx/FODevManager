@@ -12,9 +12,9 @@
 	<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <EnableMsixTooling>true</EnableMsixTooling>
     <Nullable>enable</Nullable>
-	<AssemblyVersion>0.9.2.0</AssemblyVersion>
-	<FileVersion>0.9.2.0</FileVersion>
-	<Version>0.9.2</Version>
+	<AssemblyVersion>1.0.0.0</AssemblyVersion>
+	<FileVersion>1.0.0.0</FileVersion>
+	<Version>1.0.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <None Remove="BusyOverlay.xaml" />

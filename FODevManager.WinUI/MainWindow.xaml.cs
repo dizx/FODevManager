@@ -21,6 +21,7 @@ using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -85,6 +86,8 @@ namespace FODevManager.WinUI
 
             var titleBar = _appWindow.TitleBar;
             titleBar.ExtendsContentIntoTitleBar = true;
+
+            LogStartupInfo();
 
             LoadProfiles();
 
@@ -881,6 +884,17 @@ namespace FODevManager.WinUI
             await dialog.ShowAsync();
         }
 
+        public static void LogStartupInfo()
+        {
+            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.0";
+            var buildDate = GetBuildDate().ToString("yyyy-MM-dd HH:mm");
+
+
+            var productName = "FO Dev Manager";
+
+            UIMessageHelper.LogToUI($"ℹ️ {productName} {version} BETA  🛠️ Build date: {buildDate}");
+        }
+
         private async void ShowAboutDialog_Click(object sender, RoutedEventArgs e)
         {
             var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.0";
@@ -899,7 +913,7 @@ namespace FODevManager.WinUI
                 FontWeight = FontWeights.Bold
             });
 
-            contentPanel.Children.Add(new TextBlock { Text = $"Version: {version}" });
+            contentPanel.Children.Add(new TextBlock { Text = $"Version: {version} BETA" });
             contentPanel.Children.Add(new TextBlock { Text = $"Build Date: {buildDate}" });
 
             contentPanel.Children.Add(new TextBlock
