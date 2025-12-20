@@ -1,9 +1,10 @@
+using FODevManager.Messages;
+using FODevManager.Shared.Models;
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Text.RegularExpressions;
-using FODevManager.Messages;
-using FODevManager.Shared.Models;
 
 namespace FODevManager.Utils
 {
@@ -569,6 +570,28 @@ namespace FODevManager.Utils
             }
             return null;
         }
+
+        public static string ExtractAzureDevOpsProject(string gitUrl)
+        {
+            var match = Regex.Match(gitUrl, @"visualstudio\.com\/([^\/]+)\/_git\/");
+
+            if (match.Success && match.Groups.Count > 1)
+                return Uri.UnescapeDataString(match.Groups[1].Value);
+
+            return string.Empty;
+        }
+
+        public static string ExtractAzureDevOpsRepo(string gitUrl)
+        {
+            var match = Regex.Match(gitUrl, @"_git\/([^\/]+)$");
+
+            if (match.Success && match.Groups.Count > 1)
+                return Uri.UnescapeDataString(match.Groups[1].Value);
+
+            return string.Empty;
+        }
+
+        
 
         public static string DeriveRepoDisplayName(string repoRootFolder, string gitUrl)
         {

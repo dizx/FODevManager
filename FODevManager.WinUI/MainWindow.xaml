@@ -76,11 +76,17 @@
                         </StackPanel>
                     </Button>
 
-                    <Button Click="ImportProfile_Click" ToolTipService.ToolTip="Import a profile from a JSON file">
+                    <Button ToolTipService.ToolTip="Import a profile from GIT repo or a JSON file">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8B5;" FontSize="14" />
                             <TextBlock Text="Import" />
                         </StackPanel>
+                        <Button.Flyout>
+                            <MenuFlyout>
+                                <MenuFlyoutItem Text="From File" Click="ImportFromFile_Click"/>
+                                <MenuFlyoutItem Text="From Repo" Click="ImportFromRepo_Click"/>
+                            </MenuFlyout>
+                        </Button.Flyout>
                     </Button>
 
                     <Button Click="DeployProfile_Click" ToolTipService.ToolTip="Deploy all undeployed models">

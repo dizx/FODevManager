@@ -392,7 +392,7 @@ namespace FODevManager.Services
                 return;
             }
 
-            var repoFolderName = ExtractAzureDevOpsRepo(repository.GitUrl);
+            var repoFolderName = GitHelper.ExtractAzureDevOpsRepo(repository.GitUrl);
             if (repoFolderName.IsNullOrEmpty())
                 repoFolderName = repository.RepoRootFolder;
 
@@ -435,6 +435,81 @@ namespace FODevManager.Services
 
             ConfigureModelPathsAndDeployment(model, modelRootFolder);
         }
+
+        public ProfileModel ImportProfileFromRepoUrl(string repoUrl)
+        {
+            if (repoUrl.IsNullOrEmpty())
+            {
+                MessageLogger.Error("ImportProfileFromRepoUrl: repoUrl is empty.");
+                return null!;
+            }
+
+            var repoFolderName = GitHelper.ExtractAzureDevOpsRepo(repoUrl);
+            if (repoFolderName.IsNullOrEmpty())
+            {
+                MessageLogger.Error($"ImportProfileFromRepoUrl: Could not derive folder name from URL: {repoUrl}");
+                return null!;
+            }
+
+            var targetRepoRoot = Path.Combine(_defaultSourceDirectory, repoFolderName);
+            FileHelper.EnsureDirectoryExists(_defaultSourceDirectory);
+
+            if (GitHelper.IsGitRepository(targetRepoRoot))
+            {
+                MessageLogger.Warning($"Repo already exists at '{targetRepoRoot}'. Skipping clone.");
+            }
+            else
+            {
+                if (Directory.Exists(targetRepoRoot) && Directory.EnumerateFileSystemEntries(targetRepoRoot).Any())
+                {
+                    MessageLogger.Error($"Target folder exists and is not empty (and not a git repo): {targetRepoRoot}");
+                    return null!;
+                }
+
+                if (!GitHelper.CloneRepository(repoUrl, targetRepoRoot))
+                {
+                    MessageLogger.Error($"Failed to clone repository: {repoUrl}");
+                    return null!;
+                }
+            }
+
+            var profileJsonPath = FindProfileJsonInArtifacts(targetRepoRoot);
+            if (profileJsonPath.IsNullOrEmpty())
+            {
+                MessageLogger.Error($"No profile json found under Artifact/Artifacts in repo: {targetRepoRoot}");
+                return null!;
+            }
+
+            MessageLogger.Highlight($"📦 Importing profile from: {profileJsonPath}");
+            return ImportProfile(profileJsonPath);
+        }
+
+        private static string? FindProfileJsonInArtifacts(string repoRootFolder)
+        {
+            if (!Directory.Exists(repoRootFolder))
+                return null;
+
+            var artifactsFolder = Directory.GetDirectories(repoRootFolder, "*", SearchOption.TopDirectoryOnly)
+                .FirstOrDefault(dir =>
+                    Path.GetFileName(dir).SameAs("Artifact") ||
+                    Path.GetFileName(dir).SameAs("Artifacts"));
+
+            if (artifactsFolder == null)
+                return null;
+
+            var jsonFiles = Directory.GetFiles(artifactsFolder, "*.json", SearchOption.AllDirectories)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (jsonFiles.Count == 0)
+                return null;
+
+            // Prefer a file that looks like a profile export if there are multiple
+            var preferred = jsonFiles.FirstOrDefault();
+
+            return preferred ?? jsonFiles[0];
+        }
+
 
         private string ResolveSolutionBaseFolder(ProfileModel profile)
         {
@@ -746,25 +821,7 @@ namespace FODevManager.Services
 
        
 
-        private static string ExtractAzureDevOpsProject(string gitUrl)
-        {
-            var match = Regex.Match(gitUrl, @"visualstudio\.com\/([^\/]+)\/_git\/");
-
-            if (match.Success && match.Groups.Count > 1)
-                return Uri.UnescapeDataString(match.Groups[1].Value);
-
-            return string.Empty;
-        }
-
-        private static string ExtractAzureDevOpsRepo(string gitUrl)
-        {
-            var match = Regex.Match(gitUrl, @"_git\/([^\/]+)$");
-
-            if (match.Success && match.Groups.Count > 1)
-                return Uri.UnescapeDataString(match.Groups[1].Value);
-
-            return string.Empty;
-        }
+        
 
 
         public void OpenVisualStudioSolution(string profileName)
@@ -1158,7 +1215,7 @@ namespace FODevManager.Services
 
             if (existingRepository == null)
             {
-                MessageLogger.Error($"UpdateRepositoryProperties: repo '{updatedRepository.RepoId}' not found in profile '{profileName}'.");
+                MessageLogger.Error($"UpdateRepositoryProperties: repo '{updatedRepository.DisplayName}' not found in profile '{profileName}'.");
                 return;
             }
 

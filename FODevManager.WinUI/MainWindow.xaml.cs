@@ -712,7 +712,7 @@ namespace FODevManager.WinUI
             }
         }
 
-        private async void ImportProfile_Click(object sender, RoutedEventArgs e)
+        private async void ImportFromFile_Click(object sender, RoutedEventArgs e)
         {
             var picker = new Windows.Storage.Pickers.FileOpenPicker();
             WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
@@ -737,6 +737,55 @@ namespace FODevManager.WinUI
                     MessageLogger.Error($"❌ Failed to import profile: {ex.Message}");
                 }
             }
+        }
+
+        private async void ImportFromRepo_Click(object sender, RoutedEventArgs eventArgs)
+        {
+            var urlTextBox = new TextBox
+            {
+                PlaceholderText = "https://dev.azure.com/org/repo (or similar URL)",
+                MinWidth = 420
+            };
+
+            var repoDialog = new ContentDialog
+            {
+                Title = "Import profile from repository",
+                Content = urlTextBox,
+                PrimaryButtonText = "Clone & Import",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var dialogResult = await repoDialog.ShowAsync();
+            if (dialogResult != ContentDialogResult.Primary)
+                return;
+
+            var repoUrl = urlTextBox.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(repoUrl))
+            {
+                MessageLogger.Warning("Import cancelled: URL was empty.");
+                return;
+            }
+
+            var (ok, importedProfile) = await BusyOps.TrySyncAsAsync<ProfileModel>(() => _profileService.ImportProfileFromRepoUrl(repoUrl), "Import Profile From Repo Url");
+
+            if (!ok)
+            {
+                MessageLogger.Error("Import failed due to an error during cloning or importing.");
+                return;
+            }
+            
+            if (importedProfile == null)
+            {
+                MessageLogger.Error("Import failed. No profile was imported.");
+                return;
+            }
+
+            MessageLogger.Highlight($"✅ Imported profile: {importedProfile.ProfileName}");
+            // Refresh UI
+            LoadProfiles(importedProfile.ProfileName);
+
         }
 
 
