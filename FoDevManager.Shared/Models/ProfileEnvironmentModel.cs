@@ -1,4 +1,6 @@
-﻿namespace FODevManager.Models
+﻿using FODevManager.Shared.Models;
+
+namespace FODevManager.Models
 {
     public class ProfileEnvironmentModel
     {
@@ -10,10 +12,23 @@
 
         public string MetadataFolder { get; set; } = "";
 
+        public string CompiledModelFolder { get; set; } = "";
+
         public string GitUrl { get; set; } = "";
 
+        
         public bool IsDeployed { get; set; } = false;
 
-        
+        public bool IsMainFOModel { get; set; } = false;
+
+        public ModelType ModelType { get; set; } = ModelType.Source;
+
     }
+    public enum ModelType
+    {
+        Source,   
+        Compiled  
+    }
+
+   
 }

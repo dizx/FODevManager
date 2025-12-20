@@ -286,3 +286,5 @@ build/
 Metadata/PTSProductTest/BuildProjectResult.err.xml
 
 Metadata/PTSProductTest/BuildProjectResult.xml
+
+Output/

@@ -1,4 +1,5 @@
-﻿using FODevManager.Services;
+using FODevManager.Services;
+using FODevManager.Shared.Utils;
 using FODevManager.Utils;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +14,7 @@ using Microsoft.UI.Xaml.Shapes;
 using Serilog;
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
@@ -20,6 +22,7 @@ using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
+using WinRT.FODevManager_WinUIVtableClasses;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -31,8 +34,8 @@ namespace FODevManager.WinUI
     /// </summary>
     public partial class App : Application
     {
-        private readonly ServiceProvider _serviceProvider;
-
+        public static IServiceProvider? Services { get; set; }
+        public static Window MainWindow { get; private set; } = null!;
 
         /// <summary>
         /// Initializes the singleton application object.  This is the first line of authored code
@@ -44,7 +47,7 @@ namespace FODevManager.WinUI
 
             ConfigureLogger();
             UnhandledException += App_UnhandledException;
-            _serviceProvider = ConfigureServices();
+            Services = ConfigureServices();
         }
 
         private void ConfigureLogger()
@@ -75,6 +78,8 @@ namespace FODevManager.WinUI
         private ServiceProvider ConfigureServices()
         {
             var services = new ServiceCollection();
+
+
             var config = new AppConfig(new ConfigurationBuilder().AddJsonFile("appsettings.json").Build());
 
             services.AddSingleton(config);
@@ -82,6 +87,7 @@ namespace FODevManager.WinUI
             services.AddSingleton<FileService>();
             services.AddSingleton<ModelDeploymentService>();
             services.AddSingleton<VisualStudioSolutionService>();
+            services.AddSingleton<AppConfigWriter>();
             return services.BuildServiceProvider();
         }
 
@@ -92,13 +98,19 @@ namespace FODevManager.WinUI
         /// <param name="args">Details about the launch request and process.</param>
         protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
-            var profileService = _serviceProvider.GetRequiredService<ProfileService>();
-            var fileService = _serviceProvider.GetRequiredService<FileService>();
-            var deploymentService = _serviceProvider.GetRequiredService<ModelDeploymentService>();
+            if(Services == null)
+            {
+                throw new InvalidOperationException("Service provider is not initialized.");
+            }
+
+            var profileService = Services.GetRequiredService<ProfileService>();
+            var fileService = Services.GetRequiredService<FileService>();
+            var deploymentService = Services.GetRequiredService<ModelDeploymentService>();
+            var appConfig = Services.GetRequiredService<AppConfig>();
 
             try
             {
-                var mainWindow = new MainWindow(profileService, fileService, deploymentService);
+                var mainWindow = new MainWindow(profileService, fileService, deploymentService, appConfig);
                 mainWindow.Activate();
             }
             catch (Exception ex)

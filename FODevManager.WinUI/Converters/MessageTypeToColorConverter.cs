@@ -1,6 +1,6 @@
 ﻿using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
-using System;
+using System;   
 using FODevManager.Messages;
 using Microsoft.UI;
 
@@ -12,9 +12,9 @@ namespace FODevManager.WinUI.Converters
         {
             return value switch
             {
-                MessageType.Error => new SolidColorBrush(Colors.OrangeRed),
+                MessageType.Error => new SolidColorBrush(Colors.DarkRed),
                 MessageType.Warning => new SolidColorBrush(Colors.Goldenrod),
-                MessageType.Highlight => new SolidColorBrush(Colors.DeepSkyBlue),
+                MessageType.Highlight => new SolidColorBrush(Colors.Turquoise),
                 _ => new SolidColorBrush(Colors.White)
             };
         }

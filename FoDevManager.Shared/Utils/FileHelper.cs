@@ -1,7 +1,10 @@
-﻿using FODevManager.Messages;
+using FODevManager.Messages;
+using FODevManager.Models;
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace FODevManager.Utils
 {
@@ -30,16 +33,50 @@ namespace FODevManager.Utils
             }
         }
 
+        private static readonly JsonSerializerOptions DefaultJsonSerializerOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            ReadCommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true,
+            WriteIndented = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+
         public static T LoadJson<T>(string filePath) where T : new()
         {
             if (!File.Exists(filePath))
             {
                 return new T();
             }
+            var jsonText = File.ReadAllText(filePath);
 
-            string json = File.ReadAllText(filePath);
-            return JsonSerializer.Deserialize<T>(json) ?? new T();
+            if (typeof(T) == typeof(ProfileModel))
+                jsonText = NormalizeLegacyProfileJson(jsonText);
+
+
+            var result = JsonSerializer.Deserialize<T>(jsonText, DefaultJsonSerializerOptions);
+            return result ?? new T();
         }
+
+        private static string NormalizeLegacyProfileJson(string jsonText)
+        {
+            if (string.IsNullOrWhiteSpace(jsonText))
+                return jsonText;
+
+            var hasEnvironments = jsonText.IndexOf("\"Environments\"", StringComparison.OrdinalIgnoreCase) >= 0;
+            var hasModels = jsonText.IndexOf("\"Models\"", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if (!hasEnvironments || hasModels)
+                return jsonText;
+
+            // Replace only the property name token, not values
+            return Regex.Replace(
+                jsonText,
+                "\"Environments\"\\s*:",
+                "\"Models\":",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        }
+
 
         public static void SaveJson<T>(string filePath, T data)
         {
@@ -104,9 +141,9 @@ namespace FODevManager.Utils
         }
 
 
-        public static string GetMetadataFolder(string modelName, string projectFilePath)
+        public static string GetMetadataFolder(string modelName, string modelPath)
         {
-            string? currentPath = Path.HasExtension(projectFilePath) ? Path.GetDirectoryName(projectFilePath) : projectFilePath;
+            string? currentPath = Path.HasExtension(modelPath) ? Path.GetDirectoryName(modelPath) : modelPath;
 
             // Move up to 3 levels and check for Metadata folder
             for (int i = 0; i < 3; i++)
@@ -130,7 +167,36 @@ namespace FODevManager.Utils
                 currentPath = Directory.GetParent(currentPath)?.FullName;
             }
 
-            throw new DirectoryNotFoundException($"Can't find metadata folder in path {projectFilePath}");
+            throw new DirectoryNotFoundException($"Can't find metadata folder in path {modelPath}");
+        }
+
+        public static string GetLibsFolder(string modelName, string modelPath)
+        {
+            string? currentPath = Path.HasExtension(modelPath) ? Path.GetDirectoryName(modelPath) : modelPath;
+
+            // Move up to 3 levels and check for libs folder
+            for (int i = 0; i < 3; i++)
+            {
+                if (currentPath.IsNullOrEmpty())
+                    break;
+
+                string libsPath = Path.Combine(currentPath, "Libs", modelName);
+                if (Directory.Exists(libsPath))
+                {
+                    return libsPath;
+                }
+
+                libsPath = Path.Combine(currentPath, "Libs");
+                if (Directory.Exists(libsPath))
+                {
+                    return Path.Combine(libsPath, modelName);
+                }
+
+                // Move one level up
+                currentPath = Directory.GetParent(currentPath)?.FullName;
+            }
+
+            throw new DirectoryNotFoundException($"Can't find libs folder in path {modelPath}");
         }
 
         public static string GetModelRootFolder(string projectFilePath)

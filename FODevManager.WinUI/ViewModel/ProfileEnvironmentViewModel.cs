@@ -1,43 +1,61 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
+using FODevManager.Models;
+using System;
+using System.ComponentModel;
 
 namespace FODevManager.WinUI.ViewModel
 {
-    public class ProfileEnvironmentViewModel
+    public sealed class ProfileEnvironmentViewModel : INotifyPropertyChanged
     {
-        public string ModelName { get; set; } = "";
+        public ProfileEnvironmentModel Model { get; set; }
 
-        public string ModelRootFolder { get; set; } = "";
+        public string ProfileName { get; set; }
 
-        public string ProjectFilePath { get; set; } = "";
+        public string ModelName { get; set; } = string.Empty;
+        public string ModelRootFolder { get; set; } = string.Empty;
+        public string ProjectFilePath { get; set; } = string.Empty;
+        public string MetadataFolder { get; set; } = string.Empty;
+        public bool IsDeployed { get; set; }
 
-        public string MetadataFolder { get; set; } = "";
+        private ModelType _modelType = ModelType.Source;
+        public ModelType ModelType
+        {
+            get => _modelType;
+            set
+            {
+                if (_modelType == value)
+                    return;
 
-        public string GitUrl { get; set; } = "";
+                _modelType = value;
+                OnPropertyChanged(nameof(ModelType));
+                OnPropertyChanged(nameof(IsCompiled));
+                OnPropertyChanged(nameof(IsSource));
+            }
+        }
 
-        public bool HasGit => !string.IsNullOrWhiteSpace(GitUrl);
+        public bool IsCompiled => ModelType == ModelType.Compiled;
+        public bool IsSource => ModelType == ModelType.Source;
 
-        public string GitBranch { get; set; } = "";
+        public event PropertyChangedEventHandler? PropertyChanged;
 
-        public bool IsDeployed { get; set; } = false;
+        private void OnPropertyChanged(string propertyName)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
     public static class ProfileEnvironmentViewModelExtensions
     {
-        public static ProfileEnvironmentViewModel ToViewModel(this Models.ProfileEnvironmentModel model, string gitBranch)
+        public static ProfileEnvironmentViewModel ToViewModel(this ProfileEnvironmentModel model, string profileName)
         {
-            var viewModel = new ProfileEnvironmentViewModel();
-            viewModel.ModelName = model.ModelName;
-            viewModel.IsDeployed = model.IsDeployed;
-            viewModel.ProjectFilePath = model.ProjectFilePath;
-            viewModel.MetadataFolder = model.MetadataFolder;
-            viewModel.GitUrl = model.GitUrl;
-            viewModel.GitBranch = gitBranch;
-            return viewModel;
+            return new ProfileEnvironmentViewModel
+            {
+                ProfileName = profileName,
+                Model = model,
+                ModelName = model.ModelName,
+                ModelRootFolder = model.ModelRootFolder,
+                IsDeployed = model.IsDeployed,
+                ProjectFilePath = model.ProjectFilePath,
+                MetadataFolder = model.MetadataFolder,
+                ModelType = model.ModelType
+            };
         }
     }
 }

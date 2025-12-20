@@ -13,17 +13,30 @@ namespace FODevManager.Utils
         public string DeploymentBasePath { get; set; }
         public string DefaultSourceDirectory { get; set; }
 
+        public string TaskUrl { get; set; }
+
         public int ModelIdBegin { get; set; }
 
         public int ModelIdEnd { get; set; }
+
+        public bool CheckUncommittedBeforeSwitch { get; set; } = true;
+
+        public AppConfig()
+        {
+
+        }
 
         public AppConfig(IConfiguration configuration)
         {
             ProfileStoragePath = Environment.ExpandEnvironmentVariables(configuration["ProfileStoragePath"]);
             DeploymentBasePath = Environment.ExpandEnvironmentVariables(configuration["DeploymentBasePath"]);
             DefaultSourceDirectory = Environment.ExpandEnvironmentVariables(configuration["DefaultSourceDirectory"]);
+            TaskUrl = Environment.ExpandEnvironmentVariables(configuration["TaskUrl"]);
             ModelIdBegin = int.Parse(Environment.ExpandEnvironmentVariables(configuration["ModelIdBegin"] ?? "896001001"));
             ModelIdEnd = int.Parse(Environment.ExpandEnvironmentVariables(configuration["ModelIdEnd"] ?? "896009999"));
+
+            var toggle = Environment.ExpandEnvironmentVariables(configuration["CheckUncommittedBeforeSwitch"]);
+            if (bool.TryParse(toggle, out var onOff)) CheckUncommittedBeforeSwitch = onOff;
 
         }
     }

@@ -69,7 +69,7 @@ class Program
         var profileService = host.Services.GetRequiredService<ProfileService>();
         var modelService = host.Services.GetRequiredService<ModelDeploymentService>();
 
-        if (commandParser.ModelName == null && !commandParser.Command.Equals("add")) // Profile level
+        if (commandParser.ModelName == null && !commandParser.Command.SameAs("add")) // Profile level
         {
             switch (commandParser.Command)
             {
@@ -122,7 +122,7 @@ class Program
             switch (commandParser.Command)
             {
                 case "add":
-                    TryCatch(() => profileService.AddEnvironment(commandParser.ProfileName, commandParser.ModelName, commandParser.FilePath));
+                    TryCatch(() => profileService.AddModel(commandParser.ProfileName, commandParser.ModelName, commandParser.FilePath));
                     break;
                 case "remove":
                     TryCatch(() => profileService.RemoveModelFromProfile(commandParser.ProfileName, commandParser.ModelName));
@@ -134,7 +134,7 @@ class Program
                     TryCatch(() => modelService.UnDeployModel(commandParser.ProfileName, commandParser.ModelName));
                     break;
                 case "check":
-                    TryCatch(() => modelService.CheckModelDeployment(commandParser.ProfileName, commandParser.ModelName));
+                    TryCatch(() => modelService.CheckModelDeployment(commandParser.ProfileName, commandParser.ModelName, true));
                     break;
                 case "git-status":
                     TryCatch(() => modelService.CheckIfGitRepository(commandParser.ProfileName, commandParser.ModelName));
@@ -142,6 +142,10 @@ class Program
                 case "git-open":
                     TryCatch(() => modelService.OpenGitRepositoryUrl(commandParser.ProfileName, commandParser.ModelName));
                     break;
+                case "peri":
+                    TryCatch(() => modelService.AssignTask(commandParser.ProfileName, commandParser.ModelName, commandParser.FilePath, ""));
+                    break;
+
                 default:
                     MessageLogger.Error($"Invalid model command: {commandParser.Command}");
                     break;

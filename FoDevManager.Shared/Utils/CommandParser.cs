@@ -103,6 +103,7 @@ namespace FODevManager.Utils
                         {
                             string next = args[i + 1];
 
+
                             if (IsCommand(next))
                             {
                                 Command = next;
@@ -142,9 +143,9 @@ namespace FODevManager.Utils
 
 
             // Ensure required arguments are present
-            IsValid = (!Command.IsNullOrEmpty() && Command.Equals("list"))
+            IsValid = (!Command.IsNullOrEmpty() && Command.SameAs("list"))
                 || (!Command.IsNullOrEmpty() && ProfileName.IsNullOrEmpty())
-                || (!Command.IsNullOrEmpty() && Command.Equals("import") && !FilePath.IsNullOrEmpty());
+                || (!Command.IsNullOrEmpty() && Command.SameAs("import") && !FilePath.IsNullOrEmpty());
 
             if (!IsValid)
             {
@@ -160,8 +161,8 @@ namespace FODevManager.Utils
             var knownCommands = new[] {
                 "create", "delete", "check", "list",
                 "add", "remove", "deploy", "undeploy",
-                "git-check", "git-open", "git-status",
-                "switch", "db-set", "db-apply", "import"
+                "git-check", "git-open", "git-status", "import",
+                "switch", "db-set", "db-apply", "peri"
         };
 
             return knownCommands.Contains(value.ToLower());

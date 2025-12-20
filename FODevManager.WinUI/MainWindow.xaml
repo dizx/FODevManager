@@ -5,19 +5,22 @@
     xmlns:local="using:FODevManager.WinUI"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:converters="using:FODevManager.WinUI.Converters"
-    mc:Ignorable="d"
-    Title="FO Dev Manager">
+    xmlns:converters="using:FODevManager.WinUI.Converters" xmlns:vm="using:FODevManager.WinUI.ViewModel"
+    mc:Ignorable="d">
 
     <Window.SystemBackdrop>
         <MicaBackdrop Kind="BaseAlt"/>
     </Window.SystemBackdrop>
-    
+
     <Border Background="{ThemeResource SystemBaseLowColor}">
         <Grid>
-            
+
             <Grid.Resources>
                 <converters:MessageTypeToColorConverter x:Key="MessageTypeToColorConverter" />
+                <converters:BoolToChevronConverter x:Key="BoolToChevronConverter"/>
+                <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+                <converters:ModelTypeToBrushConverter x:Key="ModelTypeToBrushConverter" SourceBrush="{ThemeResource TextFillColorPrimaryBrush}" CompiledBrush="CornflowerBlue"/>
+                <converters:RepoBranchHealthToBrushConverter x:Key="RepoBranchHealthToBrushConverter" />
             </Grid.Resources>
             <Grid.RowDefinitions>
                 <RowDefinition Height="48"/>
@@ -73,11 +76,17 @@
                         </StackPanel>
                     </Button>
 
-                    <Button Click="ImportProfile_Click" ToolTipService.ToolTip="Import a profile from a JSON file">
+                    <Button ToolTipService.ToolTip="Import a profile from GIT repo or a JSON file">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8B5;" FontSize="14" />
                             <TextBlock Text="Import" />
                         </StackPanel>
+                        <Button.Flyout>
+                            <MenuFlyout>
+                                <MenuFlyoutItem Text="From File" Click="ImportFromFile_Click"/>
+                                <MenuFlyoutItem Text="From Repo" Click="ImportFromRepo_Click"/>
+                            </MenuFlyout>
+                        </Button.Flyout>
                     </Button>
 
                     <Button Click="DeployProfile_Click" ToolTipService.ToolTip="Deploy all undeployed models">
@@ -107,6 +116,21 @@
                         </StackPanel>
                     </Button>
 
+                    <Button Click="GitResetProfile_Click" ToolTipService.ToolTip="Stash changes in all repos, checkout main, fetch and pull">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE777;" FontSize="14" />
+                            <TextBlock Text="Git Reset" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Click="DeleteProfile_Click" ToolTipService.ToolTip="Delete the selected profile (removes the profile file)">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE74D;" FontSize="14" />
+                            <!-- Delete icon -->
+                            <TextBlock Text="Delete Profile" />
+                        </StackPanel>
+                    </Button>
+
                 </StackPanel>
 
                 <Button Grid.Row="0" Grid.Column="1" Click="OpenSolution_Click" Margin="10,0,0,0" ToolTipService.ToolTip="Open the Visual Studio solution associated with this profile">
@@ -117,54 +141,155 @@
                 </Button>
 
                 <!-- 🔷 Row 1: Database Name & Is Active -->
-                <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="10" Margin="0,10,0,10">
+                <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="10" Margin="0,10,0,10" IsDoubleTapEnabled="True" DoubleTapped="DatabaseNameTextBox_DoubleTapped">
                     <TextBlock Text="Database:" VerticalAlignment="Center" />
-                    <TextBox x:Name="DatabaseNameTextBox" Width="200" IsReadOnly="True" />
+                    <TextBox x:Name="DatabaseNameTextBox" Width="200" IsReadOnly="True"  KeyDown="DatabaseNameTextBox_KeyDown" />
                     <CheckBox x:Name="IsActiveCheckBox" Content="Is Active" IsEnabled="False" VerticalAlignment="Center" />
                 </StackPanel>
 
-                <!-- 🔷 Row 2: Models List -->
+                <!-- 🔷 Row 2: Repo and Models List -->
 
-                <ListView x:Name="ModelsListView"
-                      Grid.Row="2"
-                      Grid.ColumnSpan="2"
-                      SelectionMode="Single"
-                      Padding="10" >
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                            <Setter Property="VerticalContentAlignment" Value="Center"/>
-                            <Setter Property="MinHeight" Value="40"/>
-                            <Setter Property="Padding" Value="4"/>
-                        </Style>
-                    </ListView.ItemContainerStyle>
-                    <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <Grid Margin="5">
+                <Grid Grid.Row="2" Grid.ColumnSpan="2">
+                    <Grid.Resources>
+                        <!-- Selector -->
+                        <local:CombinedTemplateSelector x:Key="CombinedSelector"
+                                        RepoTemplate="{StaticResource RepoItemTemplate}"
+                                        NonGitTemplate="{StaticResource NonGitRowTemplate}" />
+
+                        <DataTemplate x:Key="RepoItemTemplate" x:DataType="vm:RepoGroupViewModel">
+                            <StackPanel Spacing="8" Margin="0,2,0,2">
+
+                                <!-- Header (double-click to toggle) -->
+                                <Grid Margin="0,4,0,2" Background="{ThemeResource SystemFillColorNeutralBackgroundBrush}" DoubleTapped="RepoHeader_DoubleTapped" Tapped="RepoHeader_SingleTapped"  Padding="6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="240"/>
+                                        <ColumnDefinition Width="24"/>
+                                        <ColumnDefinition Width="16"/>
+                                        <!-- NEW: status light -->
+                                        <ColumnDefinition Width="240"/>
+                                        <!-- branch + badge -->
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="{x:Bind DisplayName}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center" Text="{x:Bind ChevronGlyph, Mode=OneWay}" />
+                                    <Ellipse Grid.Column="2" Width="8" Height="8" VerticalAlignment="Center" HorizontalAlignment="Center" Fill="{Binding BranchHealth, Converter={StaticResource RepoBranchHealthToBrushConverter}}" />
+
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"> 
+                                        <TextBlock Text="{x:Bind Branch, Mode=OneWay}" FontStyle="Italic" VerticalAlignment="Center"/> 
+                                        <Border Visibility="{Binding HasMainUpdates, Converter={StaticResource BoolToVisibilityConverter}}" CornerRadius="10" Padding="6,2" VerticalAlignment="Center" Opacity="0.85"> 
+                                            <TextBlock Text="main updated" FontSize="12" Opacity="0.9"/>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <Button Grid.Column="4" Content="Assign Task" Click="AssignTask_ForRepo_Click" Margin="6,0,0,0"/>
+                                    <Button Grid.Column="5" Content="Open Task" Click="OpenTask_ForRepo_Click" IsEnabled="{x:Bind HasTask}" Margin="6,0,0,0"/>
+                                    <Button Grid.Column="6" Content="DevOps" Click="OpenGitForRepo_Click" Margin="20,0,0,0"/>
+                                    <Button x:Name="GridMergeButton" Grid.Column="7" ToolTipService.ToolTip="Merge main into current branch" Click="RepoHeader_GitMerge_Click" x:Load="{x:Bind HasMainUpdates, Mode=OneWay}" 
+                                             Margin="8,0,0,0" Padding="12,6" FontWeight="SemiBold">
+
+
+                                        <Button.Content>
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE8B5;" FontFamily="Segoe MDL2 Assets" />
+                                                <TextBlock Text="Git Merge" />
+                                            </StackPanel>
+                                        </Button.Content>
+                                    </Button>
+                                </Grid>
+
+                                <!-- Models (collapse with computed Visibility) -->
+                                <ItemsControl ItemsSource="{x:Bind Models, Mode=OneWay}" Visibility="{x:Bind IsExpandedVisibility, Mode=OneWay}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ProfileEnvironmentViewModel">
+                                            <Grid Margin="10,4,0,2">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="240"/>
+                                                    <ColumnDefinition Width="240"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <!--<FontIcon Grid.Column="0" Glyph="&#xE734;" FontFamily="Segoe MDL2 Assets" Margin="0,0,6,0" VerticalAlignment="Center" Visibility="{x:Bind Model.IsMainFOModel, Converter={StaticResource BoolToVisibilityConverter}}"/>-->
+                                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
+                                                    <Border x:Name="BorderIsMain" Grid.Column="0" Width="3" CornerRadius="2" Background="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Stretch" Margin="0,2,8,2" x:Load="{x:Bind Model.IsMainFOModel, Mode=OneWay}" />
+                                                    <!-- Source -->
+                                                    <TextBlock x:Name="ModelNameSource" Text="{x:Bind ModelName}"  x:Load="{x:Bind IsSource, Mode=OneWay}" />
+                                                    <!-- Compiled -->
+                                                    <TextBlock x:Name="ModelNameCompiled" Text="{x:Bind ModelName}" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" FontWeight="SemiBold" x:Load="{x:Bind IsCompiled, Mode=OneWay}" />
+                                                </StackPanel>
+
+
+                                                <!-- Source (default color) --><!--
+                                                <TextBlock x:Name="ModelNameSource" Grid.Column="0" Text="{x:Bind ModelName}" VerticalAlignment="Center" x:Load="{x:Bind IsSource, Mode=OneWay}" /> 
+                                                --><!-- Compiled (accent/blue) --><!--
+                                                <TextBlock x:Name="ModelNameCompiled" Grid.Column="0" Text="{x:Bind ModelName}" VerticalAlignment="Center" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" FontWeight="SemiBold" x:Load="{x:Bind IsCompiled, Mode=OneWay}" />-->
+
+
+                                                <TextBlock Grid.Column="1" Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="2" Content="Deploy" Tag="{x:Bind ModelName}" Click="DeployModel_Click" Margin="6,0,0,0"/>
+                                                <Button Grid.Column="3" Content="Undeploy" Tag="{x:Bind ModelName}" Click="UnDeployModel_Click" Margin="6,0,0,0"/>
+                                                <Button Grid.Column="5" Content="Remove" Tag="{x:Bind ModelName}" Click="RemoveModel_Click" Margin="10,0,0,0" HorizontalAlignment="Right"/>
+                                                
+                                                
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                            </StackPanel>
+                        </DataTemplate>
+
+
+
+                        <DataTemplate x:Key="NonGitRowTemplate" x:DataType="vm:ProfileEnvironmentViewModel">
+                            <Grid Margin="0,2,0,2">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="200"/> <!-- Model Name -->
-                                    <ColumnDefinition Width="150"/> <!-- Deployment Status -->
-                                    <ColumnDefinition Width="150"/> <!-- Git Branch -->
-                                    <ColumnDefinition Width="Auto"/> <!-- Git Button -->
-                                    <ColumnDefinition Width="Auto"/> <!-- Deploy -->
-                                    <ColumnDefinition Width="Auto"/> <!-- Undeploy -->
-                                    <ColumnDefinition Width="*"/> <!-- Spacer -->
-                                    <ColumnDefinition Width="Auto"/> <!-- Remove Button -->
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <TextBlock Grid.Column="0" Text="{Binding ModelName}" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1" Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}" VerticalAlignment="Center" /> 
-                                <TextBlock Grid.Column="2" Text="{Binding GitBranch}" Foreground="Black" FontStyle="Italic" VerticalAlignment="Center" />
-                                <Button Grid.Column="3" Content="Git" Click="OpenGit_Click" Tag="{Binding ModelName}" IsEnabled="{Binding HasGit}" ToolTipService.ToolTip="Open Git repository URL"/>
-                                <Button Grid.Column="4" Content="Deploy" Tag="{Binding ModelName}" Click="DeployModel_Click" Margin="6,0,0,0" ToolTipService.ToolTip="Deploy this model to the environment" />
-                                <Button Grid.Column="5" Content="Undeploy" Tag="{Binding ModelName}" Click="UnDeployModel_Click" Margin="6,0,0,0" ToolTipService.ToolTip="Remove the deployed model from the environment" />
-                                <!-- Spacer in Grid.Column=4 -->
-                                <Button Grid.Column="6" Content="Remove" Click="RemoveModel_Click" Tag="{Binding ModelName}" Margin="10,0,0,0" HorizontalAlignment="Right" ToolTipService.ToolTip="Remove this model from the profile (does not delete files)" />
+                                <TextBlock Grid.Column="0" Text="{x:Bind ModelName}" VerticalAlignment="Center"/>
+
+                                <TextBlock Grid.Column="1"
+                                    Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}"
+                                    VerticalAlignment="Center"/>             
+
+                                <Button Grid.Column="2" Content="Deploy" Tag="{x:Bind ModelName}" Click="DeployModel_Click" Margin="6,0,0,0"/>
+                                <Button Grid.Column="3" Content="Undeploy" Tag="{x:Bind ModelName}" Click="UnDeployModel_Click" Margin="6,0,0,0"/>
+
+                                <Button Grid.Column="5" Content="Remove"
+                                    Tag="{x:Bind ModelName}"
+                                    Click="RemoveModel_Click"
+                                    Margin="10,0,0,0"
+                                    HorizontalAlignment="Right"/>           
                             </Grid>
                         </DataTemplate>
-                    </ListView.ItemTemplate>
 
-                </ListView>
+
+                    </Grid.Resources>
+
+                    <ListView x:Name="CombinedList" ItemTemplateSelector="{StaticResource CombinedSelector}"  RightTapped="CombinedList_RightTapped" SelectionMode="None" Padding="0">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="VerticalContentAlignment" Value="Top"/>
+                                <Setter Property="MinHeight" Value="0"/>
+                                <Setter Property="Padding" Value="6"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                    </ListView>
+                </Grid>
+
 
 
                 <!-- 🔷 Row 3: Add Model -->
@@ -183,33 +308,50 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- 🧾 Log Area -->
-                <ItemsControl x:Name="LogPreviewList"
-                  Grid.Column="0"
-                  Margin="0,0,10,0">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding Content}"
-                           TextWrapping="Wrap"
-                           FontSize="12"
-                           Margin="2"
-                           Foreground="{Binding Type, Converter={StaticResource MessageTypeToColorConverter}}" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <ListView x:Name="LogPreviewList"
+                    Grid.Column="0" Margin="0,0,10,0" SelectionMode="None" ScrollViewer.VerticalScrollBarVisibility="Visible">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <!-- kill extra space -->
+                            <Setter Property="MinHeight" Value="0"/>
+                            <Setter Property="Padding" Value="1"/>
+                            <Setter Property="Margin" Value="1"/>
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="VerticalContentAlignment" Value="Top"/>
 
-                <!-- ℹ️ About Button (always clickable now) -->
-                <Button Grid.Column="1"
-            VerticalAlignment="Bottom"
-            Margin="0,0,0,0"
-            Click="ShowAboutDialog_Click"
-            ToolTipService.ToolTip="About this app">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE946;" FontSize="14" />
-                        <TextBlock Text="About" />
-                    </StackPanel>
-                </Button>
+                        </Style>
+                    </ListView.ItemContainerStyle>
+
+                    <!-- keep the item content tight too -->
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Content}" TextWrapping="Wrap" FontSize="12" Margin="1" Foreground="{Binding Type, Converter={StaticResource MessageTypeToColorConverter}}" />
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+
+
+                </ListView>
+                <StackPanel Grid.Column="1" Orientation="Vertical" Spacing="8" VerticalAlignment="Bottom">
+                    <Button x:Name="SettingsButton" Click="OpenSettings_Click" ToolTipService.ToolTip="Settings">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE713;" FontSize="14"/>
+                            <TextBlock Text="Settings"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Width="{Binding ElementName=SettingsButton, Path=ActualWidth}" Click="ShowAboutDialog_Click" ToolTipService.ToolTip="About this app">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE946;" FontSize="14"/>
+                            <TextBlock Text="About"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
             </Grid>
 
+            <Frame x:Name="RootFrame"/>
+            <local:BusyOverlay Grid.RowSpan="3" 
+                DataContext="{x:Bind BusyOverlayVm, Mode=OneWay}"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
         </Grid>
     </Border>
 </Window>

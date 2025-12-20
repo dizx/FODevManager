@@ -6,11 +6,13 @@ using System.Threading.Tasks;
 
 namespace FODevManager.Messages
 {
-    public class ConsoleSubscriber : IMessageSubscriber
+    public class ConsoleSubscriber : IMessageSubscriber, IDisposable
     {
+        private readonly IDisposable _busSub;
+
         public ConsoleSubscriber()
         {
-            MessageBus.Instance.OnMessagePublished += DisplayMessage;
+            _busSub = MessageBus.Subscribe(DisplayMessage);
         }
 
         private void DisplayMessage(Message msg)
@@ -26,7 +28,7 @@ namespace FODevManager.Messages
                 _ => ConsoleColor.White
             };
 
-            var lines = msg.Content.Split(new[] { "\\r\\n", "\\n", "\\r" }, StringSplitOptions.None);
+            var lines = msg.Content.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
 
             foreach (var line in lines)
             {
@@ -38,6 +40,9 @@ namespace FODevManager.Messages
 
             Console.ResetColor();
         }
+        public void Dispose()
+        {
+            _busSub.Dispose(); // unsubscribe
+        }
     }
-
 }

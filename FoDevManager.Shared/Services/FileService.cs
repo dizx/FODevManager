@@ -6,7 +6,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
+using System.Threading.Channels;
 using System.Threading.Tasks;
+using System.IO;
 
 namespace FODevManager.Services
 {
@@ -88,7 +91,7 @@ namespace FODevManager.Services
             return profileNames;
         }
 
-        public void SaveProfile(ProfileModel profile, bool skipExistCheck = false)
+        public void SaveProfile(ProfileModel profile, bool skipExistCheck = false, bool updateExternal = false)
         {
             var profileName = profile.ProfileName;
 
@@ -101,6 +104,24 @@ namespace FODevManager.Services
 
             FileHelper.SaveJson(profilePath, profile);
 
+            if (updateExternal && !profile.ProfileFilePath.IsNullOrEmpty())
+            {
+                var externalSavePath = profile.ProfileFilePath;
+
+                var exportProfile = ExportProfileMapper.ToExport(profile);
+
+                FileHelper.SaveJson(externalSavePath, exportProfile);
+            }}
+
+        public static T SerializedClone<T>(T objectToClone) where T  : notnull        
+        {
+            if (objectToClone is null) throw new ArgumentNullException(nameof(objectToClone));
+
+            var data = JsonSerializer.Serialize(objectToClone);
+            var result = JsonSerializer.Deserialize<T>(data);
+            if (result == null)
+                throw new InvalidOperationException("Deserialization resulted in null.");
+            return result;
         }
 
         public bool ExistProfile(string profileName)
