@@ -16,9 +16,7 @@ namespace FODevManager.Models
 
         public string GitUrl { get; set; } = "";
 
-        public string Task { get; set; } = "";
-        public string TaskComment { get; set; } = "";
-
+        
         public bool IsDeployed { get; set; } = false;
 
         public bool IsMainFOModel { get; set; } = false;

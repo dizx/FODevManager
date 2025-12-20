@@ -56,6 +56,7 @@ namespace FODevManager.WinUI.ViewModel
                         : ExtractRepoName(repo.GitUrl ?? repo.RepoRootFolder);
 
                     return new RepoGroupViewModel(
+                        profileName: profile.ProfileName,
                         repository: repo,
                         displayName: displayName,
                         models: new ReadOnlyCollection<ProfileEnvironmentViewModel>(viewModels)

@@ -1,10 +1,15 @@
 using FODevManager.Models;
+using System;
 using System.ComponentModel;
 
 namespace FODevManager.WinUI.ViewModel
 {
     public sealed class ProfileEnvironmentViewModel : INotifyPropertyChanged
     {
+        public ProfileEnvironmentModel Model { get; set; }
+
+        public string ProfileName { get; set; }
+
         public string ModelName { get; set; } = string.Empty;
         public string ModelRootFolder { get; set; } = string.Empty;
         public string ProjectFilePath { get; set; } = string.Empty;
@@ -38,10 +43,12 @@ namespace FODevManager.WinUI.ViewModel
 
     public static class ProfileEnvironmentViewModelExtensions
     {
-        public static ProfileEnvironmentViewModel ToViewModel(this ProfileEnvironmentModel model)
+        public static ProfileEnvironmentViewModel ToViewModel(this ProfileEnvironmentModel model, string profileName)
         {
             return new ProfileEnvironmentViewModel
             {
+                ProfileName = profileName,
+                Model = model,
                 ModelName = model.ModelName,
                 ModelRootFolder = model.ModelRootFolder,
                 IsDeployed = model.IsDeployed,

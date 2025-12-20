@@ -1079,5 +1079,85 @@ namespace FODevManager.Services
             }
         }
 
+
+        public void UpdateRepositoryProperties(string profileName, RepositoryModel updatedRepository)
+        {
+            if (profileName.IsNullOrEmpty())
+            {
+                MessageLogger.Error("UpdateRepositoryProperties: profileName is empty.");
+                return;
+            }
+
+            if (updatedRepository == null)
+            {
+                MessageLogger.Error("UpdateRepositoryProperties: updatedRepository is null.");
+                return;
+            }
+
+            var profile = _fileService.LoadProfile(profileName);
+
+            var existingRepository = profile.Repositories
+                .FirstOrDefault(repository => string.Equals(repository.RepoId, updatedRepository.RepoId, StringComparison.OrdinalIgnoreCase));
+
+            if (existingRepository == null)
+            {
+                MessageLogger.Error($"UpdateRepositoryProperties: repo '{updatedRepository.RepoId}' not found in profile '{profileName}'.");
+                return;
+            }
+
+            existingRepository.DisplayName = updatedRepository.DisplayName ?? string.Empty;
+            existingRepository.PreferredBranch = updatedRepository.PreferredBranch;
+            existingRepository.AutoCheckoutOnProfileLoad = updatedRepository.AutoCheckoutOnProfileLoad;
+            existingRepository.AutoStashOnDirtyCheckout = updatedRepository.AutoStashOnDirtyCheckout;
+            existingRepository.Task = updatedRepository.Task ?? string.Empty;
+            existingRepository.TaskComment = updatedRepository.TaskComment ?? string.Empty;
+
+            _fileService.SaveProfile(profile, updateExternal: true);
+            MessageLogger.Info($"✅ Repository properties saved: {existingRepository.DisplayName}");
+        }
+
+        public void UpdateModelProperties(string profileName, ProfileEnvironmentModel updatedEnvironment)
+        {
+            if (profileName.IsNullOrEmpty())
+            {
+                MessageLogger.Error("UpdateModelProperties: profileName is empty.");
+                return;
+            }
+
+            if (updatedEnvironment == null || updatedEnvironment.ModelName.IsNullOrEmpty())
+            {
+                MessageLogger.Error("UpdateModelProperties: updatedEnvironment is null or ModelName is empty.");
+                return;
+            }
+
+            var profile = _fileService.LoadProfile(profileName);
+
+            var targetEnvironment = profile.AllModels
+                .FirstOrDefault(model => model.ModelName.SameAs(updatedEnvironment.ModelName));
+
+            if (targetEnvironment == null)
+            {
+                MessageLogger.Error($"UpdateModelProperties: model '{updatedEnvironment.ModelName}' not found in profile '{profileName}'.");
+                return;
+            }
+
+
+            // Guardrail: only one Main FO model
+            if (updatedEnvironment.IsMainFOModel)
+            {
+                foreach (var environment in profile.AllModels)
+                    environment.IsMainFOModel = false;
+
+                targetEnvironment.IsMainFOModel = true;
+            }
+            else
+            {
+                targetEnvironment.IsMainFOModel = false;
+            }
+
+            _fileService.SaveProfile(profile, updateExternal: true);
+            MessageLogger.Info($"✅ Model properties saved: {targetEnvironment.ModelName}");
+        }
     }
 }
+

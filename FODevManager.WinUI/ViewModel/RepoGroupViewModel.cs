@@ -8,7 +8,7 @@ namespace FODevManager.WinUI.ViewModel
 {
     public sealed class RepoGroupViewModel : INotifyPropertyChanged
     {
-        
+        public string ProfileName { get; set; }
         public RepositoryModel Repository { get; }
 
         public string DisplayName { get; }
@@ -99,8 +99,9 @@ namespace FODevManager.WinUI.ViewModel
         private void OnPropertyChanged(string propertyName)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
-        public RepoGroupViewModel(RepositoryModel repository, string displayName, ReadOnlyCollection<ProfileEnvironmentViewModel> models)
+        public RepoGroupViewModel(RepositoryModel repository, string displayName, string profileName, ReadOnlyCollection<ProfileEnvironmentViewModel> models)
         {
+            ProfileName = profileName;
             Repository = repository;
             Branch = repository.LastKnownBranch;
             DisplayName = displayName;

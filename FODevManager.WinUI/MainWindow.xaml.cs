@@ -193,7 +193,7 @@ namespace FODevManager.WinUI
             StartProfileSyncMonitoring(profile);
         }
 
-       
+
         private void StartProfileSyncMonitoring(ProfileModel profile)
         {
             // Cancel previous monitor (if any)
@@ -298,7 +298,7 @@ namespace FODevManager.WinUI
                     }
                 });
 
-                
+
             }
             catch (Exception ex)
             {
@@ -316,7 +316,7 @@ namespace FODevManager.WinUI
 
             try
             {
-                var confirm = await DialogHelper.ConfirmAsync(this, "Git update available", "Changes detected in main.\n\nMerge main into your current branch?");
+                var confirm = await DialogHelper.ConfirmAsync(this, "Git update available", $"{repository.DisplayName}\nChanges detected in main.\n\nMerge main into your current branch?");
 
                 if (!confirm)
                     return false;
@@ -378,7 +378,7 @@ namespace FODevManager.WinUI
                     ? $"Removed: {string.Join(", ", syncResult.RemovedModels)}\n"
                     : string.Empty;
 
-                var message = $"The { currentProfile.ProfileName } profile definition has changed (models were added or removed).\n\n" +
+                var message = $"The {currentProfile.ProfileName} profile definition has changed (models were added or removed).\n\n" +
                     added + removed + "\nDo you want to re-import the profile now?";
 
                 var dialog = new ContentDialog
@@ -401,7 +401,7 @@ namespace FODevManager.WinUI
                 var updatedProfile = _profileService.ImportProfile(currentProfile.ProfileFilePath);
                 if (updatedProfile != null)
                 {
-                    SetSelectedProfile(updatedProfile); 
+                    SetSelectedProfile(updatedProfile);
                 }
             }
             catch (Exception ex)
@@ -415,12 +415,12 @@ namespace FODevManager.WinUI
         {
             var profile = _profileService.LoadProfile(profileName);
 
-            var items = _profileService
+            var modelVms = _profileService
                 .GetModelsInProfile(profileName)
-                .Select(model => model.ToViewModel())
+                .Select(model => model.ToViewModel(profile.ProfileName))
                 .ToList();
 
-            _groupingVm = new ModelsGroupingViewModel(profile, items);
+            _groupingVm = new ModelsGroupingViewModel(profile, modelVms);
 
             var active = _groupingVm.GitGroups.FirstOrDefault();
             if (active != null)
@@ -438,7 +438,7 @@ namespace FODevManager.WinUI
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
-                if(ActiveProfile?.ProfileName == profileName)
+                if (ActiveProfile?.ProfileName == profileName)
                     return;
 
                 var profile = LoadProfileByName(profileName);
@@ -472,8 +472,6 @@ namespace FODevManager.WinUI
             OpenGitRepo(profileName, anchorModel.ModelName);
         }
 
-
-        
 
         private async void AssignTask_ForRepo_Click(object sender, RoutedEventArgs eventArgs)
         {
@@ -510,9 +508,7 @@ namespace FODevManager.WinUI
             if (dialogResult != ContentDialogResult.Primary)
                 return;
 
-            var periTaskId = taskIdTextBox.Text?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(periTaskId))
-                return;
+            var taskId = taskIdTextBox.Text?.Trim() ?? string.Empty;
 
             var comment = commentTextBox.Text?.Trim() ?? string.Empty;
 
@@ -523,12 +519,12 @@ namespace FODevManager.WinUI
                     _deploymentService.AssignTaskToRepository(
                         profileName: profileName,
                         repoId: repository.RepoId,
-                        task: periTaskId,
+                        task: taskId,
                         comment: comment,
                         switchBranch: true);
                 }, "Assign Task");
 
-                UIMessageHelper.LogToUI($"✅ Assigned Task '{periTaskId}' to repo '{group.DisplayName}'.");
+                UIMessageHelper.LogToUI($"✅ Assigned Task '{taskId}' to repo '{group.DisplayName}'.");
             }
             catch (Exception exception)
             {
@@ -575,11 +571,11 @@ namespace FODevManager.WinUI
 
             if (sender is Button button && button.Tag is string modelName)
             {
-                if(await DeployModel(profileName, modelName))
+                if (await DeployModel(profileName, modelName))
                 {
                     LoadModelListViewData(profileName);
                     UIMessageHelper.LogToUI($"🚀 Deployed model '{modelName}'");
-                }                
+                }
             }
         }
 
@@ -590,15 +586,15 @@ namespace FODevManager.WinUI
 
             if (sender is Button button && button.Tag is string modelName)
             {
-                if(await UnDeployModel(profileName, modelName))
+                if (await UnDeployModel(profileName, modelName))
                 {
                     LoadModelListViewData(profileName);
                     UIMessageHelper.LogToUI($"🧯 Undeployed model '{modelName}'");
-                }                
+                }
             }
         }
 
-        
+
 
         public static T? FindVisualChild<T>(DependencyObject parent, string? name = null) where T : DependencyObject
         {
@@ -773,7 +769,7 @@ namespace FODevManager.WinUI
         }
 
         private async void SwitchProfile_Click(object sender, RoutedEventArgs e)
-        {   
+        {
             if (ProfilesDropdown.SelectedItem is not string newProfile)
                 return;
 
@@ -788,7 +784,7 @@ namespace FODevManager.WinUI
             }.ShowAsync();
 
             if (result != ContentDialogResult.Primary)
-                return; 
+                return;
 
             if (await SwitchProfile(newProfile))
             {
@@ -867,7 +863,7 @@ namespace FODevManager.WinUI
         {
             var settingsPage = new SettingsPage
             {
-                MinWidth = 800,   
+                MinWidth = 800,
                 MinHeight = 500
             };
             var dialog = new ContentDialog
@@ -879,7 +875,7 @@ namespace FODevManager.WinUI
             };
 
             dialog.MaxWidth = 1200;
-            dialog.MinWidth = 800; 
+            dialog.MinWidth = 800;
 
             await dialog.ShowAsync();
         }
@@ -1009,7 +1005,7 @@ namespace FODevManager.WinUI
             return await RunOperationAsync(() => _profileService.CheckProfile(profileName), "Check profile");
         }
 
-       
+
 
         private async Task<bool> SwitchProfile(string profileName)
         {
@@ -1037,20 +1033,6 @@ namespace FODevManager.WinUI
         {
             return await RunOperationAsync(() => _deploymentService.UnDeployAllModels(profileName), "Undeploy all models");
         }
-
-        private async Task<bool> AssignTask(string profileName, string modelName, string taskId, string comment, bool switchBranch = true)
-        {
-            return await RunOperationAsync(() => _deploymentService.AssignTask(profileName, modelName, taskId, comment, switchBranch), "Assign Task");
-        }
-
-        private string? GetActiveGitBranch(string profileName, string modelName)
-        {
-            string? branch = null;
-            TryCatch(() => branch = _deploymentService.GetActiveGitBranch(profileName, modelName));
-            return branch;
-        }
-
-       
 
         private void OpenGitRepo(string profileName, string modelName)
         {
@@ -1080,7 +1062,7 @@ namespace FODevManager.WinUI
         {
             if (e.Key != VirtualKey.Enter) return;
 
-            if(ActiveProfile == null) return;
+            if (ActiveProfile == null) return;
 
             var newDbString = (DatabaseNameTextBox.Text ?? string.Empty).Trim();
             if (newDbString.SameAs(ActiveProfile.DatabaseName))
@@ -1138,7 +1120,6 @@ namespace FODevManager.WinUI
             }
 
         }
-
         private async void RepoHeader_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
         {
             var frameworkElement = e.OriginalSource as FrameworkElement ?? sender as FrameworkElement;
@@ -1191,10 +1172,10 @@ namespace FODevManager.WinUI
                     return;
                 }
 
-                
+
                 try
                 {
-                    
+
                     _profileService.DeleteProfile(selectedProfileName);
 
                     MessageLogger.Highlight($"✅ Deleted profile: {selectedProfileName}");
@@ -1217,7 +1198,176 @@ namespace FODevManager.WinUI
                 MessageLogger.Error($"✖ DeleteProfile error: {ex.Message}");
             }
         }
+
+        private void CombinedList_RightTapped(object sender, RightTappedRoutedEventArgs eventArgs)
+        {
+            if (sender is not ListView listView)
+                return;
+
+            var frameworkElementSource = eventArgs.OriginalSource as FrameworkElement;
+            var clickedItem = frameworkElementSource?.DataContext;
+
+            if (clickedItem == null)
+                return;
+
+            var flyout = new MenuFlyout();
+
+            var propertiesMenuItem = new MenuFlyoutItem
+            {
+                Text = "Properties…"
+            };
+
+            propertiesMenuItem.Click += async (_, _) =>
+            {
+                switch (clickedItem)
+                {
+                    case RepoGroupViewModel repoGroupViewModel:
+                        await ShowRepositoryPropertiesAsync(repoGroupViewModel).ConfigureAwait(true);
+                        break;
+
+                    case ProfileEnvironmentViewModel environmentViewModel:
+                        await ShowModelPropertiesAsync(environmentViewModel).ConfigureAwait(true);
+                        break;
+                }
+            };
+
+            flyout.Items.Add(propertiesMenuItem);
+
+            flyout.ShowAt(listView, eventArgs.GetPosition(listView));
+            eventArgs.Handled = true;
+        }
+
+        private async Task ShowRepositoryPropertiesAsync(RepoGroupViewModel repoGroupViewModel)
+        {
+            RepositoryModel repositoryModel = repoGroupViewModel.Repository;
+
+            var displayNameTextBox = new TextBox { Text = repositoryModel.DisplayName ?? string.Empty };
+            var preferredBranchTextBox = new TextBox { Text = repositoryModel.PreferredBranch ?? string.Empty };
+
+            var autoCheckoutToggle = new ToggleSwitch
+            {
+                IsOn = repositoryModel.AutoCheckoutOnProfileLoad,
+                Header = "Auto checkout on profile load"
+            };
+
+            var autoStashToggle = new ToggleSwitch
+            {
+                IsOn = repositoryModel.AutoStashOnDirtyCheckout,
+                Header = "Auto stash on dirty checkout"
+            };
+
+            var taskTextBox = new TextBox { Text = repositoryModel.Task ?? string.Empty };
+            var taskCommentTextBox = new TextBox { Text = repositoryModel.TaskComment ?? string.Empty };
+
+            var contentPanel = new StackPanel
+            {
+                MinWidth = 400,
+                Spacing = 10,
+                Children =
+            {
+                new TextBlock { Text = $"Repo: {repositoryModel.RepoId}" },
+                new TextBlock { Text = $"Root: {repositoryModel.RepoRootFolder}" },
+
+                new TextBlock { Text = "Display name" },
+                displayNameTextBox,
+
+                new TextBlock { Text = "Preferred branch" },
+                preferredBranchTextBox,
+
+                autoCheckoutToggle,
+                autoStashToggle,
+
+                new TextBlock { Text = "Task" },
+                taskTextBox,
+
+                new TextBlock { Text = "Task comment" },
+                taskCommentTextBox
+            }
+            };
+
+            var dialog = new ContentDialog
+            {
+                Title = "Repository properties",
+                Content = contentPanel,
+                PrimaryButtonText = "Save",
+                CloseButtonText = "Cancel",
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var dialogResult = await dialog.ShowAsync();
+            if (dialogResult != ContentDialogResult.Primary)
+                return;
+
+            repositoryModel.DisplayName = displayNameTextBox.Text?.Trim() ?? string.Empty;
+            repositoryModel.PreferredBranch = preferredBranchTextBox.Text?.Trim();
+            repositoryModel.AutoCheckoutOnProfileLoad = autoCheckoutToggle.IsOn;
+            repositoryModel.AutoStashOnDirtyCheckout = autoStashToggle.IsOn;
+            repositoryModel.Task = taskTextBox.Text?.Trim() ?? string.Empty;
+            repositoryModel.TaskComment = taskCommentTextBox.Text?.Trim() ?? string.Empty;
+
+            _profileService.UpdateRepositoryProperties(repoGroupViewModel.ProfileName, repositoryModel);
+
+            UIRefresh(repoGroupViewModel.ProfileName);
+        }
+        private async Task ShowModelPropertiesAsync(ProfileEnvironmentViewModel environmentViewModel)
+        {
+            ProfileEnvironmentModel environmentModel = environmentViewModel.Model;
+
+            var mainFoToggle = new ToggleSwitch
+            {
+                IsOn = environmentModel.IsMainFOModel,
+                Header = "Main FO model (solution root)"
+            };
+
+            var contentPanel = new StackPanel
+            {
+                MinWidth = 400,
+                Spacing = 10,
+                Children =
+                {
+                    new TextBlock { Text = $"Model: {environmentModel.ModelName}" },
+                    mainFoToggle,
+
+                    new TextBlock { Text = $"Type: {environmentModel.ModelType}" },
+                    new TextBlock { Text = $"Root: {environmentModel.ModelRootFolder}" },
+                    new TextBlock { Text = $"Project: {environmentModel.ProjectFilePath}" },
+                    new TextBlock { Text = $"Metadata: {environmentModel.MetadataFolder}" },
+                    new TextBlock { Text = $"Compiled: {environmentModel.CompiledModelFolder}" }
+
+
+                }
+            };
+
+            var dialog = new ContentDialog
+            {
+                Title = "Model properties",
+                Content = contentPanel,
+                PrimaryButtonText = "Save",
+                CloseButtonText = "Cancel",
+                XamlRoot = this.Content.XamlRoot
+
+            };
+
+            var dialogResult = await dialog.ShowAsync();
+            if (dialogResult != ContentDialogResult.Primary)
+                return;
+
+            environmentModel.IsMainFOModel = mainFoToggle.IsOn;
+
+            _profileService.UpdateModelProperties(environmentViewModel.ProfileName, environmentModel);
+
+            UIRefresh(environmentViewModel.ProfileName);
+        }
+
+        private void UIRefresh(string profileName)
+        {
+            LoadModelListViewData(profileName);
+            CombinedList.ItemsSource = null;
+            LoadModelListViewData(profileName);
+            CombinedList.UpdateLayout();
+        }
     }
+
 }
 
 
