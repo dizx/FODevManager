@@ -213,7 +213,7 @@ namespace FODevManager.Services
 
             try
             {
-                if (!TryLoadExternalProfile(importPath, out var importedProfile))
+                if (!TryLoadExternalProfile(importPath, out var importedProfile, out var isLegacy))
                 {
                     MessageLogger.Error("CheckProfileModelChanges: Imported profile is invalid.");
                     return new ModelSyncResult();
@@ -229,7 +229,13 @@ namespace FODevManager.Services
 
                     if (diff.RemovedModels.Any())
                         MessageLogger.Info($"CheckProfileModelChanges: Removed models: {string.Join(", ", diff.RemovedModels)}");
-                }                
+                }
+
+                //TODO: This code can be removed in the future when we are sure legacy profiles are no longer in use
+                if (diff.IsLegacy && !diff.HasChanges)
+                {
+                    _fileService.SaveProfile(currentProfile, updateExternal: true);
+                }
 
                 return diff;
             }
@@ -300,7 +306,7 @@ namespace FODevManager.Services
 
             try
             {
-                if (!TryLoadExternalProfile(importPath, out var sourceProfile))
+                if (!TryLoadExternalProfile(importPath, out var sourceProfile, out var isLegacy))
                 {
                     MessageLogger.Error("Invalid profile file.");
                     return null!;
@@ -1118,9 +1124,10 @@ namespace FODevManager.Services
             return true;
         }
 
-        private static bool TryLoadExternalProfile(string filePath, out ProfileModel profile)
+        private static bool TryLoadExternalProfile(string filePath, out ProfileModel profile, out bool isLegacy)
         {
             profile = null!;
+            isLegacy = false;
 
             try
             {
@@ -1148,6 +1155,7 @@ namespace FODevManager.Services
                 if (legacyProfile == null || legacyProfile.ProfileName.IsNullOrEmpty())
                     return false;
 
+                isLegacy = true;
                 profile = legacyProfile;
                 return true;
             }

@@ -73,7 +73,7 @@ namespace FODevManager.Utils
             return Regex.Replace(
                 jsonText,
                 "\"Environments\"\\s*:",
-                "\"Models\":",
+                "\"StandaloneModels\":",
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         }
 
