@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using Microsoft.UI.Dispatching;
 using FODevManager.Messages;
 using Microsoft.UI.Xaml.Controls;
+using FODevManager.Utils;
 
 namespace FODevManager.WinUI.Framework
 {
@@ -33,7 +34,7 @@ namespace FODevManager.WinUI.Framework
                 foreach (var line in lines)
                 {
                     var text = line?.Trim();
-                    if (string.IsNullOrEmpty(text)) continue;
+                    if (text.IsNullOrEmpty()) continue;
 
                     if (RecentMessages.Count >= MaxMessages)
                         RecentMessages.RemoveAt(0);

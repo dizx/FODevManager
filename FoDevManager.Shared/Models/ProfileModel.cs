@@ -51,7 +51,7 @@ namespace FODevManager.Models
     {
         public static ProfileEnvironmentModel? FindModel(this ProfileModel profile, string modelName)
         {
-            if (profile == null || string.IsNullOrWhiteSpace(modelName))
+            if (profile == null || modelName.IsNullOrEmpty())
                 return null;
 
             return profile.AllModels.FirstOrDefault(model => model.ModelName.SameAs(modelName));
@@ -59,7 +59,7 @@ namespace FODevManager.Models
 
         public static ProfileModelEntry? FindModelEntry(this ProfileModel profile, string modelName)
         {
-            if (profile == null || string.IsNullOrWhiteSpace(modelName))
+            if (profile == null || modelName.IsNullOrEmpty())
                 return null;
 
             return profile.AllModelEntries.FirstOrDefault(model => model.ModelName.SameAs(modelName));
@@ -89,12 +89,12 @@ namespace FODevManager.Models
                         modelInRepo.ModelName.SameAs(model.ModelName) 
                         && modelInRepo.MetadataFolder.SameAs(model.MetadataFolder)));
 
-                if (repo != null && !string.IsNullOrWhiteSpace(repo.RepoRootFolder))
+                if (repo != null && !repo.RepoRootFolder.IsNullOrEmpty())
                     return repo.RepoRootFolder;
             }
 
             // Standalone/backwards compat
-            return string.IsNullOrWhiteSpace(model.ModelRootFolder) ? null : model.ModelRootFolder;
+            return model.ModelRootFolder.IsNullOrEmpty() ? null : model.ModelRootFolder;
         }
 
         /// <summary>
@@ -105,7 +105,7 @@ namespace FODevManager.Models
             if (profile == null)
                 throw new ArgumentNullException(nameof(profile));
 
-            if (string.IsNullOrWhiteSpace(modelName))
+            if (modelName.IsNullOrEmpty())
                 return null;
 
             // Prefer repository-backed model

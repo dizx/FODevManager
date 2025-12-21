@@ -190,7 +190,7 @@ namespace FODevManager.Services
                 return new ModelSyncResult();
             }
 
-            if (string.IsNullOrWhiteSpace(currentProfile.ProfileFilePath))
+            if (currentProfile.ProfileFilePath.IsNullOrEmpty())
             {
                 MessageLogger.Warning("CheckProfileModelChanges: ProfileFilePath is not set. Attempting first-time export to repo Artifacts...");
 
@@ -254,7 +254,7 @@ namespace FODevManager.Services
                 .AllModels
                 .FirstOrDefault(model =>
                     model.IsMainFOModel &&
-                    !string.IsNullOrWhiteSpace(model.ModelRootFolder));
+                    !model.ModelRootFolder.IsNullOrEmpty());
 
             if (mainFoModel == null)
             {
@@ -263,7 +263,7 @@ namespace FODevManager.Services
             }
 
             var repoRootFolder = currentProfile.TryGetRepoRootFolder(mainFoModel) ?? mainFoModel.ModelRootFolder;
-            if (string.IsNullOrWhiteSpace(repoRootFolder) || !Directory.Exists(repoRootFolder))
+            if (repoRootFolder.IsNullOrEmpty() || !Directory.Exists(repoRootFolder))
             {
                 MessageLogger.Error($"Profile export: Repo root folder not found: '{repoRootFolder}'.");
                 return false;
@@ -335,7 +335,7 @@ namespace FODevManager.Services
                 if (sourceProfile.SolutionFilePath.IsNullOrEmpty())
                 {
                     var mainFoModel = sourceProfile.AllModels
-                        .FirstOrDefault(model => model.IsMainFOModel && !string.IsNullOrWhiteSpace(model.ModelRootFolder));
+                        .FirstOrDefault(model => model.IsMainFOModel && !model.ModelRootFolder.IsNullOrEmpty());
 
                     if (mainFoModel != null)
                     {
@@ -716,7 +716,7 @@ namespace FODevManager.Services
                 return false;
 
             var folderName = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            if (string.IsNullOrWhiteSpace(folderName))
+            if (folderName.IsNullOrEmpty())
                 return false;
 
             var xref = Path.Combine(path, $"{folderName}.xref");
@@ -1136,7 +1136,7 @@ namespace FODevManager.Services
                 if (document.RootElement.TryGetProperty("ExportFormatVersion", out _))
                 {
                     var exportProfile = FileHelper.LoadJson<ExportProfileModel>(filePath);
-                    if (exportProfile == null || string.IsNullOrWhiteSpace(exportProfile.ProfileName))
+                    if (exportProfile == null || exportProfile.ProfileName.IsNullOrEmpty())
                         return false;
 
                     profile = ExportProfileMapper.FromExport(exportProfile, filePath);
@@ -1145,7 +1145,7 @@ namespace FODevManager.Services
 
                 // Legacy format
                 var legacyProfile = FileHelper.LoadJson<ProfileModel>(filePath);
-                if (legacyProfile == null || string.IsNullOrWhiteSpace(legacyProfile.ProfileName))
+                if (legacyProfile == null || legacyProfile.ProfileName.IsNullOrEmpty())
                     return false;
 
                 profile = legacyProfile;

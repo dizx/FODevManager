@@ -287,7 +287,7 @@ namespace FODevManager.Utils
                 string result;
                 if (RunGitCommand(repoPath, "status --porcelain", out result))
                 {
-                    return !string.IsNullOrWhiteSpace(result);
+                    return !result.IsNullOrEmpty();
                 }
             }
             catch (Exception ex)

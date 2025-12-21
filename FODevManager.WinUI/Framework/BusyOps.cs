@@ -18,18 +18,19 @@ namespace FODevManager.WinUI.Framework
         {
             var minVisibleMs = 2000;
             var busy = Singleton<BusyHandler>.Instance;
-            var opId = Guid.NewGuid();
+            var operationId = Guid.NewGuid();
             var stopWatch = Stopwatch.StartNew();
 
-            using (OperationScope.Begin(opId))
+            using (OperationScope.Begin(operationId))
             {
                 try
                 {
-                    busy.Start(operationName, opId);
+                    busy.Start(operationName, operationId);
                     await Task.Yield(); // let UI render overlay
-                    MessageLogger.Highlight($"▶ {operationName} started.");
 
                     ServiceHelper.StopW3SVC();
+
+                    MessageLogger.Highlight($"▶ {operationName} started.");
 
                     Singleton<W3cServiceState>.Instance.InOperation = true;
 
@@ -37,34 +38,34 @@ namespace FODevManager.WinUI.Framework
 
                     Singleton<W3cServiceState>.Instance.InOperation = false;
 
-                    ServiceHelper.StartW3SVC();
-
                     MessageLogger.Highlight($"✓ {operationName} completed.");
-                    return new(true, result);
+                    return new TryResult<T>(true, result);
                 }
                 catch (OperationCanceledException cancelException)
                 {
-                    // Optionally treat cancel differently from "hard" failures
                     MessageLogger.Warning($"⏹ {operationName} canceled: {cancelException.Message}");
-                    
-                    return new(false, fallback);
+                    return new TryResult<T>(false, fallback);
                 }
-                catch (Exception ex)
+                catch (Exception exception)
                 {
-                    MessageLogger.Error($"✖ {operationName} failed: {ex.Message}");
-                    Log.Error(ex.ToString());
-                    return new(false, fallback);
+                    MessageLogger.Error($"✖ {operationName} failed: {exception.Message}");
+                    Log.Error(exception.ToString());
+                    return new TryResult<T>(false, fallback);
                 }
                 finally
                 {
+                    Singleton<W3cServiceState>.Instance.InOperation = false;
+
+                    ServiceHelper.StartW3SVC();
 
                     stopWatch.Stop();
-                    var remaining = minVisibleMs - (int)stopWatch.ElapsedMilliseconds;
-                    if (remaining > 0)
+                    var remainingMilliseconds = minVisibleMs - (int)stopWatch.ElapsedMilliseconds;
+                    if (remainingMilliseconds > 0)
                     {
-                        await Task.Delay(remaining).ConfigureAwait(true); // keep UI ctx
+                        await Task.Delay(remainingMilliseconds).ConfigureAwait(true);
                     }
-                    busy.Stop(opId);
+
+                    busy.Stop(operationId);
                 }
             }
         }
@@ -74,43 +75,16 @@ namespace FODevManager.WinUI.Framework
 
         public static async Task<bool> TryCatchAsync(Func<Task> action, string operationName)
         {
-            var minVisibleMs = 750;
-            var busy = Singleton<BusyHandler>.Instance;
-            var opId = Guid.NewGuid();
-            var stopWatch = Stopwatch.StartNew();
-
-            using (OperationScope.Begin(opId))
-            {
-                try
+            var result = await TryCatchAsync(
+                async () =>
                 {
-                    busy.Start(operationName, opId);
-                    await Task.Yield(); // let UI render overlay
-                    MessageLogger.Highlight($"▶ {operationName} started.");
-
-                    await action();
-
-                    MessageLogger.Highlight($"✓ {operationName} completed.");
+                    await action().ConfigureAwait(true);
                     return true;
-                }
-                catch (Exception ex)
-                {
-                    MessageLogger.Error($"✖ {operationName} failed: {ex.Message}");
-                    Log.Error(ex.ToString());
-                    return false;
-                }
-                finally
-                {
-                    stopWatch.Stop();
+                },
+                operationName,
+                fallback: false).ConfigureAwait(true);
 
-                    var remaining = minVisibleMs - (int)stopWatch.ElapsedMilliseconds;
-                    if (remaining > 0)
-                    {
-                        await Task.Delay(remaining).ConfigureAwait(true); // stay on UI context after await
-                    }
-
-                    busy.Stop(opId);
-                }
-            }
+            return result.Ok;
         }
 
         // Overload for sync work

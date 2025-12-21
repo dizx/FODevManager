@@ -207,7 +207,7 @@ namespace FODevManager.WinUI
         {
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(30), token);
+                await Task.Delay(TimeSpan.FromSeconds(15), token);
 
                 while (!token.IsCancellationRequested)
                 {
@@ -390,7 +390,7 @@ namespace FODevManager.WinUI
                 if (result != ContentDialogResult.Primary)
                     return;
 
-                if (string.IsNullOrWhiteSpace(currentProfile.ProfileFilePath))
+                if (currentProfile.ProfileFilePath.IsNullOrEmpty())
                     return;
 
                 var updatedProfile = _profileService.ImportProfile(currentProfile.ProfileFilePath);
@@ -463,7 +463,7 @@ namespace FODevManager.WinUI
             if (btn.DataContext is not RepoGroupViewModel group) return;
 
             var anchorModel = group.Models.FirstOrDefault();
-            if (anchorModel is null || string.IsNullOrWhiteSpace(anchorModel.ModelName))
+            if (anchorModel is null || anchorModel.ModelName.IsNullOrEmpty())
             {
                 MessageLogger.Warning("⚠️ No model found in this repo group to open Git.");
                 return;
@@ -543,7 +543,7 @@ namespace FODevManager.WinUI
 
             var taskId = repoGroup.Repository?.Task;
 
-            if (string.IsNullOrWhiteSpace(taskId))
+            if (taskId.IsNullOrEmpty())
                 return;
 
             var url = $"{_appConfig.TaskUrl}/{taskId}";
@@ -628,7 +628,7 @@ namespace FODevManager.WinUI
             inputDialog.Content = inputBox;
 
             var result = await inputDialog.ShowAsync();
-            if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(inputBox.Text))
+            if (result == ContentDialogResult.Primary && !inputBox.Text.IsNullOrEmpty())
             {
                 var modelName = inputBox.Text.Trim();
 
@@ -649,7 +649,7 @@ namespace FODevManager.WinUI
 
                 var solutionPath = profile.SolutionFilePath;
 
-                if (!string.IsNullOrWhiteSpace(solutionPath) && System.IO.File.Exists(solutionPath))
+                if (!solutionPath.IsNullOrEmpty() && System.IO.File.Exists(solutionPath))
                 {
                     try
                     {
@@ -688,7 +688,7 @@ namespace FODevManager.WinUI
 
             var result = await dialog.ShowAsync();
 
-            if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(inputTextBox.Text))
+            if (result == ContentDialogResult.Primary && !inputTextBox.Text.IsNullOrEmpty())
             {
                 await CreateProfile(inputTextBox.Text);
                 LoadProfiles();
@@ -745,7 +745,7 @@ namespace FODevManager.WinUI
                 return;
 
             var repoUrl = urlTextBox.Text?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(repoUrl))
+            if (repoUrl.IsNullOrEmpty())
             {
                 MessageLogger.Warning("Import cancelled: URL was empty.");
                 return;
@@ -846,7 +846,7 @@ namespace FODevManager.WinUI
 
         private async void AddModel_Click(object sender, RoutedEventArgs e)
         {
-            if (ProfilesDropdown.SelectedItem is string profileName && !string.IsNullOrWhiteSpace(ModelPathTextBox.Text))
+            if (ProfilesDropdown.SelectedItem is string profileName && !ModelPathTextBox.Text.IsNullOrEmpty())
             {
                 var path = ModelPathTextBox.Text;
                 await AddModelToProfile(profileName, path);
@@ -1044,12 +1044,12 @@ namespace FODevManager.WinUI
 
         private async Task<bool> DeployModel(string profileName, string modelName)
         {
-            return await RunOperationAsync(() => _deploymentService.DeployModel(profileName, modelName), "Deploy models");
+            return await RunOperationAsync(() => _deploymentService.DeployModel(profileName, modelName), "Deploy model");
         }
 
         private async Task<bool> UnDeployModel(string profileName, string modelName)
         {
-            return await BusyOps.TrySyncAsAsync(() => _deploymentService.UnDeployModel(profileName, modelName), "Undeploy models");
+            return await RunOperationAsync(() => _deploymentService.UnDeployModel(profileName, modelName), "Undeploy model");
         }
 
         private async Task<bool> DeployAllModels(string profileName)
@@ -1101,7 +1101,7 @@ namespace FODevManager.WinUI
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(newDbString))
+            if (newDbString.IsNullOrEmpty())
             {
                 MessageLogger.Warning("Database name cannot be empty.");
                 DatabaseNameTextBox.Text = ActiveProfile.DatabaseName;

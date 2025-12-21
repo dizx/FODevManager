@@ -1,4 +1,5 @@
 using FODevManager.Models;
+using FODevManager.Utils;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -20,7 +21,7 @@ namespace FODevManager.WinUI.ViewModel
             var modelKeysInRepos = repositoryModels
                 .SelectMany(repo => repo.Models ?? new List<ProfileEnvironmentModel>())
                 .Select(model => CreateModelKey(model.ModelName, model.MetadataFolder))
-                .Where(key => !string.IsNullOrWhiteSpace(key))
+                .Where(key => !key.IsNullOrEmpty())
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             var non = items
@@ -51,7 +52,7 @@ namespace FODevManager.WinUI.ViewModel
                             .ToList();
                     }
 
-                    var displayName = !string.IsNullOrWhiteSpace(repo.DisplayName)
+                    var displayName = !repo.DisplayName.IsNullOrEmpty()
                         ? repo.DisplayName
                         : ExtractRepoName(repo.GitUrl ?? repo.RepoRootFolder);
 
@@ -78,17 +79,17 @@ namespace FODevManager.WinUI.ViewModel
             var normalizedModelName = (modelName ?? string.Empty).Trim();
             var normalizedMetadataFolder = (metadataFolder ?? string.Empty).Trim();
 
-            if (string.IsNullOrWhiteSpace(normalizedModelName))
+            if (normalizedModelName.IsNullOrEmpty())
                 return string.Empty;
 
-            return string.IsNullOrWhiteSpace(normalizedMetadataFolder)
+            return normalizedMetadataFolder.IsNullOrEmpty()
                 ? normalizedModelName
                 : $"{normalizedModelName}|{normalizedMetadataFolder}";
         }
 
         private static string ExtractRepoName(string input)
         {
-            if (string.IsNullOrWhiteSpace(input)) return string.Empty;
+            if (input.IsNullOrEmpty()) return string.Empty;
 
             var normalizedInput = input.Trim().Trim('"', '\'').Replace('\\', '/');
 
@@ -125,7 +126,7 @@ namespace FODevManager.WinUI.ViewModel
                 if (lastSlash >= 0 && lastSlash + 1 < normalizedInput.Length)
                 {
                     var tail = normalizedInput.Substring(lastSlash + 1);
-                    if (string.IsNullOrWhiteSpace(tail))
+                    if (tail.IsNullOrEmpty())
                     {
                         var previousSlash = normalizedInput.LastIndexOf('/', Math.Max(0, lastSlash - 1));
                         if (previousSlash >= 0 && previousSlash + 1 < lastSlash)
@@ -142,7 +143,7 @@ namespace FODevManager.WinUI.ViewModel
 
         private static string TrimGitSuffix(string name)
         {
-            if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+            if (name.IsNullOrEmpty()) return string.Empty;
 
             var trimmedName = name.Trim();
             if (trimmedName.EndsWith(".git"))

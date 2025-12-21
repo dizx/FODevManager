@@ -121,7 +121,7 @@ namespace FODevManager.Utils
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(url))
+                if (url.IsNullOrEmpty())
                 {
                     MessageLogger.Warning("⚠ No URL specified.");
                     return;

@@ -48,7 +48,7 @@ namespace FODevManager.WinUI.ViewModel
                     }
 
                     IsBusy = isBusy;
-                    if (!string.IsNullOrWhiteSpace(text))
+                    if (!text.IsNullOrEmpty())
                         BusyText = text!;
                 });
             };

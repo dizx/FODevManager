@@ -60,7 +60,7 @@ namespace FODevManager.Utils
 
         private static string NormalizeLegacyProfileJson(string jsonText)
         {
-            if (string.IsNullOrWhiteSpace(jsonText))
+            if (jsonText.IsNullOrEmpty())
                 return jsonText;
 
             var hasEnvironments = jsonText.IndexOf("\"Environments\"", StringComparison.OrdinalIgnoreCase) >= 0;

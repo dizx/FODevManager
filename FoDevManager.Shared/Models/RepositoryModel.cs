@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System;
 using System.Security.Cryptography;
+using FODevManager.Utils;
 
 
 namespace FODevManager.Models
@@ -39,7 +40,7 @@ namespace FODevManager.Models
         public string GetRepoKey()
         {
             var gitUrl = (GitUrl ?? string.Empty).Trim();
-            if (!string.IsNullOrWhiteSpace(gitUrl))
+            if (!gitUrl.IsNullOrEmpty())
                 return NormalizeKey(gitUrl);
 
             var repoRootFolder = (RepoRootFolder ?? string.Empty).Trim();
@@ -48,11 +49,11 @@ namespace FODevManager.Models
 
         public void EnsureRepoId()
         {
-            if (!string.IsNullOrWhiteSpace(RepoId))
+            if (!RepoId.IsNullOrEmpty())
                 return;
 
             var repoKey = GetRepoKey();
-            if (string.IsNullOrWhiteSpace(repoKey))
+            if (repoKey.IsNullOrEmpty())
                 return;
 
             RepoId = CreateRepoIdFromRepoKey(repoKey);
@@ -83,26 +84,26 @@ namespace FODevManager.Models
 
         public void EnsureDisplayName()
         {
-            if (!string.IsNullOrWhiteSpace(DisplayName))
+            if (!DisplayName.IsNullOrEmpty())
                 return;
 
             var fromGitUrl = TryExtractRepoNameFromGitUrl(GitUrl);
-            if (!string.IsNullOrWhiteSpace(fromGitUrl))
+            if (!fromGitUrl.IsNullOrEmpty())
             {
                 DisplayName = fromGitUrl;
                 return;
             }
 
             var fromFolder = TryExtractRepoNameFromFolder(RepoRootFolder);
-            if (!string.IsNullOrWhiteSpace(fromFolder))
-            {
+            if (!fromFolder.IsNullOrEmpty())
+            { 
                 DisplayName = fromFolder;
                 return;
             }
         }
         public static string? TryExtractRepoNameFromGitUrl(string? gitUrl)
         {
-            if (string.IsNullOrWhiteSpace(gitUrl))
+            if (gitUrl.IsNullOrEmpty())
                 return null;
 
             var normalized = gitUrl.Trim().Trim('"', '\'').Replace('\\', '/').TrimEnd('/');
@@ -147,18 +148,18 @@ namespace FODevManager.Models
 
         public static string? TryExtractRepoNameFromFolder(string? repoRootFolder)
         {
-            if (string.IsNullOrWhiteSpace(repoRootFolder))
+            if (repoRootFolder.IsNullOrEmpty())
                 return null;
 
             var trimmed = repoRootFolder.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
             var name = Path.GetFileName(trimmed);
-            return string.IsNullOrWhiteSpace(name) ? null : name;
+            return name.IsNullOrEmpty() ? null : name;
         }
 
         private static string TrimGitSuffix(string name)
         {
-            if (string.IsNullOrWhiteSpace(name))
+            if (name.IsNullOrEmpty())
                 return string.Empty;
 
             var trimmed = name.Trim();

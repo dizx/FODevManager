@@ -318,7 +318,7 @@ namespace FODevManager.Services
             try
             {
                 var repoRootFolder = (repository.RepoRootFolder ?? string.Empty).Trim();
-                if (string.IsNullOrWhiteSpace(repoRootFolder))
+                if (repoRootFolder.IsNullOrEmpty())
                 {
                     MessageLogger.Warning($"❌ Repository root folder is missing for model '{modelName}'.");
                     return false;
@@ -727,7 +727,7 @@ namespace FODevManager.Services
                 return false;
             }
 
-            if (string.IsNullOrWhiteSpace(periTask))
+            if (periTask.IsNullOrEmpty())
             {
                 MessageLogger.Warning("⚠️ Task cannot be empty.");
                 return false;
@@ -750,13 +750,13 @@ namespace FODevManager.Services
 
             var branchPrefix = $"feature/task-{periTask}";
             var slug = Slugify(comment, 255, branchPrefix + "-");
-            var fullBranch = string.IsNullOrWhiteSpace(slug)
+            var fullBranch = slug.IsNullOrEmpty()
                 ? branchPrefix
                 : $"{branchPrefix}-{slug}";
 
             var repoPath = profile.TryGetRepoRootFolder(model);
 
-            if (string.IsNullOrWhiteSpace(repoPath) || !Directory.Exists(repoPath))
+            if (repoPath.IsNullOrEmpty() || !Directory.Exists(repoPath))
             {
                 MessageLogger.Warning($"⚠️ Repo root folder not found for '{model.ModelName}'. Skipping branch switch.");
                 return true;
@@ -813,7 +813,7 @@ namespace FODevManager.Services
                 : $"{branchPrefix}-{slug}";
 
             var repoPath = (repository.RepoRootFolder ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(repoPath) || !Directory.Exists(repoPath))
+            if (repoPath.IsNullOrEmpty() || !Directory.Exists(repoPath))
             {
                 MessageLogger.Warning($"⚠️ Repo root folder not found for repo '{repository.DisplayName}'. Skipping branch switch.");
                 return true;
@@ -844,7 +844,7 @@ namespace FODevManager.Services
 
         private static string Slugify(string input, int maxTotalLength, string branchPrefix)
         {
-            if (string.IsNullOrWhiteSpace(input))
+            if (input.IsNullOrEmpty())
                 return string.Empty;
 
             var invalidChars = Path.GetInvalidFileNameChars().ToHashSet();
