@@ -918,7 +918,7 @@ namespace FODevManager.WinUI
 
             var productName = "FO Dev Manager";
 
-            UIMessageHelper.LogToUI($"ℹ️ {productName} {version} BETA  🛠️ Build date: {buildDate}");
+            UIMessageHelper.LogToUI($"ℹ️ {productName} {version} 🛠️ Build date: {buildDate}");
         }
 
         private async void ShowAboutDialog_Click(object sender, RoutedEventArgs e)
@@ -939,7 +939,7 @@ namespace FODevManager.WinUI
                 FontWeight = FontWeights.Bold
             });
 
-            contentPanel.Children.Add(new TextBlock { Text = $"Version: {version} BETA" });
+            contentPanel.Children.Add(new TextBlock { Text = $"Version: {version}" });
             contentPanel.Children.Add(new TextBlock { Text = $"Build Date: {buildDate}" });
 
             contentPanel.Children.Add(new TextBlock
