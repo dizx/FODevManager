@@ -986,7 +986,6 @@ namespace FODevManager.Services
 
                 var messageLines = new List<string>
                 {
-                    "FO Dev Manager release ",
                     $"Tag: {tagName}",
                     $"Profile: {profile.ProfileName}",
                     $"Created by: {createdBy}",

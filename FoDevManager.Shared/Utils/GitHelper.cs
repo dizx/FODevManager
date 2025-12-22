@@ -779,10 +779,46 @@ namespace FODevManager.Utils
 
         private static string ConvertToHttpsUrl(string url)
         {
-            if (url.StartsWith("git@"))
-                return Regex.Replace(url, @"git@([^:]+):(.+).git", "https://$1/$2");
-            return url;
+            if (url.IsNullOrEmpty())
+                return url;
+
+            var normalizedUrl = url;
+
+            // SSH style: git@host:org/repo.git  -> https://host/org/repo
+            if (normalizedUrl.StartsWith("git@", StringComparison.OrdinalIgnoreCase))
+            {
+                normalizedUrl = Regex.Replace(
+                    normalizedUrl,
+                    @"git@([^:]+):(.+?)\.git$",
+                    "https://$1/$2",
+                    RegexOptions.IgnoreCase);
+            }
+
+            // Strip user-info from https://user@host/...
+            normalizedUrl = StripUrlUserInfo(normalizedUrl);
+
+            return normalizedUrl;
         }
+
+        private static string StripUrlUserInfo(string url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                return url;
+
+            if (uri.UserInfo.IsNullOrEmpty())
+                return url;
+
+            var uriBuilder = new UriBuilder(uri)
+            {
+                UserName = string.Empty,
+                Password = string.Empty
+            };
+
+            return uriBuilder.Uri.ToString();
+        }
+
+
+
         private static void OpenUrl(string url)
         {
             try
