@@ -1168,7 +1168,7 @@ namespace FODevManager.WinUI
             await EnsureMergedWithMainAsync(repoGroup.Repository);
         }
 
-        private async void GitResetProfile_Click(object sender, RoutedEventArgs e)
+        private async void GitActions_ResetToMain_Click(object sender, RoutedEventArgs routedEventArgs)
         {
             if (ProfilesDropdown.SelectedItem is not string profileName)
                 return;
@@ -1179,7 +1179,7 @@ namespace FODevManager.WinUI
 
             var confirm = await DialogHelper.ConfirmAsync(
                 this,
-                "Git reset profile",
+                "Reset to Main",
                 "This will go through all repositories in the profile.\n\n" +
                 "• Stash any uncommitted changes\n" +
                 "• Checkout main\n" +
@@ -1189,11 +1189,40 @@ namespace FODevManager.WinUI
             if (!confirm)
                 return;
 
-            await RunOperationAsync(() => _profileService.GitResetProfile(profile), "Git reset profile");
+            await RunOperationAsync(() => _profileService.GitResetProfile(profile), "Reset to Main");
 
             // Reload view models (branch info, grouping, etc.)
             UIRefresh(profileName);
         }
+
+        private async void GitActions_TagRelease_Click(object sender, RoutedEventArgs routedEventArgs)
+        {
+            if (ProfilesDropdown.SelectedItem is not string profileName)
+                return;
+
+            var profile = LoadProfileByName(profileName);
+            if (profile == null)
+                return;
+
+            var nowLocal = DateTime.Now;
+            
+            var confirm = await DialogHelper.ConfirmAsync(
+                this,
+                "Tag Release",
+                "This will tag *all* repositories in the profile.\n\n" +                
+                "Rules:\n" +
+                "• Must be on main or a release branch\n" +
+                "• Must have no uncommitted changes\n\n" +
+                "Continue?");
+
+            if (!confirm)
+                return;
+
+            await RunOperationAsync(() => _profileService.TagReleaseProfile(profile), "Tag Release");
+
+            UIRefresh(profileName);
+        }
+
 
 
 

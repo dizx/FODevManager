@@ -930,6 +930,101 @@ namespace FODevManager.Services
             return true;
         }
 
+        public bool TagReleaseProfile(ProfileModel profile)
+        {
+            if (profile == null)
+                throw new ArgumentNullException(nameof(profile));
+
+            if (profile.Repositories == null || profile.Repositories.Count == 0)
+            {
+                MessageLogger.Warning("⚠️ Tag release: profile has no repositories.");
+                return false;
+            }
+
+            var tagName = $"Release-{DateTime.UtcNow:yyyy-MM-dd}";
+            
+            var firstGitRepoPath = profile.Repositories?
+                .FirstOrDefault(r => r?.RepoRootFolder.IsNullOrEmpty() == false && GitHelper.IsGitRepository(r.RepoRootFolder))
+                ?.RepoRootFolder;
+
+            var createdBy = firstGitRepoPath.IsNullOrEmpty()
+                ? $"{Environment.UserDomainName}\\{Environment.UserName}"
+                : GitHelper.GetGitUserEmailOrFallback(firstGitRepoPath);
+
+            var succeeded = 0;
+            var failedRepos = new List<string>();
+
+            MessageLogger.Highlight($"🏷️ Tag release: {profile.ProfileName} → {tagName}");
+
+            foreach (var repository in profile.Repositories)
+            {
+                if (repository?.RepoRootFolder.IsNullOrEmpty() != false)
+                    continue;
+
+                if (!GitHelper.IsGitRepository(repository.RepoRootFolder))
+                    continue;
+
+                var mainBranchName = repository.MainBranchName.IsNullOrEmpty() ? "main" : repository.MainBranchName;
+                var activeBranch = GitHelper.GetActiveBranch(repository.RepoRootFolder) ?? string.Empty;
+
+                var isOnMain = activeBranch.Equals(mainBranchName, StringComparison.OrdinalIgnoreCase);
+                var isOnRelease = GitHelper.IsReleaseBranchName(activeBranch);
+
+                if (!isOnMain && !isOnRelease)
+                {
+                    MessageLogger.Error($"❌ {repository.DisplayName}: not on main/release branch (current: '{activeBranch}').");
+                    failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
+                    continue;
+                }
+
+                if (GitHelper.HasUncommittedChanges(repository.RepoRootFolder))
+                {
+                    MessageLogger.Error($"❌ {repository.DisplayName}: has uncommitted changes. Tagging aborted for this repo.");
+                    failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
+                    continue;
+                }
+
+                var messageLines = new List<string>
+                {
+                    "FO Dev Manager release ",
+                    $"Tag: {tagName}",
+                    $"Profile: {profile.ProfileName}",
+                    $"Created by: {createdBy}",
+                    $"Branch: {activeBranch}",
+                    $"Created at: {DateTime.Now:yyyy-MM-dd HH:mm:ss}"
+                };
+
+                MessageLogger.Info($"➡️ {repository.DisplayName}: create tag → push");
+
+                var created = GitHelper.CreateTag(repository.RepoRootFolder, tagName, messageLines);
+                if (!created)
+                {
+                    failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
+                    continue;
+                }
+
+                // Push tag to origin 
+                if (!GitHelper.PushTag(repository.RepoRootFolder, tagName, "origin"))
+                {
+                    failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
+                    continue;
+                }
+
+                succeeded++;
+            }
+
+            if (failedRepos.Count > 0)
+            {
+                MessageLogger.Warning($"⚠️ Tag release finished with errors. OK: {succeeded}, Failed: {failedRepos.Count}");
+                MessageLogger.Warning($"Failed repos: {string.Join(", ", failedRepos)}");
+                return false;
+            }
+
+            MessageLogger.Highlight($"✅ Tag release finished. Repos tagged: {succeeded}");
+            return true;
+        }
+
+
         public void RemoveModelFromProfile(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
