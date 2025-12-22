@@ -8,6 +8,8 @@ namespace FODevManager.Shared.Models
 {
     public sealed class ModelSyncResult
     {
+        public bool IsLegacy { get; set; }
+
         public bool HasChanges => AddedModels.Any() || RemovedModels.Any();
 
         public IReadOnlyList<string> AddedModels => _addedModels;

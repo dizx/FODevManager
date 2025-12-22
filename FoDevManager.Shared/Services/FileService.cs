@@ -111,7 +111,8 @@ namespace FODevManager.Services
                 var exportProfile = ExportProfileMapper.ToExport(profile);
 
                 FileHelper.SaveJson(externalSavePath, exportProfile);
-            }}
+            }
+        }
 
         public static T SerializedClone<T>(T objectToClone) where T  : notnull        
         {

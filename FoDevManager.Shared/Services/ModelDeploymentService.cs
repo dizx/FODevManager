@@ -40,7 +40,7 @@ namespace FODevManager.Services
 
         public void DeployModel(string profileName, string modelName)
         {
-            MessageLogger.Info("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
+            
             ServiceHelper.StopW3SVC();
 
             try
@@ -56,14 +56,12 @@ namespace FODevManager.Services
             }
             finally
             {
-                MessageLogger.Info("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
                 ServiceHelper.StartW3SVC();
             }
         }
 
         public bool DeployAllUndeployedModels(string profileName)
         {
-            MessageLogger.Info("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
             ServiceHelper.StopW3SVC();
 
             try
@@ -102,7 +100,6 @@ namespace FODevManager.Services
             }
             finally
             {
-                MessageLogger.Info("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
                 ServiceHelper.StartW3SVC();
                 
             }
@@ -111,7 +108,6 @@ namespace FODevManager.Services
 
         public void UnDeployModel(string profileName, string modelName)
         {
-            MessageLogger.Info("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
             ServiceHelper.StopW3SVC();
 
             try
@@ -148,14 +144,12 @@ namespace FODevManager.Services
             }
             finally
             {
-                MessageLogger.Info("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
                 ServiceHelper.StartW3SVC();
             }
         }
 
         public void UnDeployAllModels(string profileName)
         {
-            MessageLogger.Info("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
             ServiceHelper.StopW3SVC();
 
             try
@@ -191,7 +185,6 @@ namespace FODevManager.Services
             }
             finally
             {
-                MessageLogger.Info("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
                 ServiceHelper.StartW3SVC();
             }
         }
@@ -221,7 +214,7 @@ namespace FODevManager.Services
                 if (Directory.Exists(linkPath))
                 {
                     MessageLogger.Highlight($"Removing existing link: {linkPath}");
-                    Directory.Delete(linkPath);
+                    Directory.Delete(linkPath, recursive: true);
                 }
 
                 Directory.CreateSymbolicLink(linkPath, sourcePath);
@@ -273,7 +266,7 @@ namespace FODevManager.Services
                 
                 if (model.IsDeployed == false)
                 {
-                    profile.FindModel(modelName)!.IsDeployed = true;
+                    profile.FindModel(modelName)!.IsDeployed = false;
                     
                     if (updateProfile) _fileService.SaveProfile(profile);                    
                 }
@@ -291,14 +284,18 @@ namespace FODevManager.Services
             if (updateProfile) _fileService.SaveProfile(profile);
         }
 
-        public bool IsModelActuallyDeployed(ProfileEnvironmentModel env)
+        public bool IsModelActuallyDeployed(ProfileEnvironmentModel environmentModel)
         {
-            if (env.ModelRootFolder.IsNullOrEmpty())
-            {
-                return Directory.Exists(env.ModelRootFolder);
-            }
-            return false;
+            if (environmentModel == null)
+                return false;
+
+            if (environmentModel.ModelName.IsNullOrEmpty())
+                return false;
+
+            var deploymentLinkPath = Path.Combine(_deploymentBasePath, environmentModel.ModelName);
+            return Directory.Exists(deploymentLinkPath);
         }
+
 
         public bool CheckIfGitRepository(string profileName, string modelName)
         {
@@ -321,7 +318,7 @@ namespace FODevManager.Services
             try
             {
                 var repoRootFolder = (repository.RepoRootFolder ?? string.Empty).Trim();
-                if (string.IsNullOrWhiteSpace(repoRootFolder))
+                if (repoRootFolder.IsNullOrEmpty())
                 {
                     MessageLogger.Warning($"❌ Repository root folder is missing for model '{modelName}'.");
                     return false;
@@ -522,7 +519,6 @@ namespace FODevManager.Services
 
                 if (Directory.Exists(sourceModelPath))
                 {
-                    MessageLogger.Info("🛑 Stopping W3SVC to release locks on AOS folder...");
                     ServiceHelper.StopW3SVC();
 
                     MessageLogger.Info($"🗑️ Deleting installed model folder: {sourceModelPath}");
@@ -731,7 +727,7 @@ namespace FODevManager.Services
                 return false;
             }
 
-            if (string.IsNullOrWhiteSpace(periTask))
+            if (periTask.IsNullOrEmpty())
             {
                 MessageLogger.Warning("⚠️ Task cannot be empty.");
                 return false;
@@ -754,13 +750,13 @@ namespace FODevManager.Services
 
             var branchPrefix = $"feature/task-{periTask}";
             var slug = Slugify(comment, 255, branchPrefix + "-");
-            var fullBranch = string.IsNullOrWhiteSpace(slug)
+            var fullBranch = slug.IsNullOrEmpty()
                 ? branchPrefix
                 : $"{branchPrefix}-{slug}";
 
             var repoPath = profile.TryGetRepoRootFolder(model);
 
-            if (string.IsNullOrWhiteSpace(repoPath) || !Directory.Exists(repoPath))
+            if (repoPath.IsNullOrEmpty() || !Directory.Exists(repoPath))
             {
                 MessageLogger.Warning($"⚠️ Repo root folder not found for '{model.ModelName}'. Skipping branch switch.");
                 return true;
@@ -817,7 +813,7 @@ namespace FODevManager.Services
                 : $"{branchPrefix}-{slug}";
 
             var repoPath = (repository.RepoRootFolder ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(repoPath) || !Directory.Exists(repoPath))
+            if (repoPath.IsNullOrEmpty() || !Directory.Exists(repoPath))
             {
                 MessageLogger.Warning($"⚠️ Repo root folder not found for repo '{repository.DisplayName}'. Skipping branch switch.");
                 return true;
@@ -848,7 +844,7 @@ namespace FODevManager.Services
 
         private static string Slugify(string input, int maxTotalLength, string branchPrefix)
         {
-            if (string.IsNullOrWhiteSpace(input))
+            if (input.IsNullOrEmpty())
                 return string.Empty;
 
             var invalidChars = Path.GetInvalidFileNameChars().ToHashSet();

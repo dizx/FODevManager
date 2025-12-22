@@ -54,11 +54,10 @@ namespace FODevManager.WinUI
         public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService, AppConfig appConfig)
         {
             this.InitializeComponent();
-            this.Activated += MainWindow_Activated;
-
+            
             BusyOverlayVm = new BusyOverlayViewModel();
+            
             this.Activated += MainWindow_Activated;
-
             this.Closed += MainWindow_Closed;
 
             Singleton<Engine>.Instance.EnvironmentType = EnvironmentType.WinUi;
@@ -208,7 +207,7 @@ namespace FODevManager.WinUI
         {
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(30), token);
+                await Task.Delay(TimeSpan.FromSeconds(15), token);
 
                 while (!token.IsCancellationRequested)
                 {
@@ -306,10 +305,9 @@ namespace FODevManager.WinUI
             }
         }
 
-
         private async Task<bool> EnsureMergedWithMainAsync(RepositoryModel repository)
         {
-            if (!GitHelper.HasMainChanges(repository.RepoRootFolder))
+            if (!GitHelper.HasMainChanges(repository.RepoRootFolder, repository.MainBranchName))
                 return true;
 
             await _mergePromptSemaphore.WaitAsync();
@@ -337,8 +335,6 @@ namespace FODevManager.WinUI
 
         }
 
-
-
         private bool ShouldRunBackgroundTask()
         {
             var busyHandler = Singleton<BusyHandler>.Instance;
@@ -349,7 +345,6 @@ namespace FODevManager.WinUI
             var timeSinceBusyEnded = DateTime.UtcNow - busyHandler.LastBusyEndedUtc;
             return timeSinceBusyEnded >= TimeSpan.FromSeconds(30);
         }
-
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
@@ -395,7 +390,7 @@ namespace FODevManager.WinUI
                 if (result != ContentDialogResult.Primary)
                     return;
 
-                if (string.IsNullOrWhiteSpace(currentProfile.ProfileFilePath))
+                if (currentProfile.ProfileFilePath.IsNullOrEmpty())
                     return;
 
                 var updatedProfile = _profileService.ImportProfile(currentProfile.ProfileFilePath);
@@ -410,27 +405,32 @@ namespace FODevManager.WinUI
             }
         }
 
-
         private void LoadModelListViewData(string profileName)
         {
             var profile = _profileService.LoadProfile(profileName);
+            if (profile == null)
+            {
+                MessageLogger.Error($"LoadModelListViewData: Could not load profile '{profileName}'.");
+                CombinedList.ItemsSource = new List<object>();
+                return;
+            }
 
-            var modelVms = _profileService
+            var modelViewModels = _profileService
                 .GetModelsInProfile(profileName)
                 .Select(model => model.ToViewModel(profile.ProfileName))
                 .ToList();
 
-            _groupingVm = new ModelsGroupingViewModel(profile, modelVms);
+            _groupingVm = new ModelsGroupingViewModel(profile, modelViewModels);
 
-            var active = _groupingVm.GitGroups.FirstOrDefault();
-            if (active != null)
-                active.IsExpanded = true;
+            var firstRepoGroup = _groupingVm.GitGroups.FirstOrDefault();
+            if (firstRepoGroup != null)
+                firstRepoGroup.IsExpanded = true;
 
-            var combined = new List<object>();
-            combined.AddRange(_groupingVm.GitGroups);
-            combined.AddRange(_groupingVm.NonGitModels);
+            var combinedItems = new List<object>();
+            combinedItems.AddRange(_groupingVm.GitGroups);
+            combinedItems.AddRange(_groupingVm.NonGitModels);
 
-            CombinedList.ItemsSource = combined;
+            CombinedList.ItemsSource = combinedItems;
         }
 
 
@@ -463,7 +463,7 @@ namespace FODevManager.WinUI
             if (btn.DataContext is not RepoGroupViewModel group) return;
 
             var anchorModel = group.Models.FirstOrDefault();
-            if (anchorModel is null || string.IsNullOrWhiteSpace(anchorModel.ModelName))
+            if (anchorModel is null || anchorModel.ModelName.IsNullOrEmpty())
             {
                 MessageLogger.Warning("⚠️ No model found in this repo group to open Git.");
                 return;
@@ -471,7 +471,6 @@ namespace FODevManager.WinUI
 
             OpenGitRepo(profileName, anchorModel.ModelName);
         }
-
 
         private async void AssignTask_ForRepo_Click(object sender, RoutedEventArgs eventArgs)
         {
@@ -534,7 +533,6 @@ namespace FODevManager.WinUI
             LoadModelListViewData(profileName);
         }
 
-
         private void OpenTask_ForRepo_Click(object sender, RoutedEventArgs eventArgs)
         {
             if (sender is not Button button)
@@ -543,26 +541,14 @@ namespace FODevManager.WinUI
             if (button.DataContext is not RepoGroupViewModel repoGroup)
                 return;
 
-            var periTaskId = repoGroup.Repository?.Task;
+            var taskId = repoGroup.Repository?.Task;
 
-            if (string.IsNullOrWhiteSpace(periTaskId))
+            if (taskId.IsNullOrEmpty())
                 return;
 
-            var url = $"{_appConfig.TaskUrl}/{periTaskId}";
+            var url = $"{_appConfig.TaskUrl}/{taskId}";
             ServiceHelper.OpenUrl(url);
         }
-
-
-
-        private void OpenTask_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is Button button && button.Tag is string taskId && !string.IsNullOrWhiteSpace(taskId))
-            {
-                var url = $"{_appConfig.TaskUrl}/{taskId}";
-                ServiceHelper.OpenUrl(url);
-            }
-        }
-
 
         private async void DeployModel_Click(object sender, RoutedEventArgs e)
         {
@@ -593,8 +579,6 @@ namespace FODevManager.WinUI
                 }
             }
         }
-
-
 
         public static T? FindVisualChild<T>(DependencyObject parent, string? name = null) where T : DependencyObject
         {
@@ -644,7 +628,7 @@ namespace FODevManager.WinUI
             inputDialog.Content = inputBox;
 
             var result = await inputDialog.ShowAsync();
-            if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(inputBox.Text))
+            if (result == ContentDialogResult.Primary && !inputBox.Text.IsNullOrEmpty())
             {
                 var modelName = inputBox.Text.Trim();
 
@@ -665,7 +649,7 @@ namespace FODevManager.WinUI
 
                 var solutionPath = profile.SolutionFilePath;
 
-                if (!string.IsNullOrWhiteSpace(solutionPath) && System.IO.File.Exists(solutionPath))
+                if (!solutionPath.IsNullOrEmpty() && System.IO.File.Exists(solutionPath))
                 {
                     try
                     {
@@ -682,7 +666,6 @@ namespace FODevManager.WinUI
                 }
             }
         }
-
 
         private void UpdateStatus(string message)
         {
@@ -705,7 +688,7 @@ namespace FODevManager.WinUI
 
             var result = await dialog.ShowAsync();
 
-            if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(inputTextBox.Text))
+            if (result == ContentDialogResult.Primary && !inputTextBox.Text.IsNullOrEmpty())
             {
                 await CreateProfile(inputTextBox.Text);
                 LoadProfiles();
@@ -762,7 +745,7 @@ namespace FODevManager.WinUI
                 return;
 
             var repoUrl = urlTextBox.Text?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(repoUrl))
+            if (repoUrl.IsNullOrEmpty())
             {
                 MessageLogger.Warning("Import cancelled: URL was empty.");
                 return;
@@ -787,7 +770,6 @@ namespace FODevManager.WinUI
             LoadProfiles(importedProfile.ProfileName);
 
         }
-
 
         private async void DeployProfile_Click(object sender, RoutedEventArgs e)
         {
@@ -837,7 +819,6 @@ namespace FODevManager.WinUI
 
             if (await SwitchProfile(newProfile))
             {
-                UIMessageHelper.LogToUI($"✅ Switched to profile '{newProfile}'");
                 SetSelectedProfile(LoadProfileByName(newProfile));
             }
             else
@@ -865,7 +846,7 @@ namespace FODevManager.WinUI
 
         private async void AddModel_Click(object sender, RoutedEventArgs e)
         {
-            if (ProfilesDropdown.SelectedItem is string profileName && !string.IsNullOrWhiteSpace(ModelPathTextBox.Text))
+            if (ProfilesDropdown.SelectedItem is string profileName && !ModelPathTextBox.Text.IsNullOrEmpty())
             {
                 var path = ModelPathTextBox.Text;
                 await AddModelToProfile(profileName, path);
@@ -937,7 +918,7 @@ namespace FODevManager.WinUI
 
             var productName = "FO Dev Manager";
 
-            UIMessageHelper.LogToUI($"ℹ️ {productName} {version} BETA  🛠️ Build date: {buildDate}");
+            UIMessageHelper.LogToUI($"ℹ️ {productName} {version} 🛠️ Build date: {buildDate}");
         }
 
         private async void ShowAboutDialog_Click(object sender, RoutedEventArgs e)
@@ -958,7 +939,7 @@ namespace FODevManager.WinUI
                 FontWeight = FontWeights.Bold
             });
 
-            contentPanel.Children.Add(new TextBlock { Text = $"Version: {version} BETA" });
+            contentPanel.Children.Add(new TextBlock { Text = $"Version: {version}" });
             contentPanel.Children.Add(new TextBlock { Text = $"Build Date: {buildDate}" });
 
             contentPanel.Children.Add(new TextBlock
@@ -1041,13 +1022,12 @@ namespace FODevManager.WinUI
         {
             var (ok, importedProfile) = await BusyOps.TrySyncAsAsync(() => _profileService.ImportProfile(importPath), "Import profile");
 
-            if (ok)
-            {
+            if (ok && importedProfile != null && !importedProfile.ProfileName.IsNullOrEmpty())
                 return importedProfile.ProfileName;
-            }
 
             return string.Empty;
         }
+
 
         private async Task<bool> CheckProfile(string profileName)
         {
@@ -1064,12 +1044,12 @@ namespace FODevManager.WinUI
 
         private async Task<bool> DeployModel(string profileName, string modelName)
         {
-            return await RunOperationAsync(() => _deploymentService.DeployModel(profileName, modelName), "Deploy models");
+            return await RunOperationAsync(() => _deploymentService.DeployModel(profileName, modelName), "Deploy model");
         }
 
         private async Task<bool> UnDeployModel(string profileName, string modelName)
         {
-            return await BusyOps.TrySyncAsAsync(() => _deploymentService.UnDeployModel(profileName, modelName), "Undeploy models");
+            return await RunOperationAsync(() => _deploymentService.UnDeployModel(profileName, modelName), "Undeploy model");
         }
 
         private async Task<bool> DeployAllModels(string profileName)
@@ -1121,7 +1101,7 @@ namespace FODevManager.WinUI
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(newDbString))
+            if (newDbString.IsNullOrEmpty())
             {
                 MessageLogger.Warning("Database name cannot be empty.");
                 DatabaseNameTextBox.Text = ActiveProfile.DatabaseName;
@@ -1156,16 +1136,7 @@ namespace FODevManager.WinUI
                 MessageLogger.Highlight($"✅ Database name updated to: {newDbString}");
             });
         }
-
-        private async void RepoHeader_SingleTapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
-        {
-            var frameworkElement = e.OriginalSource as FrameworkElement ?? sender as FrameworkElement;
-            if (frameworkElement?.DataContext is RepoGroupViewModel repoGroup)
-            {
-                
-            }
-
-        }
+        
         private void RepoHeader_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
         {
             var frameworkElement = e.OriginalSource as FrameworkElement ?? sender as FrameworkElement;
@@ -1197,7 +1168,7 @@ namespace FODevManager.WinUI
             await EnsureMergedWithMainAsync(repoGroup.Repository);
         }
 
-        private async void GitResetProfile_Click(object sender, RoutedEventArgs e)
+        private async void GitActions_ResetToMain_Click(object sender, RoutedEventArgs routedEventArgs)
         {
             if (ProfilesDropdown.SelectedItem is not string profileName)
                 return;
@@ -1208,7 +1179,7 @@ namespace FODevManager.WinUI
 
             var confirm = await DialogHelper.ConfirmAsync(
                 this,
-                "Git reset profile",
+                "Reset to Main",
                 "This will go through all repositories in the profile.\n\n" +
                 "• Stash any uncommitted changes\n" +
                 "• Checkout main\n" +
@@ -1218,11 +1189,40 @@ namespace FODevManager.WinUI
             if (!confirm)
                 return;
 
-            await RunOperationAsync(() => _profileService.GitResetProfile(profile), "Git reset profile");
+            await RunOperationAsync(() => _profileService.GitResetProfile(profile), "Reset to Main");
 
             // Reload view models (branch info, grouping, etc.)
             UIRefresh(profileName);
         }
+
+        private async void GitActions_TagRelease_Click(object sender, RoutedEventArgs routedEventArgs)
+        {
+            if (ProfilesDropdown.SelectedItem is not string profileName)
+                return;
+
+            var profile = LoadProfileByName(profileName);
+            if (profile == null)
+                return;
+
+            var nowLocal = DateTime.Now;
+            
+            var confirm = await DialogHelper.ConfirmAsync(
+                this,
+                "Tag Release",
+                "This will tag *all* repositories in the profile.\n\n" +                
+                "Rules:\n" +
+                "• Must be on main or a release branch\n" +
+                "• Must have no uncommitted changes\n\n" +
+                "Continue?");
+
+            if (!confirm)
+                return;
+
+            await RunOperationAsync(() => _profileService.TagReleaseProfile(profile), "Tag Release");
+
+            UIRefresh(profileName);
+        }
+
 
 
 
@@ -1451,10 +1451,9 @@ namespace FODevManager.WinUI
         private void UIRefresh(string profileName)
         {
             LoadModelListViewData(profileName);
-            CombinedList.ItemsSource = null;
-            LoadModelListViewData(profileName);
             CombinedList.UpdateLayout();
         }
+
     }
 
 }

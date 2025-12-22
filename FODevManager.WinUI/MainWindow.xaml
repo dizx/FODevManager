@@ -116,11 +116,18 @@
                         </StackPanel>
                     </Button>
 
-                    <Button Click="GitResetProfile_Click" ToolTipService.ToolTip="Stash changes in all repos, checkout main, fetch and pull">
+                    <Button ToolTipService.ToolTip="Git actions for all repos in the selected profile">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE777;" FontSize="14" />
-                            <TextBlock Text="Git Reset" />
+                            <TextBlock Text="Git Actions" />
                         </StackPanel>
+
+                        <Button.Flyout>
+                            <MenuFlyout>
+                                <MenuFlyoutItem Text="Reset to Main" Click="GitActions_ResetToMain_Click" />
+                                <MenuFlyoutItem Text="Tag Release" Click="GitActions_TagRelease_Click" />
+                            </MenuFlyout>
+                        </Button.Flyout>
                     </Button>
 
                     <Button Click="DeleteProfile_Click" ToolTipService.ToolTip="Delete the selected profile (removes the profile file)">
@@ -160,7 +167,7 @@
                             <StackPanel Spacing="8" Margin="0,2,0,2">
 
                                 <!-- Header (double-click to toggle) -->
-                                <Grid Margin="0,4,0,2" Background="{ThemeResource SystemFillColorNeutralBackgroundBrush}" DoubleTapped="RepoHeader_DoubleTapped" Tapped="RepoHeader_SingleTapped"  Padding="6">
+                                <Grid Margin="0,4,0,2" Background="{ThemeResource SystemFillColorNeutralBackgroundBrush}" DoubleTapped="RepoHeader_DoubleTapped" Padding="6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="240"/>
                                         <ColumnDefinition Width="24"/>

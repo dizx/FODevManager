@@ -102,11 +102,9 @@ namespace FODevManager.Utils
         }
         private static string EscapeQuotes(string value) => value.Replace("\"", "\\\"");
 
-
-
-       public static bool IsGitRepository(string? repoPath)
+        public static bool IsGitRepository(string? repoPath)
         {
-            if(repoPath.IsNullOrEmpty())
+            if (repoPath.IsNullOrEmpty())
                 return false;
 
             string? noOutput = "";
@@ -120,7 +118,7 @@ namespace FODevManager.Utils
 
             if (repoPath.IsNullOrEmpty())
                 return false;
-            
+
             var isGitRepo = false; ;
             string gitDirPath = Path.Combine(repoPath, ".git");
             string configPath = Path.Combine(gitDirPath, "config");
@@ -183,7 +181,7 @@ namespace FODevManager.Utils
 
             try
             {
-;               var result = string.Empty;
+                ; var result = string.Empty;
                 if (RunGitCommand(repoPath, "rev-parse --abbrev-ref HEAD", out result))
                     return result.Trim();
             }
@@ -438,6 +436,164 @@ namespace FODevManager.Utils
         }
 
 
+
+        public static bool TagExists(string repoPath, string tagName)
+        {
+            if (repoPath.IsNullOrEmpty() || tagName.IsNullOrEmpty())
+                return false;
+
+            try
+            {
+                string result;
+                if (!RunGitCommand(repoPath, $"tag -l {EscapeGitArg(tagName)}", out result))
+                    return false;
+
+                return result
+                    .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Any(line => line.Trim().Equals(tagName, StringComparison.Ordinal));
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static bool CreateTag(string repoPath, string tagName, IReadOnlyCollection<string> messageLines)
+        {
+            if (!IsGitRepository(repoPath))
+            {
+                MessageLogger.Warning("⚠️ Create Tag: Not a Git repository.");
+                return false;
+            }
+
+            if (tagName.IsNullOrEmpty())
+            {
+                MessageLogger.Error("❌ Create Tag: tagName is empty.");
+                return false;
+            }
+
+            var safeLines = (messageLines ?? Array.Empty<string>())
+                .Where(line => !string.IsNullOrWhiteSpace(line))
+                .Select(line => line.Trim())
+                .ToList();
+
+            if (safeLines.Count == 0)
+                safeLines.Add("FO Dev Manager release tag");
+
+            if (TagExists(repoPath, tagName))
+            {
+                MessageLogger.Warning($"⚠️ Tag already exists: {tagName}");
+                return false;
+            }
+
+            // Build a git command like:
+            // git tag -a <tag> -m "line1" -m "line2" ...
+            var messageArgs = string.Join(" ", safeLines.Select(line => $"-m {EscapeGitArg(line)}"));
+
+            try
+            {
+                string result;
+                if (RunGitCommand(repoPath, $"tag -a {EscapeGitArg(tagName)} {messageArgs}", out result))
+                {
+                    MessageLogger.Highlight($"✅ Created git tag: {tagName}");
+                    return true;
+                }
+
+                MessageLogger.Error($"❌ Failed to create git tag: {tagName}");
+                return false;
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"❌ Error creating annotated tag '{tagName}': {exception.Message}");
+                return false;
+            }
+        }
+
+        public static bool PushTag(string repoPath, string tagName, string remoteName = "origin")
+        {
+            if (!IsGitRepository(repoPath))
+                return false;
+
+            if (tagName.IsNullOrEmpty())
+                return false;
+
+            remoteName = remoteName?.Trim() ?? "origin";
+            if (remoteName.IsNullOrEmpty())
+                remoteName = "origin";
+
+            try
+            {
+                string result;
+                if (RunGitCommand(repoPath, $"push {EscapeGitArg(remoteName)} {EscapeGitArg(tagName)}", out result))
+                {
+                    MessageLogger.Info($"⬆️ Pushed tag '{tagName}' to {remoteName}.");
+                    return true;
+                }
+
+                MessageLogger.Error($"❌ Failed to push tag '{tagName}' to {remoteName}.");
+                return false;
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"❌ Error pushing tag '{tagName}': {exception.Message}");
+                return false;
+            }
+        }
+
+        public static bool IsReleaseBranchName(string? branchName)
+        {
+            if (string.IsNullOrWhiteSpace(branchName))
+                return false;
+
+            var trimmedBranchName = branchName.Trim();
+
+            return trimmedBranchName.Equals("release", StringComparison.OrdinalIgnoreCase)
+                   || trimmedBranchName.StartsWith("release/", StringComparison.OrdinalIgnoreCase)
+                   || trimmedBranchName.StartsWith("release-", StringComparison.OrdinalIgnoreCase)
+                   || trimmedBranchName.StartsWith("releases/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string EscapeGitArg(string value)
+        {
+            // RunGitCommand uses ProcessStartInfo.Arguments (string), so we need shell-style quoting.
+            // This is a minimal "wrap in quotes and escape inner quotes" implementation.
+            var safeValue = value?.Replace("\"", "\\\"") ?? string.Empty;
+            return $"\"{safeValue}\"";
+        }
+
+        public static string GetGitUserEmailOrFallback(string repositoryRootFolder)
+        {
+            // 1) Repository-local config
+            if (TryGetGitConfigValue(repositoryRootFolder, "user.email", useGlobal: false, out var localEmail) &&
+                !localEmail.IsNullOrEmpty())
+                return localEmail.Trim();
+
+            // 2) Global config
+            if (TryGetGitConfigValue(repositoryRootFolder, "user.email", useGlobal: true, out var globalEmail) &&
+                !globalEmail.IsNullOrEmpty())
+                return globalEmail.Trim();
+
+            // 3) Fallback
+            return $"{Environment.UserDomainName}\\{Environment.UserName}";
+        }
+
+        private static bool TryGetGitConfigValue(string repositoryRootFolder, string configKey, bool useGlobal, out string value)
+        {
+            value = string.Empty;
+
+            var args = useGlobal
+                ? $"config --global --get {EscapeGitArg(configKey)}"
+                : $"config --get {EscapeGitArg(configKey)}";
+
+            // Missing key returns non-zero exit code; do not log as an error.
+            if (!RunGitCommand(repositoryRootFolder, args, out var output, logOnSuccess: false, logOnFailure: false))
+                return false;
+
+            value = output.Trim();
+            return true;
+        }
+
+
         public static bool FetchAll(string repoPath)
         {
             try
@@ -526,17 +682,17 @@ namespace FODevManager.Utils
 
         public static bool FetchFromRemote(string profileName, string repoPath)
         {
-                if (!IsGitRepository(repoPath))
+            if (!IsGitRepository(repoPath))
                 return false;
 
             try
             {
                 var result = string.Empty;
-                if(RunGitCommand(repoPath, "fetch --all"))
+                if (RunGitCommand(repoPath, "fetch --all"))
                 {
-                    if(RunGitCommand(repoPath, "status -sb", out result))
+                    if (RunGitCommand(repoPath, "status -sb", out result))
                     {
-                        MessageLogger.Info($"Model {profileName }: {result}");
+                        MessageLogger.Info($"Model {profileName}: {result}");
                         return true;
                     }
                 }
@@ -551,7 +707,7 @@ namespace FODevManager.Utils
 
         public static string? GetGitRemoteUrl(string? configPath)
         {
-            if(configPath.IsNullOrEmpty() || !File.Exists(configPath))
+            if (configPath.IsNullOrEmpty() || !File.Exists(configPath))
                 return null;
 
             string[] lines = File.ReadAllLines(configPath);
@@ -591,8 +747,6 @@ namespace FODevManager.Utils
             return string.Empty;
         }
 
-        
-
         public static string DeriveRepoDisplayName(string repoRootFolder, string gitUrl)
         {
             // Preferred: repo name from git url
@@ -625,10 +779,45 @@ namespace FODevManager.Utils
 
         private static string ConvertToHttpsUrl(string url)
         {
-            if (url.StartsWith("git@"))
-                return Regex.Replace(url, @"git@([^:]+):(.+).git", "https://$1/$2");
-            return url;
+            if (url.IsNullOrEmpty())
+                return url;
+
+            var normalizedUrl = url;
+
+            // SSH style: git@host:org/repo.git  -> https://host/org/repo
+            if (normalizedUrl.StartsWith("git@", StringComparison.OrdinalIgnoreCase))
+            {
+                normalizedUrl = Regex.Replace(
+                    normalizedUrl,
+                    @"git@([^:]+):(.+?)\.git$",
+                    "https://$1/$2",
+                    RegexOptions.IgnoreCase);
+            }
+
+            // Strip user-info from https://user@host/...
+            normalizedUrl = StripUrlUserInfo(normalizedUrl);
+
+            return normalizedUrl;
         }
+
+        private static string StripUrlUserInfo(string url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                return url;
+
+            if (uri.UserInfo.IsNullOrEmpty())
+                return url;
+
+            var uriBuilder = new UriBuilder(uri)
+            {
+                UserName = string.Empty,
+                Password = string.Empty
+            };
+
+            return uriBuilder.Uri.ToString();
+        }
+
+
 
         private static void OpenUrl(string url)
         {
@@ -646,7 +835,6 @@ namespace FODevManager.Utils
             }
         }
 
-       
         private static bool RunGitCommand(string workingDirectory, string arguments, bool logOnSuccess = false, bool logOnFailure = true)
         {
             var result = string.Empty;
@@ -716,6 +904,5 @@ namespace FODevManager.Utils
                 return false;
             }
         }
-       
     }
 }

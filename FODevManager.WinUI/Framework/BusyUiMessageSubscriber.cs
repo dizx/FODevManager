@@ -42,11 +42,11 @@ namespace FODevManager.WinUI
             {
                 foreach (var line in split)
                 {
-                    var s = line?.Trim();
-                    if (string.IsNullOrEmpty(s)) continue;
+                    var trimmedLine = line?.Trim();
+                    if (trimmedLine.IsNullOrEmpty()) continue;
 
                     if (_lines.Count >= MaxMessages) _lines.RemoveAt(0);
-                    _lines.Add($"{DateTime.Now:HH:mm:ss} {s}");
+                    _lines.Add($"{DateTime.Now:HH:mm:ss} {trimmedLine}");
                 }
             });
         }

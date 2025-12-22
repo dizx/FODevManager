@@ -24,7 +24,7 @@ namespace FODevManager.Shared.Utils
 
         public void UpdateSetting(string key, object value)
         {
-            if (string.IsNullOrWhiteSpace(key))
+            if (key.IsNullOrEmpty())
                 throw new ArgumentException("Key cannot be empty.", nameof(key));
 
             try
@@ -60,6 +60,9 @@ namespace FODevManager.Shared.Utils
                             break;
                         case nameof(AppConfig.ModelIdEnd):
                             _config.ModelIdEnd = Convert.ToInt32(value);
+                            break;
+                        case nameof(AppConfig.TaskUrl):
+                            _config.TaskUrl = Convert.ToString(value) ?? _config.TaskUrl;
                             break;
                         default:
                             // unknown key: JSON updated; no in-memory mapping

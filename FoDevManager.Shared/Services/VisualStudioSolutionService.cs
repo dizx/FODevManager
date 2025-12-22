@@ -27,11 +27,11 @@ namespace FODevManager.Services
         {
             if (profile == null) throw new ArgumentNullException(nameof(profile));
 
-            if (!string.IsNullOrWhiteSpace(profile.SolutionFilePath))
+            if (!profile.SolutionFilePath.IsNullOrEmpty())
                 return Path.GetFullPath(profile.SolutionFilePath);
 
             var mainEnv = profile.AllModels.FirstOrDefault(e => e.IsMainFOModel);
-            if (mainEnv != null && !string.IsNullOrWhiteSpace(mainEnv.ModelRootFolder))
+            if (mainEnv != null && !mainEnv.ModelRootFolder.IsNullOrEmpty())
                 return Path.Combine(mainEnv.ModelRootFolder, $"{profile.ProfileName}.sln");
 
             return Path.Combine(_defaultSourceDirectory, profile.ProfileName, $"{profile.ProfileName}.sln");
@@ -41,11 +41,11 @@ namespace FODevManager.Services
         {
             if (profile == null) throw new ArgumentNullException(nameof(profile));
 
-            if (!string.IsNullOrWhiteSpace(profile.SolutionFilePath))
+            if (!profile.SolutionFilePath.IsNullOrEmpty())
                 return Path.GetDirectoryName(Path.GetFullPath(profile.SolutionFilePath))!;
 
             var mainEnv = profile.AllModels?.FirstOrDefault(e => e.IsMainFOModel);
-            if (mainEnv != null && !string.IsNullOrWhiteSpace(mainEnv.ModelRootFolder))
+            if (mainEnv != null && !mainEnv.ModelRootFolder.IsNullOrEmpty())
                 return mainEnv.ModelRootFolder;
 
             return Path.Combine(_defaultSourceDirectory, profile.ProfileName);
@@ -103,7 +103,7 @@ namespace FODevManager.Services
             if (model == null) throw new ArgumentNullException(nameof(model));
 
             var projectFilePath = model.ProjectFilePath;
-            if (string.IsNullOrWhiteSpace(projectFilePath))
+            if (projectFilePath.IsNullOrEmpty())
             {
                 MessageLogger.Error("Environment has no ProjectFilePath.");
                 return;
@@ -219,7 +219,7 @@ namespace FODevManager.Services
 
         public void OpenSolution(string solutionPath)
         {
-            if (string.IsNullOrWhiteSpace(solutionPath) || !File.Exists(solutionPath))
+            if (solutionPath.IsNullOrEmpty() || !File.Exists(solutionPath))
             {
                 MessageLogger.Error("Solution file not found.");
                 return;

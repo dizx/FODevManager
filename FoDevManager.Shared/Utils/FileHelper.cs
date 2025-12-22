@@ -60,7 +60,7 @@ namespace FODevManager.Utils
 
         private static string NormalizeLegacyProfileJson(string jsonText)
         {
-            if (string.IsNullOrWhiteSpace(jsonText))
+            if (jsonText.IsNullOrEmpty())
                 return jsonText;
 
             var hasEnvironments = jsonText.IndexOf("\"Environments\"", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -69,12 +69,20 @@ namespace FODevManager.Utils
             if (!hasEnvironments || hasModels)
                 return jsonText;
 
-            // Replace only the property name token, not values
-            return Regex.Replace(
+            jsonText = Regex.Replace(
                 jsonText,
                 "\"Environments\"\\s*:",
-                "\"Models\":",
+                "\"StandaloneModels\":",
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+            jsonText = Regex.Replace(
+                jsonText,
+                "\"PeriTask\"\\s*:",
+                "\"Task\":",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+          
+            return jsonText;
         }
 
 
@@ -172,32 +180,40 @@ namespace FODevManager.Utils
 
         public static string GetLibsFolder(string modelName, string modelPath)
         {
-            string? currentPath = Path.HasExtension(modelPath) ? Path.GetDirectoryName(modelPath) : modelPath;
+            if (modelName.IsNullOrEmpty())
+                throw new ArgumentException("Model name is required.", nameof(modelName));
 
-            // Move up to 3 levels and check for libs folder
-            for (int i = 0; i < 3; i++)
+            if (modelPath.IsNullOrEmpty())
+                throw new ArgumentException("Model path is required.", nameof(modelPath));
+
+            string? currentPath = Path.HasExtension(modelPath)
+                ? Path.GetDirectoryName(modelPath)
+                : modelPath;
+
+            var libFolderNames = new[] { "Libs", "Lib" };
+
+            for (int levelIndex = 0; levelIndex < 3; levelIndex++)
             {
                 if (currentPath.IsNullOrEmpty())
                     break;
 
-                string libsPath = Path.Combine(currentPath, "Libs", modelName);
-                if (Directory.Exists(libsPath))
+                foreach (var libFolderName in libFolderNames)
                 {
-                    return libsPath;
+                    var libsWithModelPath = Path.Combine(currentPath, libFolderName, modelName);
+                    if (Directory.Exists(libsWithModelPath))
+                        return libsWithModelPath;
+
+                    var libsRootPath = Path.Combine(currentPath, libFolderName);
+                    if (Directory.Exists(libsRootPath))
+                        return Path.Combine(libsRootPath, modelName);
                 }
 
-                libsPath = Path.Combine(currentPath, "Libs");
-                if (Directory.Exists(libsPath))
-                {
-                    return Path.Combine(libsPath, modelName);
-                }
-
-                // Move one level up
                 currentPath = Directory.GetParent(currentPath)?.FullName;
             }
 
             throw new DirectoryNotFoundException($"Can't find libs folder in path {modelPath}");
         }
+
 
         public static string GetModelRootFolder(string projectFilePath)
         {

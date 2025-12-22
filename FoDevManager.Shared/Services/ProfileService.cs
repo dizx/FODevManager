@@ -108,7 +108,6 @@ namespace FODevManager.Services
             if (EnsureRepositories(newProfile))
                 _fileService.SaveProfile(newProfile, updateExternal: true);
 
-
             SwitchBranchesInProfile(newProfile);
 
             UpdateDeploymentStatus(newProfileName);
@@ -191,7 +190,7 @@ namespace FODevManager.Services
                 return new ModelSyncResult();
             }
 
-            if (string.IsNullOrWhiteSpace(currentProfile.ProfileFilePath))
+            if (currentProfile.ProfileFilePath.IsNullOrEmpty())
             {
                 MessageLogger.Warning("CheckProfileModelChanges: ProfileFilePath is not set. Attempting first-time export to repo Artifacts...");
 
@@ -214,7 +213,7 @@ namespace FODevManager.Services
 
             try
             {
-                if (!TryLoadExternalProfile(importPath, out var importedProfile))
+                if (!TryLoadExternalProfile(importPath, out var importedProfile, out var isLegacy))
                 {
                     MessageLogger.Error("CheckProfileModelChanges: Imported profile is invalid.");
                     return new ModelSyncResult();
@@ -230,7 +229,13 @@ namespace FODevManager.Services
 
                     if (diff.RemovedModels.Any())
                         MessageLogger.Info($"CheckProfileModelChanges: Removed models: {string.Join(", ", diff.RemovedModels)}");
-                }                
+                }
+
+                //TODO: This code can be removed in the future when we are sure legacy profiles are no longer in use
+                if (diff.IsLegacy && !diff.HasChanges)
+                {
+                    _fileService.SaveProfile(currentProfile, updateExternal: true);
+                }
 
                 return diff;
             }
@@ -255,7 +260,7 @@ namespace FODevManager.Services
                 .AllModels
                 .FirstOrDefault(model =>
                     model.IsMainFOModel &&
-                    !string.IsNullOrWhiteSpace(model.ModelRootFolder));
+                    !model.ModelRootFolder.IsNullOrEmpty());
 
             if (mainFoModel == null)
             {
@@ -264,7 +269,7 @@ namespace FODevManager.Services
             }
 
             var repoRootFolder = currentProfile.TryGetRepoRootFolder(mainFoModel) ?? mainFoModel.ModelRootFolder;
-            if (string.IsNullOrWhiteSpace(repoRootFolder) || !Directory.Exists(repoRootFolder))
+            if (repoRootFolder.IsNullOrEmpty() || !Directory.Exists(repoRootFolder))
             {
                 MessageLogger.Error($"Profile export: Repo root folder not found: '{repoRootFolder}'.");
                 return false;
@@ -291,7 +296,6 @@ namespace FODevManager.Services
             return true;
         }
 
-
         public ProfileModel ImportProfile(string importPath)
         {
             if (!File.Exists(importPath))
@@ -302,7 +306,7 @@ namespace FODevManager.Services
 
             try
             {
-                if (!TryLoadExternalProfile(importPath, out var sourceProfile))
+                if (!TryLoadExternalProfile(importPath, out var sourceProfile, out var isLegacy))
                 {
                     MessageLogger.Error("Invalid profile file.");
                     return null!;
@@ -337,7 +341,7 @@ namespace FODevManager.Services
                 if (sourceProfile.SolutionFilePath.IsNullOrEmpty())
                 {
                     var mainFoModel = sourceProfile.AllModels
-                        .FirstOrDefault(model => model.IsMainFOModel && !string.IsNullOrWhiteSpace(model.ModelRootFolder));
+                        .FirstOrDefault(model => model.IsMainFOModel && !model.ModelRootFolder.IsNullOrEmpty());
 
                     if (mainFoModel != null)
                     {
@@ -379,7 +383,6 @@ namespace FODevManager.Services
                 return null!;
             }
         }
-
 
         private void ImportRepository(RepositoryModel repository)
         {
@@ -510,7 +513,6 @@ namespace FODevManager.Services
             return preferred ?? jsonFiles[0];
         }
 
-
         private string ResolveSolutionBaseFolder(ProfileModel profile)
         {
             var mainFoModel = profile.AllModels.FirstOrDefault(model => model.IsMainFOModel);
@@ -539,7 +541,6 @@ namespace FODevManager.Services
             profile.SolutionFilePath = Path.GetFullPath(Path.Combine(baseFolder, relative));
         }
 
-
         private void ConfigureModelPathsAndDeployment(ProfileEnvironmentModel model, string modelRootFolder)
         {
             if (model.ModelType == ModelType.Source)
@@ -555,7 +556,6 @@ namespace FODevManager.Services
             var deploymentLinkPath = Path.Combine(_deploymentBasePath, model.ModelName);
             model.IsDeployed = Directory.Exists(deploymentLinkPath);
         }
-
 
         private static string? FindExistingSolutionFile(string repoRoot, string profileName)
         {
@@ -578,7 +578,6 @@ namespace FODevManager.Services
                 return null;
             }
         }
-
 
         public void SetDatabaseName(string profileName, string dbName)
         {
@@ -615,7 +614,6 @@ namespace FODevManager.Services
             return null;
         }
 
-
         public void ApplyDatabase(string profileName)
         {
             var profile = _fileService.LoadProfile(profileName);
@@ -636,9 +634,8 @@ namespace FODevManager.Services
 
             try
             {
-                MessageLogger.Info("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
+                
                 ServiceHelper.StopW3SVC();
-
                 WebConfigHelper.UpdateWebConfigDatabase(profile.DatabaseName);
             }
             catch (Exception ex)
@@ -718,7 +715,6 @@ namespace FODevManager.Services
                 
         }
 
-
         private static bool IsCompiledModelFolder(string path, out string modelName)
         {
             modelName = "";
@@ -726,7 +722,7 @@ namespace FODevManager.Services
                 return false;
 
             var folderName = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            if (string.IsNullOrWhiteSpace(folderName))
+            if (folderName.IsNullOrEmpty())
                 return false;
 
             var xref = Path.Combine(path, $"{folderName}.xref");
@@ -766,7 +762,6 @@ namespace FODevManager.Services
             return false;
         }
 
-
         public void CreateModel(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
@@ -798,7 +793,6 @@ namespace FODevManager.Services
             MessageLogger.Highlight($"✅ Converted model '{modelName}' registered into solution.");
         }
 
-
         private void AddProjectToVsSolution(string profileName, string modelName) => AddProjectToVsSolution(_fileService.LoadProfile(profileName), modelName);  
 
         private void AddProjectToVsSolution(ProfileModel profile, string modelName)
@@ -816,13 +810,6 @@ namespace FODevManager.Services
         }
 
         private bool IsInstalledModel(string path) => path.StartsWith(_deploymentBasePath);
-
-      
-
-       
-
-        
-
 
         public void OpenVisualStudioSolution(string profileName)
         {
@@ -847,7 +834,6 @@ namespace FODevManager.Services
             }
             _fileService.SaveProfile(profile, updateExternal: true);
         }
-
 
         public void GitFetchLatest(string profileName)
         {
@@ -944,6 +930,100 @@ namespace FODevManager.Services
             return true;
         }
 
+        public bool TagReleaseProfile(ProfileModel profile)
+        {
+            if (profile == null)
+                throw new ArgumentNullException(nameof(profile));
+
+            if (profile.Repositories == null || profile.Repositories.Count == 0)
+            {
+                MessageLogger.Warning("⚠️ Tag release: profile has no repositories.");
+                return false;
+            }
+
+            var tagName = $"Release-{DateTime.UtcNow:yyyy-MM-dd}";
+            
+            var firstGitRepoPath = profile.Repositories?
+                .FirstOrDefault(r => r?.RepoRootFolder.IsNullOrEmpty() == false && GitHelper.IsGitRepository(r.RepoRootFolder))
+                ?.RepoRootFolder;
+
+            var createdBy = firstGitRepoPath.IsNullOrEmpty()
+                ? $"{Environment.UserDomainName}\\{Environment.UserName}"
+                : GitHelper.GetGitUserEmailOrFallback(firstGitRepoPath);
+
+            var succeeded = 0;
+            var failedRepos = new List<string>();
+
+            MessageLogger.Highlight($"🏷️ Tag release: {profile.ProfileName} → {tagName}");
+
+            foreach (var repository in profile.Repositories)
+            {
+                if (repository?.RepoRootFolder.IsNullOrEmpty() != false)
+                    continue;
+
+                if (!GitHelper.IsGitRepository(repository.RepoRootFolder))
+                    continue;
+
+                var mainBranchName = repository.MainBranchName.IsNullOrEmpty() ? "main" : repository.MainBranchName;
+                var activeBranch = GitHelper.GetActiveBranch(repository.RepoRootFolder) ?? string.Empty;
+
+                var isOnMain = activeBranch.Equals(mainBranchName, StringComparison.OrdinalIgnoreCase);
+                var isOnRelease = GitHelper.IsReleaseBranchName(activeBranch);
+
+                if (!isOnMain && !isOnRelease)
+                {
+                    MessageLogger.Error($"❌ {repository.DisplayName}: not on main/release branch (current: '{activeBranch}').");
+                    failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
+                    continue;
+                }
+
+                if (GitHelper.HasUncommittedChanges(repository.RepoRootFolder))
+                {
+                    MessageLogger.Error($"❌ {repository.DisplayName}: has uncommitted changes. Tagging aborted for this repo.");
+                    failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
+                    continue;
+                }
+
+                var messageLines = new List<string>
+                {
+                    $"Tag: {tagName}",
+                    $"Profile: {profile.ProfileName}",
+                    $"Created by: {createdBy}",
+                    $"Branch: {activeBranch}",
+                    $"Created at: {DateTime.Now:yyyy-MM-dd HH:mm:ss}"
+                };
+
+                MessageLogger.Info($"➡️ {repository.DisplayName}: create tag → push");
+
+                var created = GitHelper.CreateTag(repository.RepoRootFolder, tagName, messageLines);
+                if (!created)
+                {
+                    failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
+                    continue;
+                }
+
+                // Push tag to origin 
+                if (!GitHelper.PushTag(repository.RepoRootFolder, tagName, "origin"))
+                {
+                    failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
+                    continue;
+                }
+
+                succeeded++;
+            }
+
+            if (failedRepos.Count > 0)
+            {
+                MessageLogger.Warning($"⚠️ Tag release finished with errors. OK: {succeeded}, Failed: {failedRepos.Count}");
+                MessageLogger.Warning($"Failed repos: {string.Join(", ", failedRepos)}");
+                return false;
+            }
+
+            MessageLogger.Highlight($"✅ Tag release finished. Repos tagged: {succeeded}");
+            return true;
+        }
+
+
         public void RemoveModelFromProfile(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
@@ -997,7 +1077,6 @@ namespace FODevManager.Services
             _fileService.SaveProfile(profile);
         }
 
-
         private static void UpdateLastKnownGitState(RepositoryModel repository)
         {
             if (repository == null)
@@ -1013,7 +1092,6 @@ namespace FODevManager.Services
             repository.LastKnownBranch = GitHelper.GetActiveBranch(repository.RepoRootFolder);
             repository.LastKnownCommit = GitHelper.GetHeadCommit(repository.RepoRootFolder);
         }
-
 
         public void ListModelsInProfile(string profileName)
         {
@@ -1032,21 +1110,6 @@ namespace FODevManager.Services
                 string gitStatus = model.GitUrl.IsNullOrEmpty() ? "" : "✅ Git Repo" ; 
                 MessageLogger.Info($"   - {model.ModelName}\t\t - {status} - { gitStatus }");
             }
-        }
-
-        public ProfileModel? GetActiveProfile()
-        {
-            var profiles = _fileService.GetAllProfiles();
-
-            var activeProfile = profiles.FirstOrDefault(p => p.IsActive);
-
-            if (activeProfile == null)
-            {
-                MessageLogger.Warning("⚠️ No active profile found.");
-                return null;
-            }
-
-            return activeProfile;
         }
 
         public List<ProfileEnvironmentModel> GetModelsInProfile(string profileName)
@@ -1125,7 +1188,10 @@ namespace FODevManager.Services
 
                 var repoKey = !environmentModel.GitUrl.IsNullOrEmpty() ? environmentModel.GitUrl : repoRootFolder;
 
-                if (!repoMap.TryGetValue(repoKey, out var repository))
+                var normalizedRepoKey = RepositoryModel.NormalizeKey(repoKey);
+
+
+                if (!repoMap.TryGetValue(normalizedRepoKey, out var repository))
                 {
                     repository = new RepositoryModel
                     {
@@ -1146,16 +1212,16 @@ namespace FODevManager.Services
                 .OrderBy(repository => repository.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            // ✅ IMPORTANT: remove repo-backed models from the standalone list
             profile.StandaloneModels = standaloneModels;
 
             MessageLogger.Info($"📦 Repositories built: {profile.Repositories.Count}. Standalone models: {profile.StandaloneModels.Count}");
             return true;
         }
 
-        private static bool TryLoadExternalProfile(string filePath, out ProfileModel profile)
+        private static bool TryLoadExternalProfile(string filePath, out ProfileModel profile, out bool isLegacy)
         {
             profile = null!;
+            isLegacy = false;
 
             try
             {
@@ -1171,7 +1237,7 @@ namespace FODevManager.Services
                 if (document.RootElement.TryGetProperty("ExportFormatVersion", out _))
                 {
                     var exportProfile = FileHelper.LoadJson<ExportProfileModel>(filePath);
-                    if (exportProfile == null || string.IsNullOrWhiteSpace(exportProfile.ProfileName))
+                    if (exportProfile == null || exportProfile.ProfileName.IsNullOrEmpty())
                         return false;
 
                     profile = ExportProfileMapper.FromExport(exportProfile, filePath);
@@ -1180,9 +1246,10 @@ namespace FODevManager.Services
 
                 // Legacy format
                 var legacyProfile = FileHelper.LoadJson<ProfileModel>(filePath);
-                if (legacyProfile == null || string.IsNullOrWhiteSpace(legacyProfile.ProfileName))
+                if (legacyProfile == null || legacyProfile.ProfileName.IsNullOrEmpty())
                     return false;
 
+                isLegacy = true;
                 profile = legacyProfile;
                 return true;
             }

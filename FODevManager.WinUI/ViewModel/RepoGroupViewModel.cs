@@ -52,7 +52,7 @@ namespace FODevManager.WinUI.ViewModel
 
         public string TaskComment => Repository.TaskComment;
 
-        public bool HasTask => !string.IsNullOrWhiteSpace(Task);
+        public bool HasTask => !Task.IsNullOrEmpty();
 
         private bool _hasMainUpdates;
 
