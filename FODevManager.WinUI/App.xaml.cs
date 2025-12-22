@@ -47,6 +47,9 @@ namespace FODevManager.WinUI
         {
             this.InitializeComponent();
 
+            AppSettingsMigration.RunOnStartup();
+
+
             ConfigureLogger();
             UnhandledException += App_UnhandledException;
             Services = ConfigureServices();

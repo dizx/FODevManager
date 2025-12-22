@@ -61,6 +61,9 @@ namespace FODevManager.Shared.Utils
                         case nameof(AppConfig.ModelIdEnd):
                             _config.ModelIdEnd = Convert.ToInt32(value);
                             break;
+                        case nameof(AppConfig.TaskUrl):
+                            _config.TaskUrl = Convert.ToString(value) ?? _config.TaskUrl;
+                            break;
                         default:
                             // unknown key: JSON updated; no in-memory mapping
                             break;
