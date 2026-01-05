@@ -312,6 +312,11 @@ namespace FODevManager.Services
                     return null!;
                 }
 
+                if (isLegacy)
+                {
+                    EnsureRepositories(sourceProfile);
+                }
+
                 sourceProfile.ProfileFilePath = importPath;
                 sourceProfile.IsActive = false;
 

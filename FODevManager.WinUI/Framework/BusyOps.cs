@@ -12,9 +12,37 @@ namespace FODevManager.WinUI.Framework
 {
     public static class BusyOps
     {
+        private static UiDispatcher? _uiDispatcher;
+
+        private static UiDispatcher Ui => _uiDispatcher ?? throw new InvalidOperationException("BusyOps.Initialize must be called before using BusyOps.");
+
+        public static void Initialize(UiDispatcher uiDispatcher)
+        {
+            _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
+        }
+
         public readonly record struct TryResult<T>(bool Ok, T Value);
 
-        public static async Task<TryResult<T>> TryCatchAsync<T>(Func<Task<T>> func, string operationName, T fallback = default)
+        public static Task<TryResult<T>> TrySyncAsAsync<T>(Func<T> func, string operationName, bool shutdownServer = true, T fallback = default)
+            => TryCatchAsync<T>(() => Task.Run(func), operationName, shutdownServer, fallback);
+
+        public static Task<bool> TrySyncAsAsync(Action action, string operationName, bool shutdownServer)
+            => TryCatchAsync(() => Task.Run(action), operationName, shutdownServer);
+
+        private static async Task<bool> TryCatchAsync(Func<Task> action, string operationName, bool shutdownServer)
+        {
+            var result = await TryCatchAsync(
+                async () =>
+                {
+                    await action().ConfigureAwait(true);
+                    return true;
+                },
+                operationName, shutdownServer, fallback: false).ConfigureAwait(true);
+
+            return result.Ok;
+        }
+
+        private static async Task<TryResult<T>> TryCatchAsync<T>(Func<Task<T>> func, string operationName, bool shutdownServer, T fallback = default)
         {
             var minVisibleMs = 2000;
             var busy = Singleton<BusyHandler>.Instance;
@@ -25,10 +53,18 @@ namespace FODevManager.WinUI.Framework
             {
                 try
                 {
-                    busy.Start(operationName, operationId);
-                    await Task.Yield(); // let UI render overlay
+                    await Ui.EnqueueAsync(() =>
+                    {
+                        busy.Start(operationName, operationId);
+                    }).ConfigureAwait(false);
 
-                    ServiceHelper.StopW3SVC();
+                    // Let UI paint once
+                    await Task.Yield();
+
+                    if (shutdownServer)
+                    {
+                        await Task.Run(ServiceHelper.StopW3SVC).ConfigureAwait(false);
+                    }
 
                     MessageLogger.Highlight($"▶ {operationName} started.");
 
@@ -56,7 +92,7 @@ namespace FODevManager.WinUI.Framework
                 {
                     Singleton<W3cServiceState>.Instance.InOperation = false;
 
-                    ServiceHelper.StartW3SVC();
+                    await Task.Run(ServiceHelper.StartW3SVC).ConfigureAwait(false);
 
                     stopWatch.Stop();
                     var remainingMilliseconds = minVisibleMs - (int)stopWatch.ElapsedMilliseconds;
@@ -65,30 +101,12 @@ namespace FODevManager.WinUI.Framework
                         await Task.Delay(remainingMilliseconds).ConfigureAwait(true);
                     }
 
-                    busy.Stop(operationId);
+                    await Ui.EnqueueAsync(() =>
+                    {
+                        busy.Stop(operationId);
+                    }).ConfigureAwait(false);
                 }
             }
         }
-
-        public static Task<TryResult<T>> TrySyncAsAsync<T>(Func<T> func, string operationName, T fallback = default)
-            => TryCatchAsync<T>(() => Task.Run(func), operationName, fallback);
-
-        public static async Task<bool> TryCatchAsync(Func<Task> action, string operationName)
-        {
-            var result = await TryCatchAsync(
-                async () =>
-                {
-                    await action().ConfigureAwait(true);
-                    return true;
-                },
-                operationName,
-                fallback: false).ConfigureAwait(true);
-
-            return result.Ok;
-        }
-
-        // Overload for sync work
-        public static Task<bool> TrySyncAsAsync(Action action, string operationName)
-            => TryCatchAsync(() => Task.Run(action), operationName);
     }
 }

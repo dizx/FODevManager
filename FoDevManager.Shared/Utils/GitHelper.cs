@@ -1,5 +1,6 @@
 using FODevManager.Messages;
 using FODevManager.Shared.Models;
+using FODevManager.Shared.Utils;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -245,19 +246,57 @@ namespace FODevManager.Utils
             return false;
         }
 
-
         public static bool HasMainChanges(string repositoryRootFolder, string mainBranchName = "main")
         {
-            FetchAll(repositoryRootFolder);
-
-            if (!RunGitCommand(repositoryRootFolder, $"merge-base HEAD origin/{mainBranchName}", out var mergeBase))
-                return false;
-
-            if (!RunGitCommand(repositoryRootFolder, $"rev-parse origin/{mainBranchName}", out var mainHead))
-                return false;
-
-            return !mergeBase.Trim().SameAs(mainHead.Trim());
+            return HasMainChangesAsync(repositoryRootFolder, mainBranchName, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
         }
+
+
+        public static async Task<bool> HasMainChangesAsync(string repositoryRootFolder, string mainBranchName = "main", CancellationToken cancellationToken = default)
+        {
+            if (repositoryRootFolder.IsNullOrEmpty())
+                return false;
+
+            var safeMainBranchName = mainBranchName.IsNullOrEmpty() ? "main" : mainBranchName;
+
+            var shouldFetch = Singleton<GitFetchThrottle>.Instance.ShouldFetch(repositoryRootFolder);
+
+            if (shouldFetch)
+            {
+                var fetchOk = await FetchAllAsync(repositoryRootFolder, cancellationToken).ConfigureAwait(false);
+                if (!fetchOk)
+                    return false;
+            }
+
+            var mergeBaseResult = await RunGitCommandAsync(
+                    repositoryRootFolder,
+                    $"merge-base HEAD origin/{safeMainBranchName}",
+                    timeout: TimeSpan.FromSeconds(20),
+                    cancellationToken: cancellationToken,
+                    logOnSuccess: false,
+                    logOnFailure: false)
+                .ConfigureAwait(false);
+
+            if (!mergeBaseResult.Ok)
+                return false;
+
+            var mainHeadResult = await RunGitCommandAsync(
+                    repositoryRootFolder,
+                    $"rev-parse origin/{safeMainBranchName}",
+                    timeout: TimeSpan.FromSeconds(20),
+                    cancellationToken: cancellationToken,
+                    logOnSuccess: false,
+                    logOnFailure: false)
+                .ConfigureAwait(false);
+
+            if (!mainHeadResult.Ok)
+                return false;
+
+            return !mergeBaseResult.Output.Trim().SameAs(mainHeadResult.Output.Trim());
+        }
+
 
         public static bool MergeMainIntoCurrentBranch(string repositoryRootFolder, string mainBranchName = "main")
         {
@@ -340,7 +379,7 @@ namespace FODevManager.Utils
             }
 
             // Fetch first so origin/<branch> is known (best effort)
-            if (!FetchAll(repoPath))
+            if (!AsyncHelpers.RunSync(() => FetchAllAsync(repoPath)))
                 MessageLogger.Warning("⚠️ Fetch failed (continuing anyway).");
 
             if (LocalBranchExists(repoPath, branchName))
@@ -426,7 +465,7 @@ namespace FODevManager.Utils
                 return false;
 
             // Fetch + Pull
-            if (!FetchAll(repoPath))
+            if (!AsyncHelpers.RunSync(() => FetchAllAsync(repoPath)))
             {
                 MessageLogger.Warning("⚠️ Fetch failed. Skipping pull.");
                 return false;
@@ -434,7 +473,6 @@ namespace FODevManager.Utils
 
             return Pull(repoPath, "origin", safeMainBranchName);
         }
-
 
 
         public static bool TagExists(string repoPath, string tagName)
@@ -594,23 +632,20 @@ namespace FODevManager.Utils
         }
 
 
-        public static bool FetchAll(string repoPath)
+        public static async Task<bool> FetchAllAsync(string repoPath, CancellationToken cancellationToken = default)
         {
-            try
-            {
-                string result;
-                if (RunGitCommand(repoPath, "fetch --all --prune", out result))
-                {
-                    return true;
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageLogger.Error($"Error fetching from remote: {ex.Message}");
-            }
+            var (ok, _) = await RunGitCommandAsync(
+                    repoPath,
+                    "fetch --all --prune",
+                    timeout: TimeSpan.FromSeconds(60),
+                    cancellationToken: cancellationToken,
+                    logOnSuccess: false,
+                    logOnFailure: true)
+                .ConfigureAwait(false);
 
-            return false;
+            return ok;
         }
+
 
         private static bool Checkout(string repoPath, string checkoutArgs)
         {
@@ -818,7 +853,6 @@ namespace FODevManager.Utils
         }
 
 
-
         private static void OpenUrl(string url)
         {
             try
@@ -843,13 +877,25 @@ namespace FODevManager.Utils
 
         private static bool RunGitCommand(string workingDirectory, string arguments, out string combinedOutput, bool logOnSuccess = false, bool logOnFailure = true)
         {
-            combinedOutput = string.Empty;
+            var (ok, output) = RunGitCommandAsync(
+                    workingDirectory,
+                    arguments,
+                    timeout: TimeSpan.FromSeconds(60),
+                    cancellationToken: CancellationToken.None,
+                    logOnSuccess: logOnSuccess,
+                    logOnFailure: logOnFailure)
+                .GetAwaiter()
+                .GetResult();
 
+            combinedOutput = output ?? string.Empty;
+            return ok;
+        }
+
+        private static async Task<(bool Ok, string Output)> RunGitCommandAsync(string workingDirectory, string arguments, TimeSpan timeout, 
+            CancellationToken cancellationToken, bool logOnSuccess = false, bool logOnFailure = true)
+        {
             if (workingDirectory.IsNullOrEmpty())
-            {
-                MessageLogger.Error("❌ Working directory is null or empty.");
-                return false;
-            }
+                return (false, "Working directory is null or empty.");
 
             var processStartInfo = new ProcessStartInfo
             {
@@ -862,47 +908,66 @@ namespace FODevManager.Utils
                 WorkingDirectory = workingDirectory
             };
 
+            // Prevent Git from prompting for credentials in a non-interactive process.
+            processStartInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+            processStartInfo.Environment["GCM_INTERACTIVE"] = "Never";
+
             try
             {
-                using var process = new Process { StartInfo = processStartInfo };
+                using var process = new Process { StartInfo = processStartInfo, EnableRaisingEvents = true };
 
-                process.Start();
+                if (!process.Start())
+                    return (false, $"Failed to start git {arguments}");
 
-                var standardOutput = process.StandardOutput.ReadToEnd() ?? string.Empty;
-                var standardError = process.StandardError.ReadToEnd() ?? string.Empty;
+                var standardOutputTask = process.StandardOutput.ReadToEndAsync();
+                var standardErrorTask = process.StandardError.ReadToEndAsync();
 
-                if (!process.WaitForExit(60_000))
+                using var timeoutCancellationTokenSource = new CancellationTokenSource(timeout);
+                using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    timeoutCancellationTokenSource.Token);
+
+                try
+                {
+                    await process.WaitForExitAsync(linkedCancellationTokenSource.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
                 {
                     try { process.Kill(entireProcessTree: true); } catch { }
 
+                    var reason = cancellationToken.IsCancellationRequested ? "canceled" : "timed out";
                     if (logOnFailure)
-                        MessageLogger.Error($"❌ Git command timed out: git {arguments}");
+                        MessageLogger.Error($"❌ Git command {reason}: git {arguments}");
 
-                    return false;
+                    return (false, $"Git command {reason}: git {arguments}");
                 }
 
-                combinedOutput = (standardOutput + "\n" + standardError).Trim();
+                var standardOutput = await standardOutputTask.ConfigureAwait(false) ?? string.Empty;
+                var standardError = await standardErrorTask.ConfigureAwait(false) ?? string.Empty;
+
+                var combinedOutput = (standardOutput + "\n" + standardError).Trim();
 
                 if (process.ExitCode == 0)
                 {
                     if (logOnSuccess && !combinedOutput.IsNullOrEmpty())
                         MessageLogger.Info(combinedOutput);
 
-                    return true;
+                    return (true, combinedOutput);
                 }
 
                 if (logOnFailure && !combinedOutput.IsNullOrEmpty())
                     MessageLogger.Error(combinedOutput);
 
-                return false;
+                return (false, combinedOutput);
             }
             catch (Exception exception)
             {
                 if (logOnFailure)
                     MessageLogger.Error($"❌ Git command failed: git {arguments}. {exception.Message}");
 
-                return false;
+                return (false, exception.Message);
             }
         }
+
     }
 }
