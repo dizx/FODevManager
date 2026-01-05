@@ -11,7 +11,7 @@ namespace FODevManager.Shared.Utils
     {
         private readonly Dictionary<string, DateTime> _lastFetchUtcByRepo = new(StringComparer.OrdinalIgnoreCase);
 
-        private readonly TimeSpan _fetchInterval = TimeSpan.FromMinutes(15);
+        private readonly TimeSpan _fetchInterval = TimeSpan.FromMinutes(10);
         private readonly object _lock = new();
 
         public bool ShouldFetch(string repositoryRootFolder)

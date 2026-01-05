@@ -279,7 +279,7 @@ namespace FODevManager.WinUI
             {
                 await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken).ConfigureAwait(false);
 
-                using var periodicTimer = new PeriodicTimer(TimeSpan.FromMinutes(2));
+                using var periodicTimer = new PeriodicTimer(TimeSpan.FromMinutes(1));
 
                 var lastModelSyncUtc = DateTime.MinValue;
                 var modelSyncInterval = TimeSpan.FromMinutes(15);
@@ -315,7 +315,6 @@ namespace FODevManager.WinUI
             {
                 return;
             }
-                
 
             try
             {
