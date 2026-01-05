@@ -20,6 +20,7 @@ using System.Data;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Threading.Tasks;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.Foundation;
@@ -51,9 +52,40 @@ namespace FODevManager.WinUI
 
 
             ConfigureLogger();
+            RegisterGlobalExceptionHandlers();
+
+
             UnhandledException += App_UnhandledException;
             Services = ConfigureServices();
         }
+
+        private void RegisterGlobalExceptionHandlers()
+        {
+            AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            {
+                if (args.ExceptionObject is Exception exception)
+                {
+                    MessageLogger.Error($"AppDomain unhandled exception:{Environment.NewLine}{exception}");
+
+                    Log.Fatal(exception, "AppDomain unhandled exception");
+                }
+                else
+                {
+                    Log.Fatal("AppDomain unhandled exception: {ExceptionObject}",
+                        args.ExceptionObject);
+                }
+            };
+
+            TaskScheduler.UnobservedTaskException += (_, args) =>
+            {
+                MessageLogger.Error(
+                    $"Unobserved task exception:{Environment.NewLine}{args.Exception}");
+
+                Log.Error(args.Exception, "Unobserved task exception");
+                args.SetObserved();
+            };
+        }
+
 
         private void ConfigureLogger()
         {
@@ -68,17 +100,29 @@ namespace FODevManager.WinUI
                 .WriteTo.File(
                     path: System.IO.Path.Combine(logDirectory, "fodev-.log"),
                     rollingInterval: RollingInterval.Day,
-                    retainedFileCountLimit: 10,
-                    outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss}] [{Level:u3}] {Message:lj}{NewLine}")
+                    retainedFileCountLimit: 14,
+                    outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss}] [{Level:u3}] {Message:lj}{NewLine}{Exception}")
                 .CreateLogger();
 
             Log.Information("Logger initialized.");
         }
+       
 
         private void App_UnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
         {
-            Log.Error(e.Exception, "Unhandled exception occurred");
+            try
+            {
+                // Full exception (ToString includes inner exceptions + stack)
+                MessageLogger.Error($"Unhandled exception occurred:{Environment.NewLine}{e.Exception}");
+                Log.Error(e.Exception, "Unhandled exception occurred");
+            }
+            finally
+            {
+                // TEMPORARY while diagnosing freezes/crashes
+                e.Handled = true;
+            }
         }
+
 
         private ServiceProvider ConfigureServices()
         {

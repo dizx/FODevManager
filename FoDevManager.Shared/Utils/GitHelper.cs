@@ -172,7 +172,7 @@ namespace FODevManager.Utils
             OpenUrl(remoteUrl);
         }
 
-        public static string? GetActiveBranch(string? repoPath)
+        public static async Task<string?> GetActiveBranchAsync(string? repoPath, CancellationToken cancellationToken)
         {
             if (repoPath.IsNullOrEmpty())
             {
@@ -182,10 +182,19 @@ namespace FODevManager.Utils
 
             try
             {
-                ; var result = string.Empty;
-                if (RunGitCommand(repoPath, "rev-parse --abbrev-ref HEAD", out result))
-                    return result.Trim();
+                var result = await RunGitCommandAsync(repoPath, "rev-parse --abbrev-ref HEAD",
+                    timeout: TimeSpan.FromSeconds(10),
+                    cancellationToken: cancellationToken,
+                    logOnSuccess: false,
+                    logOnFailure: false)
+                .ConfigureAwait(false);
+
+                if (!result.Ok)
+                    return string.Empty;
+
+                return result.Output.Trim();
             }
+
             catch (Exception ex)
             {
                 MessageLogger.Error($"Error fetching branch: {ex.Message}");
@@ -194,18 +203,43 @@ namespace FODevManager.Utils
             return null;
         }
 
-        public static bool IsWorkingTreeDirty(string repositoryRootFolder)
+
+        public static string? GetActiveBranch(string? repoPath)
         {
-            if (!RunGitCommand(
+            return AsyncHelpers.RunSync(() => GetActiveBranchAsync(repoPath, CancellationToken.None));
+        }
+
+        public static async Task<bool> IsWorkingTreeDirtyAsync(string repositoryRootFolder, CancellationToken cancellationToken)
+        {
+            var result = await RunGitCommandAsync(
                     repositoryRootFolder,
                     "status --porcelain",
-                    out var output,
+                    timeout: TimeSpan.FromSeconds(10),
+                    cancellationToken: cancellationToken,
                     logOnSuccess: false,
-                    logOnFailure: false))
-                return false;
+                    logOnFailure: false)
+                .ConfigureAwait(false);
 
-            return !output.Trim().IsNullOrEmpty();
+            return result.Ok && !result.Output.Trim().IsNullOrEmpty();
         }
+
+
+        public static bool IsWorkingTreeDirty(string repositoryRootFolder)
+        {
+            return AsyncHelpers.RunSync(() => IsWorkingTreeDirtyAsync(repositoryRootFolder, CancellationToken.None));
+        }
+
+        public static async Task<RepoBranchHealth> GetBranchHealthAsync(string repositoryRootFolder, CancellationToken cancellationToken)
+        {
+            if (await RequiresAttentionAsync(repositoryRootFolder, cancellationToken).ConfigureAwait(false))
+                return RepoBranchHealth.NeedsAttention;
+
+            if (await IsWorkingTreeDirtyAsync(repositoryRootFolder, cancellationToken).ConfigureAwait(false))
+                return RepoBranchHealth.Dirty;
+
+            return RepoBranchHealth.Clean;
+        }
+
 
         public static RepoBranchHealth GetBranchHealth(string repositoryRootFolder)
         {
@@ -218,41 +252,44 @@ namespace FODevManager.Utils
             return RepoBranchHealth.Clean;
         }
 
-        public static bool RequiresAttention(string repositoryRootFolder)
+        public static async Task<bool> RequiresAttentionAsync(string repositoryRootFolder, CancellationToken cancellationToken)
         {
-            // Merge conflicts: unmerged files
-            if (RunGitCommand(
+            // Unmerged files
+            var conflicts = await RunGitCommandAsync(
                     repositoryRootFolder,
                     "diff --name-only --diff-filter=U",
-                    out var conflicts,
+                    timeout: TimeSpan.FromSeconds(10),
+                    cancellationToken: cancellationToken,
                     logOnSuccess: false,
-                    logOnFailure: false))
-            {
-                if (!conflicts.Trim().IsNullOrEmpty())
-                    return true;
-            }
+                    logOnFailure: false)
+                .ConfigureAwait(false);
 
-            // Merge in progress (MERGE_HEAD exists)
-            if (RunGitCommand(
+            if (conflicts.Ok && !conflicts.Output.Trim().IsNullOrEmpty())
+                return true;
+
+            // Merge in progress
+            var mergeHead = await RunGitCommandAsync(
                     repositoryRootFolder,
                     "rev-parse -q --verify MERGE_HEAD",
-                    out _,
+                    timeout: TimeSpan.FromSeconds(10),
+                    cancellationToken: cancellationToken,
                     logOnSuccess: false,
-                    logOnFailure: false))
-            {
-                return true;
-            }
+                    logOnFailure: false)
+                .ConfigureAwait(false);
 
-            return false;
+            return mergeHead.Ok;
+        }
+
+
+        public static bool RequiresAttention(string repositoryRootFolder)
+        {
+            return AsyncHelpers.RunSync(() => RequiresAttentionAsync(repositoryRootFolder, CancellationToken.None));
         }
 
         public static bool HasMainChanges(string repositoryRootFolder, string mainBranchName = "main")
         {
-            return HasMainChangesAsync(repositoryRootFolder, mainBranchName, CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
+            return AsyncHelpers.RunSync(() => HasMainChangesAsync(repositoryRootFolder, mainBranchName, CancellationToken.None));                
         }
-
 
         public static async Task<bool> HasMainChangesAsync(string repositoryRootFolder, string mainBranchName = "main", CancellationToken cancellationToken = default)
         {
@@ -265,10 +302,16 @@ namespace FODevManager.Utils
 
             if (shouldFetch)
             {
+                MessageLogger.LogOnly($"🔄 Fetching updates for repository at {repositoryRootFolder}...");
                 var fetchOk = await FetchAllAsync(repositoryRootFolder, cancellationToken).ConfigureAwait(false);
                 if (!fetchOk)
                     return false;
             }
+            else
+            {
+                MessageLogger.LogOnly($"ℹ️ Skipping fetch for repository at {repositoryRootFolder} (recently fetched).");
+            }
+
 
             var mergeBaseResult = await RunGitCommandAsync(
                     repositoryRootFolder,
@@ -634,6 +677,7 @@ namespace FODevManager.Utils
 
         public static async Task<bool> FetchAllAsync(string repoPath, CancellationToken cancellationToken = default)
         {
+
             var (ok, _) = await RunGitCommandAsync(
                     repoPath,
                     "fetch --all --prune",

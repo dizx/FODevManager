@@ -97,6 +97,8 @@ namespace FODevManager.WinUI
             var titleBar = _appWindow.TitleBar;
             titleBar.ExtendsContentIntoTitleBar = true;
 
+            StartUiHeartbeat();
+
             LogStartupInfo();
 
             LoadProfiles();
@@ -134,6 +136,43 @@ namespace FODevManager.WinUI
             var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
             return AppWindow.GetFromWindowId(windowId);
         }
+
+        private Microsoft.UI.Dispatching.DispatcherQueueTimer? _uiHeartbeatTimer;
+
+        private long _uiHeartbeatTicks;
+        private DateTime _lastUiTickUtc;
+
+
+         private void StartUiHeartbeat()
+        {
+            _lastUiTickUtc = DateTime.UtcNow;
+
+            _uiHeartbeatTimer = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread().CreateTimer();
+            _uiHeartbeatTimer.Interval = TimeSpan.FromMilliseconds(250);
+
+            _uiHeartbeatTimer.Tick += (_, __) =>
+            {
+                Interlocked.Increment(ref _uiHeartbeatTicks);
+                _lastUiTickUtc = DateTime.UtcNow;
+            };
+
+            _uiHeartbeatTimer.Start();
+
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    await Task.Delay(1000).ConfigureAwait(false);
+
+                    var ageMs = (DateTime.UtcNow - _lastUiTickUtc).TotalMilliseconds;
+                    if (ageMs > 1500)
+                    {
+                        MessageLogger.Error($"UI STALL detected: last tick {ageMs:0} ms ago.");
+                    }
+                }
+            });
+        }
+
 
         private void LoadProfiles(string setProfile = "")
         {
@@ -204,9 +243,6 @@ namespace FODevManager.WinUI
 
         }
 
-        private CancellationTokenSource? _profileSyncCancellationTokenSource;
-        private Task? _profileSyncTask;
-        private readonly SemaphoreSlim _profileSyncStartStopLock = new(1, 1);
 
         private void StartProfileSyncMonitoring(ProfileModel profile)
         {
@@ -216,8 +252,7 @@ namespace FODevManager.WinUI
             _uiDispatcher ??= new UiDispatcher(DispatcherQueue);
 
             _profileMonitorCancellationTokenSource = new CancellationTokenSource();
-            _profileMonitorTask = Task.Run(
-                () => MonitorLoopAsync(profile, _profileMonitorCancellationTokenSource.Token));
+            _profileMonitorTask = Task.Run(() => MonitorLoopAsync(profile, _profileMonitorCancellationTokenSource.Token));
         }
 
         private void StopProfileSyncMonitoring()
@@ -244,20 +279,19 @@ namespace FODevManager.WinUI
             {
                 await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken).ConfigureAwait(false);
 
-                using var periodicTimer = new PeriodicTimer(TimeSpan.FromSeconds(10));
+                using var periodicTimer = new PeriodicTimer(TimeSpan.FromMinutes(2));
 
                 var lastModelSyncUtc = DateTime.MinValue;
-                var modelSyncInterval = TimeSpan.FromMinutes(1);
+                var modelSyncInterval = TimeSpan.FromMinutes(15);
 
                 while (await periodicTimer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
                 {
                     if (!ShouldRunBackgroundTask())
                         continue;
 
-                    // Git job: frequent, but should be fast and cancellable
                     _backgroundQueue!.TryEnqueue(ct => RunGitHealthCheckAndUpdates(profile, ct));
 
-                    // Model sync: slower, run less frequently
+                    
                     if (DateTime.UtcNow - lastModelSyncUtc >= modelSyncInterval)
                     {
                         lastModelSyncUtc = DateTime.UtcNow;
@@ -278,7 +312,10 @@ namespace FODevManager.WinUI
         private async Task RunGitHealthCheckAndUpdates(ProfileModel profile, CancellationToken token)
         {
             if (Interlocked.Exchange(ref _isGitCheckRunning, 1) == 1)
+            {
                 return;
+            }
+                
 
             try
             {
@@ -309,6 +346,7 @@ namespace FODevManager.WinUI
             if (repository?.RepoRootFolder.IsNullOrEmpty() != false)
                 return;
 
+            
             cancellationToken.ThrowIfCancellationRequested();
 
             var repoRootFolder = repository.RepoRootFolder;
@@ -316,21 +354,18 @@ namespace FODevManager.WinUI
                 ? "main"
                 : repository.MainBranchName;
 
+            var stopwatch = Stopwatch.StartNew();
+            MessageLogger.LogOnly($"Git health start: {repository.DisplayName}");
+
             try
             {
-                var result = await Task.Run(async () =>
-                {
-                    // Keep ALL git work off the UI thread
-                    var hasUpdates = await GitHelper.HasMainChangesAsync(repoRootFolder, mainBranchName, cancellationToken);
-                    var currentBranch = GitHelper.GetActiveBranch(repoRootFolder) ?? string.Empty;
-                    var branchHealth = GitHelper.GetBranchHealth(repoRootFolder);
-
-                    return (hasUpdates, currentBranch, branchHealth);
-                }, cancellationToken).ConfigureAwait(false);
+                var hasUpdates = await GitHelper.HasMainChangesAsync(repoRootFolder, mainBranchName, cancellationToken).ConfigureAwait(false);
+                var currentBranch =  await GitHelper.GetActiveBranchAsync(repoRootFolder, cancellationToken).ConfigureAwait(false) ?? string.Empty;
+                var branchHealth = await GitHelper.GetBranchHealthAsync(repoRootFolder, cancellationToken).ConfigureAwait(false);
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var enqueued = DispatcherQueue.TryEnqueue(() =>
+                await Ui.EnqueueAsync(() =>
                 {
                     var groupingViewModel = _groupingVm;
                     if (groupingViewModel?.GitGroups == null)
@@ -342,16 +377,14 @@ namespace FODevManager.WinUI
                     if (repoGroupVm == null)
                         return;
 
-                    repoGroupVm.Branch = result.currentBranch;
-                    repoGroupVm.HasMainUpdates = result.hasUpdates;
-                    repoGroupVm.BranchHealth = result.branchHealth;
+                    repoGroupVm.Branch = currentBranch;
+                    repoGroupVm.HasMainUpdates = hasUpdates;
+                    repoGroupVm.BranchHealth = branchHealth;
 
                     if (repoGroupVm.Repository != null)
-                        repoGroupVm.Repository.LastKnownBranch = result.currentBranch;
+                        repoGroupVm.Repository.LastKnownBranch = currentBranch;
                 });
-
-                if (!enqueued)
-                    MessageLogger.Warning($"RefreshRepositoryHealthAsync: Failed to enqueue UI update for '{repoRootFolder}'.");
+                
             }
             catch (OperationCanceledException)
             {
@@ -360,6 +393,12 @@ namespace FODevManager.WinUI
             catch (Exception exception)
             {
                 MessageLogger.Warning($"RefreshRepositoryHealthAsync failed for '{repoRootFolder}': {exception.Message}");
+            }
+
+            finally
+            {
+                stopwatch.Stop();
+                MessageLogger.LogOnly($"Git health end: {repository.DisplayName} ({stopwatch.ElapsedMilliseconds} ms)");
             }
         }
 
@@ -411,8 +450,27 @@ namespace FODevManager.WinUI
             BusyOverlayVm.Dispose();
         }
 
+
+        private static readonly SemaphoreSlim _dialogGate = new(1, 1);
+        private async Task<T> ShowDialogSingleFlightAsync<T>(Func<Task<T>> showFunc, CancellationToken token)
+        {
+            await _dialogGate.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                return await showFunc().ConfigureAwait(false);
+            }
+            finally
+            {
+                _dialogGate.Release();
+            }
+        }
+
+
         private async Task RunModelSyncCheckAsync(ProfileModel currentProfile, CancellationToken token)
         {
+            var stopwatch = Stopwatch.StartNew();
+            MessageLogger.LogOnly($"Run ModelSync start: {currentProfile.ProfileName}");
+
             try
             {
                 token.ThrowIfCancellationRequested();
@@ -436,7 +494,7 @@ namespace FODevManager.WinUI
                 var message = $"The {currentProfile.ProfileName} profile definition has changed (models were added or removed).\n\n" +
                     added + removed + "\nDo you want to re-import the profile now?";
 
-                var userWantsImport = await EnqueueOnUIThreadAsync(async () =>
+                var userWantsImport = await Ui.EnqueueAsync(async () =>
                 {
                     var dialog = new ContentDialog
                     {
@@ -475,32 +533,15 @@ namespace FODevManager.WinUI
             }
             catch (Exception ex)
             {
-                MessageLogger.Error($"RunModelSyncCheckAsync failed: {ex.Message}");
+                MessageLogger.Error($"Run ModelSync failed: {ex.Message}");
+            }
+            finally
+            {
+                stopwatch.Stop();
+                MessageLogger.LogOnly($"Run ModelSync end: {currentProfile.ProfileName} ({stopwatch.ElapsedMilliseconds} ms)");
             }
         }
 
-        private Task<T> EnqueueOnUIThreadAsync<T>(Func<Task<T>> action)
-        {
-            var taskCompletionSource = new TaskCompletionSource<T>();
-
-            var enqueued = DispatcherQueue.TryEnqueue(async () =>
-            {
-                try
-                {
-                    var result = await action();
-                    taskCompletionSource.SetResult(result);
-                }
-                catch (Exception exception)
-                {
-                    taskCompletionSource.SetException(exception);
-                }
-            });
-
-            if (!enqueued)
-                taskCompletionSource.SetException(new InvalidOperationException("Failed to enqueue work on UI thread."));
-
-            return taskCompletionSource.Task;
-        }
 
         private void LoadModelListViewData(string profileName)
         {
