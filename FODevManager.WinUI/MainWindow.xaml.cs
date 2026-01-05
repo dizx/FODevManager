@@ -50,6 +50,14 @@ namespace FODevManager.WinUI
         private readonly SemaphoreSlim _mergePromptSemaphore = new(1, 1);
         public BusyOverlayViewModel BusyOverlayVm { get; }
         public ProfileModel ActiveProfile { get; set; }
+        private CancellationTokenSource? _profileMonitorCancellationTokenSource;
+        private Task? _profileMonitorTask;
+
+        private BackgroundQueue? _backgroundQueue;
+        private UiDispatcher? _uiDispatcher;
+        private int _isGitCheckRunning;
+
+        private UiDispatcher Ui => _uiDispatcher ?? throw new InvalidOperationException("BusyOps.Initialize must be called before using BusyOps.");
 
         public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService, AppConfig appConfig)
         {
@@ -61,6 +69,9 @@ namespace FODevManager.WinUI
             this.Closed += MainWindow_Closed;
 
             Singleton<Engine>.Instance.EnvironmentType = EnvironmentType.WinUi;
+
+            _uiDispatcher = new UiDispatcher(DispatcherQueue);
+            BusyOps.Initialize(_uiDispatcher);
 
             _uiSubscriber = new UIMessageSubscriber(this.DispatcherQueue)
             {
@@ -85,6 +96,8 @@ namespace FODevManager.WinUI
 
             var titleBar = _appWindow.TitleBar;
             titleBar.ExtendsContentIntoTitleBar = true;
+
+            StartUiHeartbeat();
 
             LogStartupInfo();
 
@@ -123,6 +136,43 @@ namespace FODevManager.WinUI
             var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
             return AppWindow.GetFromWindowId(windowId);
         }
+
+        private Microsoft.UI.Dispatching.DispatcherQueueTimer? _uiHeartbeatTimer;
+
+        private long _uiHeartbeatTicks;
+        private DateTime _lastUiTickUtc;
+
+
+         private void StartUiHeartbeat()
+        {
+            _lastUiTickUtc = DateTime.UtcNow;
+
+            _uiHeartbeatTimer = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread().CreateTimer();
+            _uiHeartbeatTimer.Interval = TimeSpan.FromMilliseconds(250);
+
+            _uiHeartbeatTimer.Tick += (_, __) =>
+            {
+                Interlocked.Increment(ref _uiHeartbeatTicks);
+                _lastUiTickUtc = DateTime.UtcNow;
+            };
+
+            _uiHeartbeatTimer.Start();
+
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    await Task.Delay(1000).ConfigureAwait(false);
+
+                    var ageMs = (DateTime.UtcNow - _lastUiTickUtc).TotalMilliseconds;
+                    if (ageMs > 1500)
+                    {
+                        MessageLogger.Error($"UI STALL detected: last tick {ageMs:0} ms ago.");
+                    }
+                }
+            });
+        }
+
 
         private void LoadProfiles(string setProfile = "")
         {
@@ -190,120 +240,167 @@ namespace FODevManager.WinUI
             UpdateProfileFields(profile);
 
             StartProfileSyncMonitoring(profile);
+
         }
 
 
         private void StartProfileSyncMonitoring(ProfileModel profile)
         {
-            // Cancel previous monitor (if any)
-            _profileSyncCts?.Cancel();
-            _profileSyncCts = new CancellationTokenSource();
+            StopProfileSyncMonitoring();
 
-            // Fire-and-forget
-            _ = RunBackgroundTasks(profile, _profileSyncCts.Token);
+            _backgroundQueue ??= new BackgroundQueue();
+            _uiDispatcher ??= new UiDispatcher(DispatcherQueue);
+
+            _profileMonitorCancellationTokenSource = new CancellationTokenSource();
+            _profileMonitorTask = Task.Run(() => MonitorLoopAsync(profile, _profileMonitorCancellationTokenSource.Token));
         }
 
-        private async Task RunBackgroundTasks(ProfileModel profile, CancellationToken token)
+        private void StopProfileSyncMonitoring()
         {
-            try
-            {
-                await Task.Delay(TimeSpan.FromSeconds(15), token);
-
-                while (!token.IsCancellationRequested)
-                {
-                    if (ShouldRunBackgroundTask())
-                    {
-                        await RunGitHealthCheckAndUpdates(profile, token);
-                    }
-
-                    await Task.Delay(TimeSpan.FromSeconds(10), token);
-
-                    if (ShouldRunBackgroundTask())
-                    {
-                        await RunModelSyncCheckAsync(profile);
-                    }
-
-                    await Task.Delay(TimeSpan.FromMinutes(1), token);
-                }
-            }
-            catch (TaskCanceledException)
-            {
-                // Expected on shutdown/profile switch
-            }
-            catch (Exception ex)
-            {
-                MessageLogger.Error($"RunProfileSyncLoopAsync failed: {ex.Message}");
-            }
-        }
-
-        private async Task RunGitHealthCheckAndUpdates(ProfileModel profile, CancellationToken token)
-        {
-            var busyHandler = Singleton<BusyHandler>.Instance;
-
-            foreach (var repository in profile.Repositories ?? Enumerable.Empty<RepositoryModel>())
-            {
-                if (token.IsCancellationRequested)
-                    return;
-
-                if (busyHandler.IsBusy)
-                    return;
-
-                await RefreshRepositoryHealthAsync(repository, token);
-
-            }
-        }
-
-        private async Task RefreshRepositoryHealthAsync(RepositoryModel repository, CancellationToken token)
-        {
-            if (repository.RepoRootFolder.IsNullOrEmpty())
+            if (_profileMonitorCancellationTokenSource == null)
                 return;
 
             try
             {
-                var repoRootFolder = repository.RepoRootFolder;
-                var mainBranchName = repository.MainBranchName.IsNullOrEmpty() ? "main" : repository.MainBranchName;
+                _profileMonitorCancellationTokenSource.Cancel();
+            }
+            finally
+            {
+                _profileMonitorCancellationTokenSource.Dispose();
+                _profileMonitorCancellationTokenSource = null;
+                _profileMonitorTask = null;
+            }
+        }
 
-                (bool hasUpdates, string currentBranch, RepoBranchHealth branchHealth) result;
 
-                // Do git checks off the UI thread
-                result = await Task.Run(() =>
+        private async Task MonitorLoopAsync(ProfileModel profile, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken).ConfigureAwait(false);
+
+                using var periodicTimer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+
+                var lastModelSyncUtc = DateTime.MinValue;
+                var modelSyncInterval = TimeSpan.FromMinutes(15);
+
+                while (await periodicTimer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    var updates = GitHelper.HasMainChanges(repository.RepoRootFolder, repository.MainBranchName);
-                    var branch = GitHelper.GetActiveBranch(repository.RepoRootFolder) ?? string.Empty;
-                    var health = GitHelper.GetBranchHealth(repository.RepoRootFolder);
+                    if (!ShouldRunBackgroundTask())
+                        continue;
 
-                    return (updates, branch, health);
-                }, token);
+                    _backgroundQueue!.TryEnqueue(ct => RunGitHealthCheckAndUpdates(profile, ct));
 
-                // Update the VM on the UI thread
-                _ = DispatcherQueue.TryEnqueue(() =>
+                    
+                    if (DateTime.UtcNow - lastModelSyncUtc >= modelSyncInterval)
+                    {
+                        lastModelSyncUtc = DateTime.UtcNow;
+                        _backgroundQueue!.TryEnqueue(ct => RunModelSyncCheckAsync(profile, ct));
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"MonitorLoopAsync failed: {exception.Message}");
+            }
+        }
+
+
+        private async Task RunGitHealthCheckAndUpdates(ProfileModel profile, CancellationToken token)
+        {
+            if (Interlocked.Exchange(ref _isGitCheckRunning, 1) == 1)
+            {
+                return;
+            }
+
+            try
+            {
+                var busyHandler = Singleton<BusyHandler>.Instance;
+
+                if (busyHandler.IsBusy)
+                    return;
+
+                foreach (var repository in profile.Repositories ?? Enumerable.Empty<RepositoryModel>())
                 {
-                    if (_groupingVm?.GitGroups == null)
+                    token.ThrowIfCancellationRequested();
+
+                    if (busyHandler.IsBusy)
                         return;
 
-                    var repoGroupVm = _groupingVm.GitGroups.FirstOrDefault(group =>
+                    await RefreshRepositoryHealthAsync(repository, token);
+                }
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _isGitCheckRunning, 0);
+            }
+            
+        }
+
+        private async Task RefreshRepositoryHealthAsync(RepositoryModel repository, CancellationToken cancellationToken)
+        {
+            if (repository?.RepoRootFolder.IsNullOrEmpty() != false)
+                return;
+
+            
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var repoRootFolder = repository.RepoRootFolder;
+            var mainBranchName = repository.MainBranchName.IsNullOrEmpty()
+                ? "main"
+                : repository.MainBranchName;
+
+            var stopwatch = Stopwatch.StartNew();
+            MessageLogger.LogOnly($"Git health start: {repository.DisplayName}");
+
+            try
+            {
+                var hasUpdates = await GitHelper.HasMainChangesAsync(repoRootFolder, mainBranchName, cancellationToken).ConfigureAwait(false);
+                var currentBranch =  await GitHelper.GetActiveBranchAsync(repoRootFolder, cancellationToken).ConfigureAwait(false) ?? string.Empty;
+                var branchHealth = await GitHelper.GetBranchHealthAsync(repoRootFolder, cancellationToken).ConfigureAwait(false);
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                await Ui.EnqueueAsync(() =>
+                {
+                    var groupingViewModel = _groupingVm;
+                    if (groupingViewModel?.GitGroups == null)
+                        return;
+
+                    var repoGroupVm = groupingViewModel.GitGroups.FirstOrDefault(group =>
                         group.Repository?.RepoRootFolder.SameAs(repoRootFolder) == true);
 
                     if (repoGroupVm == null)
                         return;
 
-                    repoGroupVm.Branch = result.currentBranch;
-                    repoGroupVm.HasMainUpdates = result.hasUpdates;
-                    repoGroupVm.BranchHealth = result.branchHealth;
+                    repoGroupVm.Branch = currentBranch;
+                    repoGroupVm.HasMainUpdates = hasUpdates;
+                    repoGroupVm.BranchHealth = branchHealth;
 
                     if (repoGroupVm.Repository != null)
-                    {
-                        repoGroupVm.Repository.LastKnownBranch = result.currentBranch;
-                    }
+                        repoGroupVm.Repository.LastKnownBranch = currentBranch;
                 });
-
-
+                
             }
-            catch (Exception ex)
+            catch (OperationCanceledException)
             {
-                MessageLogger.Warning($"RefreshRepositoryHealthAsync failed for '{repository.RepoRootFolder}': {ex.Message}");
+                // Expected during shutdown / profile switch
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Warning($"RefreshRepositoryHealthAsync failed for '{repoRootFolder}': {exception.Message}");
+            }
+
+            finally
+            {
+                stopwatch.Stop();
+                MessageLogger.LogOnly($"Git health end: {repository.DisplayName} ({stopwatch.ElapsedMilliseconds} ms)");
             }
         }
+
 
         private async Task<bool> EnsureMergedWithMainAsync(RepositoryModel repository)
         {
@@ -352,15 +449,35 @@ namespace FODevManager.WinUI
             BusyOverlayVm.Dispose();
         }
 
-        private async Task RunModelSyncCheckAsync(ProfileModel currentProfile)
+
+        private static readonly SemaphoreSlim _dialogGate = new(1, 1);
+        private async Task<T> ShowDialogSingleFlightAsync<T>(Func<Task<T>> showFunc, CancellationToken token)
         {
+            await _dialogGate.WaitAsync(token).ConfigureAwait(false);
             try
             {
+                return await showFunc().ConfigureAwait(false);
+            }
+            finally
+            {
+                _dialogGate.Release();
+            }
+        }
+
+
+        private async Task RunModelSyncCheckAsync(ProfileModel currentProfile, CancellationToken token)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            MessageLogger.LogOnly($"Run ModelSync start: {currentProfile.ProfileName}");
+
+            try
+            {
+                token.ThrowIfCancellationRequested();
+
                 if (currentProfile == null)
                     return;
 
-                // This stays in the service project, no UI there
-                var syncResult = await _profileService.CheckProfileModelChangesAsync(currentProfile);
+                var syncResult = await _profileService.CheckProfileModelChangesAsync(currentProfile).ConfigureAwait(false);
 
                 if (!syncResult.HasChanges)
                     return;
@@ -376,34 +493,54 @@ namespace FODevManager.WinUI
                 var message = $"The {currentProfile.ProfileName} profile definition has changed (models were added or removed).\n\n" +
                     added + removed + "\nDo you want to re-import the profile now?";
 
-                var dialog = new ContentDialog
+                var userWantsImport = await Ui.EnqueueAsync(async () =>
                 {
-                    Title = "Profile changes detected",
-                    Content = message,
-                    PrimaryButtonText = "Re-import",
-                    CloseButtonText = "Cancel",
-                    DefaultButton = ContentDialogButton.Primary,
-                    XamlRoot = this.Content.XamlRoot
-                };
+                    var dialog = new ContentDialog
+                    {
+                        Title = "Profile changes detected",
+                        Content = message,
+                        PrimaryButtonText = "Re-import",
+                        CloseButtonText = "Cancel",
+                        DefaultButton = ContentDialogButton.Primary,
+                        XamlRoot = Content.XamlRoot
+                    };
 
-                var result = await dialog.ShowAsync();
-                if (result != ContentDialogResult.Primary)
+                    var result = await dialog.ShowAsync();
+                    return result == ContentDialogResult.Primary;
+                }).ConfigureAwait(false);
+
+                if (!userWantsImport)
                     return;
 
                 if (currentProfile.ProfileFilePath.IsNullOrEmpty())
                     return;
 
-                var updatedProfile = _profileService.ImportProfile(currentProfile.ProfileFilePath);
-                if (updatedProfile != null)
+                var (ok, updatedProfile) = await BusyOps.TrySyncAsAsync(() => _profileService.ImportProfile(currentProfile.ProfileFilePath), "Import profile");
+
+                if (!ok || updatedProfile == null)
+                    return;
+
+                await Ui.EnqueueAsync(() =>
                 {
                     SetSelectedProfile(updatedProfile);
-                }
+                    return Task.CompletedTask;
+                }).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected on shutdown/profile switch
             }
             catch (Exception ex)
             {
-                MessageLogger.Error($"RunModelSyncCheckAsync failed: {ex.Message}");
+                MessageLogger.Error($"Run ModelSync failed: {ex.Message}");
+            }
+            finally
+            {
+                stopwatch.Stop();
+                MessageLogger.LogOnly($"Run ModelSync end: {currentProfile.ProfileName} ({stopwatch.ElapsedMilliseconds} ms)");
             }
         }
+
 
         private void LoadModelListViewData(string profileName)
         {
@@ -432,7 +569,6 @@ namespace FODevManager.WinUI
 
             CombinedList.ItemsSource = combinedItems;
         }
-
 
         private void ProfilesDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -971,9 +1107,9 @@ namespace FODevManager.WinUI
             await dialog.ShowAsync();
         }
 
-        private static async Task<bool> RunOperationAsync(Action action, string operationName)
+        private static async Task<bool> RunOperationAsync(Action action, string operationName, bool shutdownServer = true)
         {
-            return await BusyOps.TrySyncAsAsync(action, operationName);
+            return await BusyOps.TrySyncAsAsync(action, operationName, shutdownServer);
 
         }
 
@@ -1031,9 +1167,8 @@ namespace FODevManager.WinUI
 
         private async Task<bool> CheckProfile(string profileName)
         {
-            return await RunOperationAsync(() => _profileService.CheckProfile(profileName), "Check profile");
+            return await RunOperationAsync(() => _profileService.CheckProfile(profileName), "Check profile", shutdownServer: false); 
         }
-
 
 
         private async Task<bool> SwitchProfile(string profileName)
@@ -1222,8 +1357,6 @@ namespace FODevManager.WinUI
 
             UIRefresh(profileName);
         }
-
-
 
 
         private async void DeleteProfile_Click(object sender, RoutedEventArgs e)
