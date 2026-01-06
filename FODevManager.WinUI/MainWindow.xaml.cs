@@ -416,7 +416,7 @@ namespace FODevManager.WinUI
                 if (!confirm)
                     return false;
 
-                var merged = await RunOperationAsync(() => GitHelper.MergeMainIntoCurrentBranch(repository.RepoRootFolder, repository.MainBranchName), "Merge main into current branch");
+                var merged = await RunOperationAsync(() => GitHelper.MergeMainIntoCurrentBranch(repository.RepoRootFolder, repository.MainBranchName), "Merge main into current branch", false);
 
                 if (!merged)
                     return false;
@@ -657,7 +657,7 @@ namespace FODevManager.WinUI
                         task: taskId,
                         comment: comment,
                         switchBranch: true);
-                }, "Assign Task");
+                }, "Assign Task", false);
 
                 UIMessageHelper.LogToUI($"✅ Assigned Task '{taskId}' to repo '{group.DisplayName}'.");
             }
@@ -1324,7 +1324,7 @@ namespace FODevManager.WinUI
             if (!confirm)
                 return;
 
-            await RunOperationAsync(() => _profileService.GitResetProfile(profile), "Reset to Main");
+            await RunOperationAsync(() => _profileService.GitResetProfile(profile), "Reset to Main", false);
 
             // Reload view models (branch info, grouping, etc.)
             UIRefresh(profileName);
@@ -1353,7 +1353,7 @@ namespace FODevManager.WinUI
             if (!confirm)
                 return;
 
-            await RunOperationAsync(() => _profileService.TagReleaseProfile(profile), "Tag Release");
+            await RunOperationAsync(() => _profileService.TagReleaseProfile(profile), "Tag Release", false);
 
             UIRefresh(profileName);
         }
