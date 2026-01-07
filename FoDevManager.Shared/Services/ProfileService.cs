@@ -589,6 +589,13 @@ namespace FODevManager.Services
             var profile = _fileService.LoadProfile(profileName);
             profile.DatabaseName = dbName;
             _fileService.SaveProfile(profile, updateExternal: true);
+            
+            if (profile.IsActive)
+            {
+                ApplyDatabase(profileName);
+            }
+            
+
             MessageLogger.Info($"✅ Database name '{dbName}' set for profile '{profileName}'.");
         }
 
@@ -625,8 +632,8 @@ namespace FODevManager.Services
 
             if (profile.DatabaseName.IsNullOrEmpty())
             {
-                MessageLogger.Warning("ℹ️ No database name configured for this profile.");
-                return;
+                profile.DatabaseName = "AXDB";
+                _fileService.SaveProfile(profile, updateExternal: true);
             }
             
             var currentDb = WebConfigHelper.GetCurrentDatabaseName();
@@ -856,21 +863,9 @@ namespace FODevManager.Services
 
         public void DeleteProfile(string profileName)
         {
-            string solutionFilePath = _solutionService.GetSolutionFilePath(profileName);
-            
             var profile = _fileService.LoadProfile(profileName);
 
-            // Remove each project from the solution before deleting the profile
-            foreach (var model in profile.AllModels)
-            {
-                _solutionService.RemoveProjectFromSolution(profileName, model.ModelName);
-            }
-
-            if (File.Exists(solutionFilePath))
-            {
-                File.Delete(solutionFilePath);
-                MessageLogger.Warning($"Solution file '{solutionFilePath}' deleted.");
-            }
+            _modelDeploymentService.UnDeployAllModels(profileName);
 
             _fileService.DeleteProfile(profileName);
 

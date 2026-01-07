@@ -1263,13 +1263,13 @@ namespace FODevManager.WinUI
                 return;
             }
 
-            TryCatch(() =>
+            await RunOperationAsync(() =>
             {
                 _profileService.SetDatabaseName(ActiveProfile.ProfileName, newDbString);
-                ActiveProfile.DatabaseName = newDbString;
-                DatabaseNameTextBox.IsReadOnly = true;
-                MessageLogger.Highlight($"✅ Database name updated to: {newDbString}");
-            });
+            }, "Apply database name");
+
+            ActiveProfile.DatabaseName = newDbString;
+            DatabaseNameTextBox.IsReadOnly = true;
         }
         
         private void RepoHeader_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
