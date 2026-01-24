@@ -22,8 +22,9 @@ namespace FODevManager.Services
         private readonly FileService _fileService;
         private readonly VisualStudioSolutionService _solutionService;
         private readonly ModelDeploymentService _modelDeploymentService;
+        private readonly ProfilesContainer _profilesContainer;
 
-        public ProfileService(AppConfig config, FileService fileService, VisualStudioSolutionService solutionService, ModelDeploymentService modelDeploymentService)
+        public ProfileService(AppConfig config, FileService fileService, VisualStudioSolutionService solutionService, ModelDeploymentService modelDeploymentService, ProfilesContainer profilesContainer)
         {
             _defaultSourceDirectory = config.DefaultSourceDirectory;
             _deploymentBasePath = config.DeploymentBasePath;
@@ -32,6 +33,7 @@ namespace FODevManager.Services
             _fileService = fileService;
             _solutionService = solutionService;
             _modelDeploymentService = modelDeploymentService;
+            _profilesContainer = profilesContainer;
             FileHelper.EnsureDirectoryExists(_defaultSourceDirectory);
             
 
@@ -1023,6 +1025,15 @@ namespace FODevManager.Services
             return true;
         }
 
+
+        public void UndeployAllModels()
+        {
+            _profilesContainer.Refresh();
+            var models = _profilesContainer.GetDeployedModelsAcrossAllProfiles(out var dirtyProfiles);
+            _modelDeploymentService.UnDeployModels(models);
+            _profilesContainer.SaveProfiles(dirtyProfiles, updateExternal: false);
+
+        }
 
         public void RemoveModelFromProfile(string profileName, string modelName)
         {

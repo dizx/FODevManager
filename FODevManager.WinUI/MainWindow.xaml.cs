@@ -31,6 +31,7 @@ using Windows.System;
 using Windows.UI.Text;
 using WinRT;
 using static FODevManager.WinUI.ViewModel.RepoGroupViewModel;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 
 namespace FODevManager.WinUI
@@ -179,6 +180,21 @@ namespace FODevManager.WinUI
             });
         }
 
+        private void LogActiveEnvironmentInfo(ProfileModel? profile)
+        {
+            if (profile == null)
+                return;
+
+            if (profile.IsActive)
+                UIMessageHelper.LogToUI($"🔔 Active profile: {profile.ProfileName}");
+
+            var currentDb = WebConfigHelper.GetCurrentDatabaseName();
+            if (!currentDb.IsNullOrEmpty())
+                UIMessageHelper.LogToUI($"🗄️ Active database: {currentDb}");
+            else
+                UIMessageHelper.LogToUI("🗄️ Active database: (unknown)", MessageType.Warning);
+        }
+
 
         private void LoadProfiles(string setProfile = "")
         {
@@ -190,11 +206,6 @@ namespace FODevManager.WinUI
                 UIMessageHelper.LogToUI($"🔔 {profiles.Count} profiles loaded");
 
                 var currentProfile = !setProfile.IsNullOrEmpty() ? profiles.FirstOrDefault(x => x.ProfileName == setProfile) : (profiles.FirstOrDefault(x => x.IsActive) ?? profiles.First());
-
-                if (currentProfile != null && currentProfile.IsActive)
-                {
-                    UIMessageHelper.LogToUI($"🔔 Active profile: {currentProfile.ProfileName} ");
-                }
 
                 if (setProfile.IsNullOrEmpty() && currentProfile != null && !currentProfile.IsActive)
                 {
@@ -246,6 +257,8 @@ namespace FODevManager.WinUI
             UpdateProfileFields(profile);
 
             StartProfileSyncMonitoring(profile);
+            
+            LogActiveEnvironmentInfo(profile);
 
         }
 
@@ -920,17 +933,20 @@ namespace FODevManager.WinUI
             {
                 UpdateStatus($"Deploying profile '{profileName}'...");
                 await DeployAllModels(profileName);
+                LoadModelListViewData(profileName);
                 UpdateStatus($"✅ Deployment complete for '{profileName}'.");
             }
         }
 
         private async void UnDeployProfile_Click(object sender, RoutedEventArgs e)
         {
+            await UnDeployAllModels();
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
-                await UnDeployAllModels(profileName);
-                UpdateStatus($"🧹 Undeployment complete for '{profileName}'.");
+               LoadModelListViewData(profileName);
             }
+
+            UpdateStatus($"🧹 Undeployment complete for all models in all profiles.");
         }
 
         private async void RefreshProfile_Click(object sender, RoutedEventArgs e)
@@ -1200,9 +1216,9 @@ namespace FODevManager.WinUI
             return ok && success;
         }
 
-        private async Task<bool> UnDeployAllModels(string profileName)
+        private async Task<bool> UnDeployAllModels()
         {
-            return await RunOperationAsync(() => _deploymentService.UnDeployAllModels(profileName), "Undeploy all models");
+            return await RunOperationAsync(() => _profileService.UndeployAllModels(), "Undeploy all models");
         }
 
         private void OpenGitRepo(string profileName, string modelName)

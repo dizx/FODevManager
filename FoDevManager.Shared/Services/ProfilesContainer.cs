@@ -83,5 +83,48 @@ namespace FODevManager.Services
         /// <summary>Flattens all models across every profile.</summary>
         public IEnumerable<ProfileEnvironmentModel> AllModels =>
             Profiles.SelectMany(profile => profile.AllModels);
+
+        /// <summary>
+        /// Returns all models that are currently marked as deployed across all profiles.
+        /// Also returns the set of profiles that contain at least one deployed model (i.e. profiles that will become dirty if those models are undeployed).
+        /// </summary>
+        public List<ProfileEnvironmentModel> GetDeployedModelsAcrossAllProfiles(out List<ProfileModel> dirtyProfiles)
+        {
+            var deployedModels = new List<ProfileEnvironmentModel>();
+            var dirty = new List<ProfileModel>();
+
+            foreach (var profile in Profiles)
+            {
+                // IMPORTANT: we use the cached profile instances, so any mutation of IsDeployed
+                // updates the same graph that we later save.
+                var deployedInProfile = profile.AllModels
+                    .Where(m => m != null && m.IsDeployed)
+                    .ToList();
+
+                if (deployedInProfile.Count == 0)
+                    continue;
+
+                deployedModels.AddRange(deployedInProfile);
+                dirty.Add(profile);
+            }
+
+            dirtyProfiles = dirty;
+            return deployedModels;
+        }
+
+        /// <summary>Saves a set of profiles back to disk (deduped by profile name).</summary>
+        public void SaveProfiles(IEnumerable<ProfileModel> profilesToSave, bool updateExternal = true)
+        {
+            if (profilesToSave == null)
+                return;
+
+            foreach (var profile in profilesToSave)
+            {
+                if (profile == null)
+                    continue;
+
+                _fileService.SaveProfile(profile, updateExternal: updateExternal);
+            }
+        }
     }
 }
