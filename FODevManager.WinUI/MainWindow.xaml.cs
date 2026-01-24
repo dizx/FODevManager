@@ -45,11 +45,10 @@ namespace FODevManager.WinUI
         private MicaController? _micaController;
         private SystemBackdropConfiguration? _backdropConfig;
         private AppWindow _appWindow;
-        private CancellationTokenSource? _profileSyncCts;
         private ModelsGroupingViewModel? _groupingVm;
         private readonly SemaphoreSlim _mergePromptSemaphore = new(1, 1);
         public BusyOverlayViewModel BusyOverlayVm { get; }
-        public ProfileModel ActiveProfile { get; set; }
+        public ProfileModel? ActiveProfile { get; set; }
         private CancellationTokenSource? _profileMonitorCancellationTokenSource;
         private Task? _profileMonitorTask;
 
@@ -62,11 +61,13 @@ namespace FODevManager.WinUI
         public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService, AppConfig appConfig)
         {
             this.InitializeComponent();
-            
+            this.Activated += MainWindow_Activated;
+
             BusyOverlayVm = new BusyOverlayViewModel();
             
             this.Activated += MainWindow_Activated;
             this.Closed += MainWindow_Closed;
+
 
             Singleton<Engine>.Instance.EnvironmentType = EnvironmentType.WinUi;
 
@@ -105,7 +106,12 @@ namespace FODevManager.WinUI
 
             UIMessageHelper.LogToUI($"READY...");
 
-            this.Closed += (_, __) => BusyOverlayVm.Dispose();
+            // Replace the lambda with a proper handler that includes cancellation
+            this.Closed += (_, args) => 
+            {
+                _profileMonitorCancellationTokenSource?.Cancel();
+                BusyOverlayVm.Dispose();
+            };
         }
         private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
         {
@@ -445,7 +451,8 @@ namespace FODevManager.WinUI
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
-            _profileSyncCts?.Cancel();
+            _uiHeartbeatTimer?.Stop();
+            StopProfileSyncMonitoring();
             BusyOverlayVm.Dispose();
         }
 
@@ -632,7 +639,7 @@ namespace FODevManager.WinUI
                 PrimaryButtonText = "Assign",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = Content.XamlRoot
+                XamlRoot = this.Content.XamlRoot
             };
 
             var taskIdTextBox = new TextBox { PlaceholderText = "Enter Task ID (e.g. 2145)" };
