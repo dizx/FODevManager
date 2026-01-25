@@ -589,14 +589,39 @@ namespace FODevManager.Services
         public void SetDatabaseName(string profileName, string dbName)
         {
             var profile = _fileService.LoadProfile(profileName);
-            profile.DatabaseName = dbName;
-            _fileService.SaveProfile(profile, updateExternal: true);
-            
+
+            var newDbName = (dbName ?? string.Empty).Trim();
+            if (newDbName.IsNullOrEmpty())
+            {
+                MessageLogger.Warning("⚠️ Database name cannot be empty.");
+                return;
+            }
+
+            // Normalize "AXDB" as the default value
+            var normalizedNew = newDbName.SameAs("AXDB") ? "AXDB" : newDbName;
+
+            // If unchanged, do nothing (prevents repeated saves/exports)
+            if ((profile.DatabaseName ?? "AXDB").SameAs(normalizedNew))
+            {
+                MessageLogger.Info($"ℹ️ Database name unchanged ('{normalizedNew}').");
+                return;
+            }
+
+            var oldWasDefault = (profile.DatabaseName ?? "AXDB").SameAs("AXDB");
+            var newIsDefault = normalizedNew.SameAs("AXDB");
+
+            profile.DatabaseName = normalizedNew;
+
+            // Always save the local profile file
+            // Only export (updateExternal) ONCE: when moving away from default AXDB
+            var shouldUpdateExternal = oldWasDefault && !newIsDefault;
+
+            _fileService.SaveProfile(profile, updateExternal: shouldUpdateExternal);
+
             if (profile.IsActive)
             {
                 ApplyDatabase(profileName);
             }
-            
 
             MessageLogger.Info($"✅ Database name '{dbName}' set for profile '{profileName}'.");
         }
