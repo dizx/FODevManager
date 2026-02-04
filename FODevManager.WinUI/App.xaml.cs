@@ -164,6 +164,7 @@ namespace FODevManager.WinUI
             try
             {
                 var mainWindow = new MainWindow(profileService, fileService, deploymentService, appConfig);
+                MainWindow = mainWindow;
                 mainWindow.Activate();
             }
             catch (Exception ex)

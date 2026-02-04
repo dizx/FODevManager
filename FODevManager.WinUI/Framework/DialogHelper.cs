@@ -12,6 +12,9 @@ namespace FODevManager.WinUI.Framework
     {
         public static async Task<bool> ConfirmAsync(Window owner, string title, string message)
         {
+            if (owner.Content == null)
+                return false;
+
             var dialog = new ContentDialog
             {
                 Title = title,

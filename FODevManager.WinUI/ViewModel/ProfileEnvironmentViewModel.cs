@@ -14,7 +14,19 @@ namespace FODevManager.WinUI.ViewModel
         public string ModelRootFolder { get; set; } = string.Empty;
         public string ProjectFilePath { get; set; } = string.Empty;
         public string MetadataFolder { get; set; } = string.Empty;
-        public bool IsDeployed { get; set; }
+        private bool _isDeployed;
+        public bool IsDeployed
+        {
+            get => _isDeployed;
+            set
+            {
+                if (_isDeployed == value)
+                    return;
+
+                _isDeployed = value;
+                OnPropertyChanged(nameof(IsDeployed));
+            }
+        }
 
         private ModelType _modelType = ModelType.Source;
         public ModelType ModelType

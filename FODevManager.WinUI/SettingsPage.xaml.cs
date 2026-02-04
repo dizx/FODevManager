@@ -30,7 +30,13 @@ namespace FODevManager.WinUI
             var picker = new FolderPicker();
             picker.FileTypeFilter.Add("*");
 
-            var hWnd = WindowNative.GetWindowHandle(App.MainWindow); // ✅ correct
+            if (App.MainWindow == null)
+            {
+                MessageLogger.Warning("Window handle not available for folder picker.");
+                return;
+            }
+
+            var hWnd = WindowNative.GetWindowHandle(App.MainWindow);
             InitializeWithWindow.Initialize(picker, hWnd);
 
             var folder = await picker.PickSingleFolderAsync();
