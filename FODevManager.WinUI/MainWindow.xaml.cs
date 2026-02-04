@@ -138,6 +138,7 @@ namespace FODevManager.WinUI
         }
 
         private Microsoft.UI.Dispatching.DispatcherQueueTimer? _uiHeartbeatTimer;
+        private CancellationTokenSource? _uiHeartbeatCts;
 
         private long _uiHeartbeatTicks;
         private DateTime _lastUiTickUtc;
@@ -158,11 +159,23 @@ namespace FODevManager.WinUI
 
             _uiHeartbeatTimer.Start();
 
+            _uiHeartbeatCts?.Cancel();
+            _uiHeartbeatCts?.Dispose();
+            _uiHeartbeatCts = new CancellationTokenSource();
+            var token = _uiHeartbeatCts.Token;
+
             _ = Task.Run(async () =>
             {
-                while (true)
+                while (!token.IsCancellationRequested)
                 {
-                    await Task.Delay(1000).ConfigureAwait(false);
+                    try
+                    {
+                        await Task.Delay(1000, token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
 
                     var ageMs = (DateTime.UtcNow - _lastUiTickUtc).TotalMilliseconds;
                     if (ageMs > 1500)
@@ -446,6 +459,11 @@ namespace FODevManager.WinUI
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
             _profileSyncCts?.Cancel();
+            StopProfileSyncMonitoring();
+            _uiHeartbeatCts?.Cancel();
+            _uiHeartbeatCts?.Dispose();
+            _uiHeartbeatCts = null;
+            _uiHeartbeatTimer?.Stop();
             BusyOverlayVm.Dispose();
         }
 

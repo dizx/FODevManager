@@ -4,7 +4,30 @@ public static class UIMessageHelper
 {
     public static void LogToUI(string message, MessageType type = MessageType.Info)
     {
-        Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread().TryEnqueue(() =>
+        var dispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        if (dispatcherQueue == null)
+        {
+            switch (type)
+            {
+                case MessageType.Error:
+                    MessageLogger.Error(message);
+                    break;
+                case MessageType.Warning:
+                    MessageLogger.Warning(message);
+                    break;
+                case MessageType.Highlight:
+                    MessageLogger.Highlight(message);
+                    break;
+                case MessageType.LogOnly:
+                    break;
+                default:
+                    MessageLogger.Info(message);
+                    break;
+            }
+            return;
+        }
+
+        dispatcherQueue.TryEnqueue(() =>
         {
             switch (type)
             {
