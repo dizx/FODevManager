@@ -1070,9 +1070,72 @@ namespace FODevManager.Services
                 return;
             }
 
-            _solutionService.RemoveProjectFromSolution(profileName, model.ModelName);
+            _solutionService.RemoveProjectFromSolution(profile, model.ModelName);
 
-            profile.StandaloneModels.Remove(model);
+            // Remove from repository if it belongs to one; otherwise remove from standalone.
+            var removed = false;
+
+            var repo = profile.FindRepositoryForModel(model);
+            if (repo != null && repo.Models != null)
+            {
+                var toRemove = repo.Models
+                    .FirstOrDefault(m => m != null && m.ModelName.SameAs(model.ModelName));
+
+                if (toRemove != null)
+                {
+                    repo.Models.Remove(toRemove);
+                    removed = true;
+
+                    // If the repo has no models left, remove the repo entry as well.
+                    if (repo.Models.Count == 0)
+                    {
+                        profile.Repositories.Remove(repo);
+                    }
+                }
+            }
+
+            if (!removed && profile.StandaloneModels != null)
+            {
+                var standalone = profile.StandaloneModels
+                    .FirstOrDefault(m => m != null && m.ModelName.SameAs(model.ModelName));
+
+                if (standalone != null)
+                {
+                    profile.StandaloneModels.Remove(standalone);
+                    removed = true;
+                }
+            }
+
+            if (!removed)
+            {
+                // Fallback: as a last resort, try removing by name from any repo models.
+                foreach (var repository in profile.Repositories ?? new List<RepositoryModel>())
+                {
+                    if (repository.Models == null)
+                        continue;
+
+                    var repoModel = repository.Models
+                        .FirstOrDefault(m => m != null && m.ModelName.SameAs(model.ModelName));
+
+                    if (repoModel != null)
+                    {
+                        repository.Models.Remove(repoModel);
+                        removed = true;
+
+                        if (repository.Models.Count == 0)
+                        {
+                            profile.Repositories.Remove(repository);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            if (!removed)
+            {
+                MessageLogger.Warning($"Model '{modelName}' could not be removed from profile '{profileName}' (not found in repo/standalone collections).");
+                return;
+            }
 
             _fileService.SaveProfile(profile, updateExternal: true);
 
@@ -1270,7 +1333,7 @@ namespace FODevManager.Services
                 if (document.RootElement.ValueKind != JsonValueKind.Object)
                     return false;
 
-                if (document.RootElement.TryGetProperty("ExportFormatVersion", out _))
+                if (document.RootElement.TryGetProperty("ExportProfileVersion", out _))
                 {
                     var exportProfile = FileHelper.LoadJson<ExportProfileModel>(filePath);
                     if (exportProfile == null || exportProfile.ProfileName.IsNullOrEmpty())

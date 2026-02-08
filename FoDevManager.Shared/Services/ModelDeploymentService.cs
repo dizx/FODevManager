@@ -306,7 +306,7 @@ namespace FODevManager.Services
                 
                 if (model.IsDeployed == false)
                 {
-                    profile.FindModel(modelName)!.IsDeployed = false;
+                    model.IsDeployed = true;
                     
                     if (updateProfile) _fileService.SaveProfile(profile);                    
                 }
@@ -316,7 +316,7 @@ namespace FODevManager.Services
                 MessageLogger.Warning($"❌ Model '{modelName}' is NOT deployed.");
                 if(model.IsDeployed == true)
                 {
-                    profile.FindModel(modelName)!.IsDeployed = true;
+                    model.IsDeployed = false;
                     if (updateProfile) _fileService.SaveProfile(profile);
                 }
             }
