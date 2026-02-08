@@ -25,6 +25,7 @@ using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
+using WinRT;
 using WinRT.FODevManager_WinUIVtableClasses;
 
 // To learn more about WinUI, the WinUI project structure,
@@ -133,6 +134,7 @@ namespace FODevManager.WinUI
 
             services.AddSingleton(config);
             services.AddSingleton<ProfileService>();
+            services.AddSingleton<ProfilesContainer>();
             services.AddSingleton<FileService>();
             services.AddSingleton<ModelDeploymentService>();
             services.AddSingleton<VisualStudioSolutionService>();
@@ -162,6 +164,7 @@ namespace FODevManager.WinUI
             try
             {
                 var mainWindow = new MainWindow(profileService, fileService, deploymentService, appConfig);
+                MainWindow = mainWindow;
                 mainWindow.Activate();
             }
             catch (Exception ex)

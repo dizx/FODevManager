@@ -22,8 +22,9 @@ namespace FODevManager.Services
         private readonly FileService _fileService;
         private readonly VisualStudioSolutionService _solutionService;
         private readonly ModelDeploymentService _modelDeploymentService;
+        private readonly ProfilesContainer _profilesContainer;
 
-        public ProfileService(AppConfig config, FileService fileService, VisualStudioSolutionService solutionService, ModelDeploymentService modelDeploymentService)
+        public ProfileService(AppConfig config, FileService fileService, VisualStudioSolutionService solutionService, ModelDeploymentService modelDeploymentService, ProfilesContainer profilesContainer)
         {
             _defaultSourceDirectory = config.DefaultSourceDirectory;
             _deploymentBasePath = config.DeploymentBasePath;
@@ -32,6 +33,7 @@ namespace FODevManager.Services
             _fileService = fileService;
             _solutionService = solutionService;
             _modelDeploymentService = modelDeploymentService;
+            _profilesContainer = profilesContainer;
             FileHelper.EnsureDirectoryExists(_defaultSourceDirectory);
             
 
@@ -587,8 +589,40 @@ namespace FODevManager.Services
         public void SetDatabaseName(string profileName, string dbName)
         {
             var profile = _fileService.LoadProfile(profileName);
-            profile.DatabaseName = dbName;
-            _fileService.SaveProfile(profile, updateExternal: true);
+
+            var newDbName = (dbName ?? string.Empty).Trim();
+            if (newDbName.IsNullOrEmpty())
+            {
+                MessageLogger.Warning("⚠️ Database name cannot be empty.");
+                return;
+            }
+
+            // Normalize "AXDB" as the default value
+            var normalizedNew = newDbName.SameAs("AXDB") ? "AXDB" : newDbName;
+
+            // If unchanged, do nothing (prevents repeated saves/exports)
+            if ((profile.DatabaseName ?? "AXDB").SameAs(normalizedNew))
+            {
+                MessageLogger.Info($"ℹ️ Database name unchanged ('{normalizedNew}').");
+                return;
+            }
+
+            var oldWasDefault = (profile.DatabaseName ?? "AXDB").SameAs("AXDB");
+            var newIsDefault = normalizedNew.SameAs("AXDB");
+
+            profile.DatabaseName = normalizedNew;
+
+            // Always save the local profile file
+            // Only export (updateExternal) ONCE: when moving away from default AXDB
+            var shouldUpdateExternal = oldWasDefault && !newIsDefault;
+
+            _fileService.SaveProfile(profile, updateExternal: shouldUpdateExternal);
+
+            if (profile.IsActive)
+            {
+                ApplyDatabase(profileName);
+            }
+
             MessageLogger.Info($"✅ Database name '{dbName}' set for profile '{profileName}'.");
         }
 
@@ -625,8 +659,8 @@ namespace FODevManager.Services
 
             if (profile.DatabaseName.IsNullOrEmpty())
             {
-                MessageLogger.Warning("ℹ️ No database name configured for this profile.");
-                return;
+                profile.DatabaseName = "AXDB";
+                _fileService.SaveProfile(profile, updateExternal: true);
             }
             
             var currentDb = WebConfigHelper.GetCurrentDatabaseName();
@@ -856,21 +890,9 @@ namespace FODevManager.Services
 
         public void DeleteProfile(string profileName)
         {
-            string solutionFilePath = _solutionService.GetSolutionFilePath(profileName);
-            
             var profile = _fileService.LoadProfile(profileName);
 
-            // Remove each project from the solution before deleting the profile
-            foreach (var model in profile.AllModels)
-            {
-                _solutionService.RemoveProjectFromSolution(profileName, model.ModelName);
-            }
-
-            if (File.Exists(solutionFilePath))
-            {
-                File.Delete(solutionFilePath);
-                MessageLogger.Warning($"Solution file '{solutionFilePath}' deleted.");
-            }
+            _modelDeploymentService.UnDeployAllModels(profileName);
 
             _fileService.DeleteProfile(profileName);
 
@@ -1029,6 +1051,15 @@ namespace FODevManager.Services
         }
 
 
+        public void UndeployAllModels()
+        {
+            _profilesContainer.Refresh();
+            var models = _profilesContainer.GetDeployedModelsAcrossAllProfiles(out var dirtyProfiles);
+            _modelDeploymentService.UnDeployModels(models);
+            _profilesContainer.SaveProfiles(dirtyProfiles, updateExternal: false);
+
+        }
+
         public void RemoveModelFromProfile(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
@@ -1039,9 +1070,72 @@ namespace FODevManager.Services
                 return;
             }
 
-            _solutionService.RemoveProjectFromSolution(profileName, model.ModelName);
+            _solutionService.RemoveProjectFromSolution(profile, model.ModelName);
 
-            profile.StandaloneModels.Remove(model);
+            // Remove from repository if it belongs to one; otherwise remove from standalone.
+            var removed = false;
+
+            var repo = profile.FindRepositoryForModel(model);
+            if (repo != null && repo.Models != null)
+            {
+                var toRemove = repo.Models
+                    .FirstOrDefault(m => m != null && m.ModelName.SameAs(model.ModelName));
+
+                if (toRemove != null)
+                {
+                    repo.Models.Remove(toRemove);
+                    removed = true;
+
+                    // If the repo has no models left, remove the repo entry as well.
+                    if (repo.Models.Count == 0)
+                    {
+                        profile.Repositories.Remove(repo);
+                    }
+                }
+            }
+
+            if (!removed && profile.StandaloneModels != null)
+            {
+                var standalone = profile.StandaloneModels
+                    .FirstOrDefault(m => m != null && m.ModelName.SameAs(model.ModelName));
+
+                if (standalone != null)
+                {
+                    profile.StandaloneModels.Remove(standalone);
+                    removed = true;
+                }
+            }
+
+            if (!removed)
+            {
+                // Fallback: as a last resort, try removing by name from any repo models.
+                foreach (var repository in profile.Repositories ?? new List<RepositoryModel>())
+                {
+                    if (repository.Models == null)
+                        continue;
+
+                    var repoModel = repository.Models
+                        .FirstOrDefault(m => m != null && m.ModelName.SameAs(model.ModelName));
+
+                    if (repoModel != null)
+                    {
+                        repository.Models.Remove(repoModel);
+                        removed = true;
+
+                        if (repository.Models.Count == 0)
+                        {
+                            profile.Repositories.Remove(repository);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            if (!removed)
+            {
+                MessageLogger.Warning($"Model '{modelName}' could not be removed from profile '{profileName}' (not found in repo/standalone collections).");
+                return;
+            }
 
             _fileService.SaveProfile(profile, updateExternal: true);
 
@@ -1239,7 +1333,7 @@ namespace FODevManager.Services
                 if (document.RootElement.ValueKind != JsonValueKind.Object)
                     return false;
 
-                if (document.RootElement.TryGetProperty("ExportFormatVersion", out _))
+                if (document.RootElement.TryGetProperty("ExportProfileVersion", out _))
                 {
                     var exportProfile = FileHelper.LoadJson<ExportProfileModel>(filePath);
                     if (exportProfile == null || exportProfile.ProfileName.IsNullOrEmpty())

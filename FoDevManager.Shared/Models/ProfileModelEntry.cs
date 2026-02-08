@@ -10,8 +10,6 @@ namespace FODevManager.Shared.Models
     public sealed record ProfileModelEntry(RepositoryModel? Repository, ProfileEnvironmentModel Model)
     {
         public bool IsRepository => Repository != null;
-
         public string ModelName => Model.ModelName;
-
     }
 }

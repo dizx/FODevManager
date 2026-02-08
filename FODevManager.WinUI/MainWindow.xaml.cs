@@ -31,6 +31,7 @@ using Windows.System;
 using Windows.UI.Text;
 using WinRT;
 using static FODevManager.WinUI.ViewModel.RepoGroupViewModel;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 
 namespace FODevManager.WinUI
@@ -45,11 +46,11 @@ namespace FODevManager.WinUI
         private MicaController? _micaController;
         private SystemBackdropConfiguration? _backdropConfig;
         private AppWindow _appWindow;
-        private CancellationTokenSource? _profileSyncCts;
+        
         private ModelsGroupingViewModel? _groupingVm;
         private readonly SemaphoreSlim _mergePromptSemaphore = new(1, 1);
         public BusyOverlayViewModel BusyOverlayVm { get; }
-        public ProfileModel ActiveProfile { get; set; }
+        public ProfileModel? ActiveProfile { get; set; }
         private CancellationTokenSource? _profileMonitorCancellationTokenSource;
         private Task? _profileMonitorTask;
 
@@ -62,11 +63,13 @@ namespace FODevManager.WinUI
         public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService, AppConfig appConfig)
         {
             this.InitializeComponent();
-            
+            this.Activated += MainWindow_Activated;
+
             BusyOverlayVm = new BusyOverlayViewModel();
             
             this.Activated += MainWindow_Activated;
             this.Closed += MainWindow_Closed;
+
 
             Singleton<Engine>.Instance.EnvironmentType = EnvironmentType.WinUi;
 
@@ -105,7 +108,12 @@ namespace FODevManager.WinUI
 
             UIMessageHelper.LogToUI($"READY...");
 
-            this.Closed += (_, __) => BusyOverlayVm.Dispose();
+            // Replace the lambda with a proper handler that includes cancellation
+            this.Closed += (_, args) => 
+            {
+                _profileMonitorCancellationTokenSource?.Cancel();
+                BusyOverlayVm.Dispose();
+            };
         }
         private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
         {
@@ -138,6 +146,7 @@ namespace FODevManager.WinUI
         }
 
         private Microsoft.UI.Dispatching.DispatcherQueueTimer? _uiHeartbeatTimer;
+        private CancellationTokenSource? _uiHeartbeatCts;
 
         private long _uiHeartbeatTicks;
         private DateTime _lastUiTickUtc;
@@ -157,12 +166,23 @@ namespace FODevManager.WinUI
             };
 
             _uiHeartbeatTimer.Start();
+            _uiHeartbeatCts?.Cancel();
+            _uiHeartbeatCts?.Dispose();
+            _uiHeartbeatCts = new CancellationTokenSource();
+            var token = _uiHeartbeatCts.Token;
 
             _ = Task.Run(async () =>
             {
-                while (true)
+                while (!token.IsCancellationRequested)
                 {
-                    await Task.Delay(1000).ConfigureAwait(false);
+                    try
+                    {
+                        await Task.Delay(1000, token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
 
                     var ageMs = (DateTime.UtcNow - _lastUiTickUtc).TotalMilliseconds;
                     if (ageMs > 1500)
@@ -171,6 +191,21 @@ namespace FODevManager.WinUI
                     }
                 }
             });
+        }
+
+        private void LogActiveEnvironmentInfo(ProfileModel? profile)
+        {
+            if (profile == null)
+                return;
+
+            if (profile.IsActive)
+                UIMessageHelper.LogToUI($"🔔 Active profile: {profile.ProfileName}");
+
+            var currentDb = WebConfigHelper.GetCurrentDatabaseName();
+            if (!currentDb.IsNullOrEmpty())
+                UIMessageHelper.LogToUI($"🗄️ Active database: {currentDb}");
+            else
+                UIMessageHelper.LogToUI("🗄️ Active database: (unknown)", MessageType.Warning);
         }
 
 
@@ -184,11 +219,6 @@ namespace FODevManager.WinUI
                 UIMessageHelper.LogToUI($"🔔 {profiles.Count} profiles loaded");
 
                 var currentProfile = !setProfile.IsNullOrEmpty() ? profiles.FirstOrDefault(x => x.ProfileName == setProfile) : (profiles.FirstOrDefault(x => x.IsActive) ?? profiles.First());
-
-                if (currentProfile != null && currentProfile.IsActive)
-                {
-                    UIMessageHelper.LogToUI($"🔔 Active profile: {currentProfile.ProfileName} ");
-                }
 
                 if (setProfile.IsNullOrEmpty() && currentProfile != null && !currentProfile.IsActive)
                 {
@@ -240,6 +270,8 @@ namespace FODevManager.WinUI
             UpdateProfileFields(profile);
 
             StartProfileSyncMonitoring(profile);
+            
+            LogActiveEnvironmentInfo(profile);
 
         }
 
@@ -416,7 +448,7 @@ namespace FODevManager.WinUI
                 if (!confirm)
                     return false;
 
-                var merged = await RunOperationAsync(() => GitHelper.MergeMainIntoCurrentBranch(repository.RepoRootFolder, repository.MainBranchName), "Merge main into current branch");
+                var merged = await RunOperationAsync(() => GitHelper.MergeMainIntoCurrentBranch(repository.RepoRootFolder, repository.MainBranchName), "Merge main into current branch", false);
 
                 if (!merged)
                     return false;
@@ -445,7 +477,12 @@ namespace FODevManager.WinUI
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
-            _profileSyncCts?.Cancel();
+            _uiHeartbeatTimer?.Stop();
+            StopProfileSyncMonitoring();
+            _uiHeartbeatCts?.Cancel();
+            _uiHeartbeatCts?.Dispose();
+            _uiHeartbeatCts = null;
+            _uiHeartbeatTimer?.Stop();
             BusyOverlayVm.Dispose();
         }
 
@@ -632,7 +669,7 @@ namespace FODevManager.WinUI
                 PrimaryButtonText = "Assign",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = Content.XamlRoot
+                XamlRoot = this.Content.XamlRoot
             };
 
             var taskIdTextBox = new TextBox { PlaceholderText = "Enter Task ID (e.g. 2145)" };
@@ -657,7 +694,7 @@ namespace FODevManager.WinUI
                         task: taskId,
                         comment: comment,
                         switchBranch: true);
-                }, "Assign Task");
+                }, "Assign Task", false);
 
                 UIMessageHelper.LogToUI($"✅ Assigned Task '{taskId}' to repo '{group.DisplayName}'.");
             }
@@ -913,17 +950,20 @@ namespace FODevManager.WinUI
             {
                 UpdateStatus($"Deploying profile '{profileName}'...");
                 await DeployAllModels(profileName);
+                LoadModelListViewData(profileName);
                 UpdateStatus($"✅ Deployment complete for '{profileName}'.");
             }
         }
 
         private async void UnDeployProfile_Click(object sender, RoutedEventArgs e)
         {
+            await UnDeployAllModels();
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
-                await UnDeployAllModels(profileName);
-                UpdateStatus($"🧹 Undeployment complete for '{profileName}'.");
+               LoadModelListViewData(profileName);
             }
+
+            UpdateStatus($"🧹 Undeployment complete for all models in all profiles.");
         }
 
         private async void RefreshProfile_Click(object sender, RoutedEventArgs e)
@@ -1048,7 +1088,7 @@ namespace FODevManager.WinUI
 
         public static void LogStartupInfo()
         {
-            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.0";
+            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.1";
             var buildDate = GetBuildDate().ToString("yyyy-MM-dd HH:mm");
 
 
@@ -1059,7 +1099,7 @@ namespace FODevManager.WinUI
 
         private async void ShowAboutDialog_Click(object sender, RoutedEventArgs e)
         {
-            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.0";
+            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.1";
             var buildDate = GetBuildDate().ToString("yyyy-MM-dd HH:mm");
 
             var contentPanel = new StackPanel
@@ -1193,9 +1233,9 @@ namespace FODevManager.WinUI
             return ok && success;
         }
 
-        private async Task<bool> UnDeployAllModels(string profileName)
+        private async Task<bool> UnDeployAllModels()
         {
-            return await RunOperationAsync(() => _deploymentService.UnDeployAllModels(profileName), "Undeploy all models");
+            return await RunOperationAsync(() => _profileService.UndeployAllModels(), "Undeploy all models");
         }
 
         private void OpenGitRepo(string profileName, string modelName)
@@ -1263,13 +1303,13 @@ namespace FODevManager.WinUI
                 return;
             }
 
-            TryCatch(() =>
+            await RunOperationAsync(() =>
             {
                 _profileService.SetDatabaseName(ActiveProfile.ProfileName, newDbString);
-                ActiveProfile.DatabaseName = newDbString;
-                DatabaseNameTextBox.IsReadOnly = true;
-                MessageLogger.Highlight($"✅ Database name updated to: {newDbString}");
-            });
+            }, "Apply database name");
+
+            ActiveProfile.DatabaseName = newDbString;
+            DatabaseNameTextBox.IsReadOnly = true;
         }
         
         private void RepoHeader_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
@@ -1324,7 +1364,7 @@ namespace FODevManager.WinUI
             if (!confirm)
                 return;
 
-            await RunOperationAsync(() => _profileService.GitResetProfile(profile), "Reset to Main");
+            await RunOperationAsync(() => _profileService.GitResetProfile(profile), "Reset to Main", false);
 
             // Reload view models (branch info, grouping, etc.)
             UIRefresh(profileName);
@@ -1353,7 +1393,7 @@ namespace FODevManager.WinUI
             if (!confirm)
                 return;
 
-            await RunOperationAsync(() => _profileService.TagReleaseProfile(profile), "Tag Release");
+            await RunOperationAsync(() => _profileService.TagReleaseProfile(profile), "Tag Release", false);
 
             UIRefresh(profileName);
         }

@@ -74,7 +74,7 @@ namespace FODevManager.Services
                 {
                     string linkPath = Path.Combine(_deploymentBasePath, model.ModelName);
 
-                    if (!model.IsDeployed && !Directory.Exists(linkPath))
+                    if (!Directory.Exists(linkPath))
                     {
                         MessageLogger.Info($"🔄 Deploying model: {model.ModelName}...");
                         
@@ -141,6 +141,46 @@ namespace FODevManager.Services
                 {
                     MessageLogger.Error($"❌ Error undeploying model '{modelName}': {ex.Message}");
                 }
+            }
+            finally
+            {
+                ServiceHelper.StartW3SVC();
+            }
+        }
+
+        public void UnDeployModels(List<ProfileEnvironmentModel> models)
+        {
+            ServiceHelper.StopW3SVC();
+
+            try
+            {
+                bool anyDeployed = false;
+
+                foreach (var model in models)
+                {
+                    string linkPath = Path.Combine(_deploymentBasePath, model.ModelName);
+
+                    if (Directory.Exists(linkPath))
+                    {
+                        MessageLogger.Info($"🔄 Removing deployment link for model '{model.ModelName}'...");
+                        Directory.Delete(linkPath, true);
+                        model.IsDeployed = false;
+                        anyDeployed = true;
+                    }
+                }
+
+                if (!anyDeployed)
+                {
+                    MessageLogger.Info($"✅ All models are already undeployed.");
+                    return;
+                }
+
+                
+                MessageLogger.Info($"✅ Undeployment complete.");
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Error undeploying models: {ex.Message}");
             }
             finally
             {
@@ -266,7 +306,7 @@ namespace FODevManager.Services
                 
                 if (model.IsDeployed == false)
                 {
-                    profile.FindModel(modelName)!.IsDeployed = false;
+                    model.IsDeployed = true;
                     
                     if (updateProfile) _fileService.SaveProfile(profile);                    
                 }
@@ -276,7 +316,7 @@ namespace FODevManager.Services
                 MessageLogger.Warning($"❌ Model '{modelName}' is NOT deployed.");
                 if(model.IsDeployed == true)
                 {
-                    profile.FindModel(modelName)!.IsDeployed = true;
+                    model.IsDeployed = false;
                     if (updateProfile) _fileService.SaveProfile(profile);
                 }
             }

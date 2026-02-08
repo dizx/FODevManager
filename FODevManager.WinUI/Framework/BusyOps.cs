@@ -23,13 +23,13 @@ namespace FODevManager.WinUI.Framework
 
         public readonly record struct TryResult<T>(bool Ok, T Value);
 
-        public static Task<TryResult<T>> TrySyncAsAsync<T>(Func<T> func, string operationName, bool shutdownServer = true, T fallback = default)
+        public static Task<TryResult<T>> TrySyncAsAsync<T>(Func<T> func, string? operationName, bool shutdownServer = true, T fallback = default)
             => TryCatchAsync<T>(() => Task.Run(func), operationName, shutdownServer, fallback);
 
-        public static Task<bool> TrySyncAsAsync(Action action, string operationName, bool shutdownServer)
+        public static Task<bool> TrySyncAsAsync(Action action, string? operationName, bool shutdownServer)
             => TryCatchAsync(() => Task.Run(action), operationName, shutdownServer);
 
-        private static async Task<bool> TryCatchAsync(Func<Task> action, string operationName, bool shutdownServer)
+        private static async Task<bool> TryCatchAsync(Func<Task> action, string? operationName, bool shutdownServer)
         {
             var result = await TryCatchAsync(
                 async () =>
@@ -42,7 +42,7 @@ namespace FODevManager.WinUI.Framework
             return result.Ok;
         }
 
-        private static async Task<TryResult<T>> TryCatchAsync<T>(Func<Task<T>> func, string operationName, bool shutdownServer, T fallback = default)
+        private static async Task<TryResult<T>> TryCatchAsync<T>(Func<Task<T>> func, string? operationName, bool shutdownServer, T fallback = default)
         {
             var minVisibleMs = 2000;
             var busy = Singleton<BusyHandler>.Instance;
@@ -66,7 +66,8 @@ namespace FODevManager.WinUI.Framework
                         await Task.Run(ServiceHelper.StopW3SVC).ConfigureAwait(false);
                     }
 
-                    MessageLogger.Highlight($"▶ {operationName} started.");
+                    if (!operationName.IsNullOrEmpty())
+                        MessageLogger.Highlight($"▶ {operationName} started.");
 
                     Singleton<W3cServiceState>.Instance.InOperation = true;
 
@@ -74,17 +75,24 @@ namespace FODevManager.WinUI.Framework
 
                     Singleton<W3cServiceState>.Instance.InOperation = false;
 
-                    MessageLogger.Highlight($"✓ {operationName} completed.");
+                    if (!operationName.IsNullOrEmpty())
+                        MessageLogger.Highlight($"✓ {operationName} completed.");
+
                     return new TryResult<T>(true, result);
                 }
                 catch (OperationCanceledException cancelException)
                 {
-                    MessageLogger.Warning($"⏹ {operationName} canceled: {cancelException.Message}");
+                    if (!operationName.IsNullOrEmpty())
+                        MessageLogger.Warning($"⏹ {operationName} canceled: {cancelException.Message}");
                     return new TryResult<T>(false, fallback);
                 }
                 catch (Exception exception)
                 {
-                    MessageLogger.Error($"✖ {operationName} failed: {exception.Message}");
+                    if (!operationName.IsNullOrEmpty())
+                        MessageLogger.Error($"✖ {operationName} failed: {exception.Message}");
+                    else
+                        MessageLogger.Error($"✖ Operation failed: {exception.Message}");
+                    
                     Log.Error(exception.ToString());
                     return new TryResult<T>(false, fallback);
                 }

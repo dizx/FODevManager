@@ -18,11 +18,6 @@ namespace FODevManager.Services
             _defaultSourceDirectory = config.DefaultSourceDirectory;
         }
 
-        public string GetSolutionFilePath(string profileName)
-        {
-            return Path.Combine(_defaultSourceDirectory, profileName, $"{profileName}.sln");
-        }
-
         public string GetSolutionFilePath(ProfileModel profile)
         {
             if (profile == null) throw new ArgumentNullException(nameof(profile));
@@ -60,7 +55,7 @@ namespace FODevManager.Services
         public string CreateSolutionFile(string profileName)
         {
             string solutionDir = GetSolutionDirectory(profileName);
-            string solutionFilePath = GetSolutionFilePath(profileName);
+            string solutionFilePath = GetSolutionFilePath(new ProfileModel { ProfileName = profileName });
 
             return CreateSolutionFile(profileName, solutionDir, solutionFilePath);
         }
@@ -178,13 +173,13 @@ namespace FODevManager.Services
         }
 
 
-        public void RemoveProjectFromSolution(string profileName, string modelName)
+        public void RemoveProjectFromSolution(ProfileModel profile, string modelName)
         {
-            string solutionFilePath = GetSolutionFilePath(profileName);
+            string solutionFilePath = GetSolutionFilePath(profile);
 
             if (!File.Exists(solutionFilePath))
             {
-                MessageLogger.Warning($"Solution file for profile '{profileName}' does not exist.");
+                MessageLogger.Warning($"Solution file for profile '{profile.ProfileName}' does not exist.");
                 return;
             }
 
@@ -214,7 +209,7 @@ namespace FODevManager.Services
             }
 
             File.WriteAllText(solutionFilePath, sb.ToString());
-            MessageLogger.Info($"Removed project '{modelName}' from solution '{profileName}.sln'.");
+            MessageLogger.Info($"Removed project '{modelName}' from solution '{profile.ProfileName}.sln'.");
         }
 
         public void OpenSolution(string solutionPath)

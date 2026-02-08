@@ -12,7 +12,7 @@ namespace FODevManager.WinUI.Framework
         public bool IsBusy => _isBusy;
         public DateTime LastBusyEndedUtc => _lastBusyEndedUtc;
 
-        public void Start(string message, Guid operationId)
+        public void Start(string? message, Guid operationId)
         {
             _isBusy = true;
             BusyChanged?.Invoke(true, message, operationId);

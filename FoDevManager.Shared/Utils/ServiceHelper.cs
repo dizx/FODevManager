@@ -33,7 +33,6 @@ namespace FODevManager.Utils
 
                 if (!w3cServiceState.IsRunning)
                 {
-                    MessageLogger.Info("⏳ W3C: stop skipped (already stopped).");
                     return;
                 }
             }
@@ -81,7 +80,6 @@ namespace FODevManager.Utils
 
                 if (w3cServiceState.IsRunning)
                 {
-                    MessageLogger.Info("⏳ W3C: start skipped (already running).");
                     return;
                 }
             }
