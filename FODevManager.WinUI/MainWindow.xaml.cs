@@ -1088,7 +1088,7 @@ namespace FODevManager.WinUI
 
         public static void LogStartupInfo()
         {
-            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.0";
+            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.1";
             var buildDate = GetBuildDate().ToString("yyyy-MM-dd HH:mm");
 
 
@@ -1099,7 +1099,7 @@ namespace FODevManager.WinUI
 
         private async void ShowAboutDialog_Click(object sender, RoutedEventArgs e)
         {
-            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.0";
+            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.1";
             var buildDate = GetBuildDate().ToString("yyyy-MM-dd HH:mm");
 
             var contentPanel = new StackPanel
