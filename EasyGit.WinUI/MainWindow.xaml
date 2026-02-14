@@ -12,64 +12,86 @@
     <Grid RowSpacing="12">
         <Grid.Background>
             <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                <GradientStop Color="#F4F6FA" Offset="0" />
-                <GradientStop Color="#E8ECF3" Offset="1" />
+                <GradientStop Color="#B2B2B2" Offset="0" />
+                <GradientStop Color="#A8A8A8" Offset="1" />
             </LinearGradientBrush>
         </Grid.Background>
 
-        <Grid Padding="16" RowSpacing="12">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+        <Grid Padding="8,8,8,0" RowSpacing="12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-            <StackPanel Grid.Row="0" Spacing="10">
-                <TextBlock Text="EasyGit" FontSize="28" FontWeight="SemiBold" />
-                <TextBlock Text="Automated Git workflow for FO developer profiles" Opacity="0.75" />
+            <Grid Grid.Row="0" Background="#A8A8A8" Height="50">
+                <TextBlock Text="EasyGit" VerticalAlignment="Center" Margin="12,0,0,0" FontSize="33" FontWeight="SemiBold" />
+            </Grid>
 
-                <Border CornerRadius="12" Background="#C6CDD8" Padding="10">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <ComboBox x:Name="ProfilesDropdown" Width="320" SelectionChanged="ProfilesDropdown_SelectionChanged" PlaceholderText="Select profile" />
-                        <Button Content="Refresh" Style="{StaticResource SecondaryActionButtonStyle}" Click="Refresh_Click" />
-                        <TextBlock Text="Auto sync is active" VerticalAlignment="Center" Opacity="0.8" FontStyle="Italic" />
-                    </StackPanel>
-                </Border>
+            <StackPanel Grid.Row="1" Spacing="10">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <ComboBox x:Name="ProfilesDropdown" Width="374" SelectionChanged="ProfilesDropdown_SelectionChanged" PlaceholderText="Select an existing profile" />
+                    <Button Style="{StaticResource ToolbarBlueButtonStyle}" Click="Refresh_Click">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE72C;" FontSize="14" />
+                            <TextBlock Text="Refresh Profile" />
+                        </StackPanel>
+                    </Button>
+                    <TextBlock Text="Auto sync is active" VerticalAlignment="Center" Opacity="0.8" FontStyle="Italic" />
+                </StackPanel>
             </StackPanel>
 
-            <ListView Grid.Row="1" x:Name="RepositoriesList" SelectionMode="None" Background="Transparent" BorderThickness="0">
+            <Border Grid.Row="2" Background="#959595" CornerRadius="10" Padding="8">
+                <ListView x:Name="RepositoriesList" SelectionMode="None" Background="Transparent" BorderThickness="0">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="local:RepoRowViewModel">
-                        <Border Margin="0,4,0,4" Padding="12" CornerRadius="12" Background="#D7DCE3">
+                        <Border Margin="0,4,0,4" Padding="12" CornerRadius="10" Background="#939393">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="260" />
-                                    <ColumnDefinition Width="230" />
+                                    <ColumnDefinition Width="250" />
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <StackPanel Grid.Column="0" Spacing="3">
-                                    <TextBlock Text="{x:Bind DisplayName}" FontWeight="SemiBold" FontSize="18" />
-                                    <TextBlock Text="{x:Bind BranchInfo}" FontStyle="Italic" Opacity="0.75" />
+                                <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+                                    <TextBlock Text="{x:Bind DisplayName}" FontWeight="SemiBold" FontSize="17" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Ellipse Width="10" Height="10" Fill="#2FC740" VerticalAlignment="Center" />
+                                        <TextBlock Text="{x:Bind BranchInfo}" FontStyle="Italic" Opacity="0.9" />
+                                    </StackPanel>
                                 </StackPanel>
 
-                                <Border Grid.Column="1" Background="#EDF2FA" CornerRadius="10" Padding="8,4" VerticalAlignment="Center">
+                                <Border Grid.Column="1" Background="#A6A6A6" CornerRadius="10" Padding="8,4" VerticalAlignment="Center">
                                     <TextBlock Text="{x:Bind StatusText}" />
                                 </Border>
 
-                                <Button Grid.Column="2" Margin="10,0,0,0" Content="Create Task/Feature" Tag="{x:Bind RepoId}" Style="{StaticResource PrimaryActionButtonStyle}" Click="CreateFeature_Click" />
-                                <Button Grid.Column="3" Margin="8,0,0,0" Content="Commit" Tag="{x:Bind RepoId}" Style="{StaticResource PrimaryActionButtonStyle}" Click="Commit_Click" IsEnabled="{x:Bind CanCommit}" />
-                                <Button Grid.Column="4" Margin="8,0,0,0" Content="Create PR" Tag="{x:Bind RepoId}" Style="{StaticResource PrimaryActionButtonStyle}" Click="CreatePr_Click" IsEnabled="{x:Bind CanCreatePr}" />
+                                <Button Grid.Column="2" Margin="10,0,0,0" Content="Create Task/Feature" Tag="{x:Bind RepoId}" Style="{StaticResource ToolbarBlueButtonStyle}" Click="CreateFeature_Click" />
+                                <Button Grid.Column="3" Margin="8,0,0,0" Content="Commit" Tag="{x:Bind RepoId}" Style="{StaticResource ToolbarBlueButtonStyle}" Click="Commit_Click" IsEnabled="{x:Bind CanCommit}" />
+                                <Button Grid.Column="4" Margin="8,0,0,0" Content="Create PR" Tag="{x:Bind RepoId}" Style="{StaticResource SoftGrayButtonStyle}" Click="CreatePr_Click" IsEnabled="{x:Bind CanCreatePr}" />
                             </Grid>
                         </Border>
                     </DataTemplate>
                 </ListView.ItemTemplate>
-            </ListView>
+                </ListView>
+            </Border>
 
-            <Border Grid.Row="2" Background="#D2D8E2" CornerRadius="8" Padding="10,6">
+            <Border Grid.Row="3" Background="#878787" CornerRadius="8" Padding="10,6" Margin="0,0,0,6">
                 <TextBlock x:Name="StatusTextBlock" Text="Ready." Opacity="0.85" />
+            </Border>
+        </Grid>
+
+        <Grid x:Name="LoadingOverlay" Background="#66000000" Visibility="Collapsed">
+            <Border Width="320" Padding="20" CornerRadius="12" Background="#2D2D2D" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <ProgressRing x:Name="LoadingRing" IsActive="False" Width="26" Height="26" />
+                    <StackPanel>
+                        <TextBlock Text="Loading" Foreground="White" FontWeight="SemiBold" />
+                        <TextBlock x:Name="LoadingTextBlock" Text="Loading profile..." Foreground="#E5E5E5" />
+                    </StackPanel>
+                </StackPanel>
             </Border>
         </Grid>
     </Grid>

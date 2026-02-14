@@ -291,6 +291,36 @@ namespace FODevManager.Utils
             return AsyncHelpers.RunSync(() => HasMainChangesAsync(repositoryRootFolder, mainBranchName, CancellationToken.None));                
         }
 
+        public static bool HasMainChangesWithoutFetch(string repositoryRootFolder, string mainBranchName = "main")
+        {
+            if (repositoryRootFolder.IsNullOrEmpty())
+                return false;
+
+            var safeMainBranchName = mainBranchName.IsNullOrEmpty() ? "main" : mainBranchName;
+
+            if (!RunGitCommand(
+                    repositoryRootFolder,
+                    $"merge-base HEAD origin/{safeMainBranchName}",
+                    out var mergeBase,
+                    logOnSuccess: false,
+                    logOnFailure: false))
+            {
+                return false;
+            }
+
+            if (!RunGitCommand(
+                    repositoryRootFolder,
+                    $"rev-parse origin/{safeMainBranchName}",
+                    out var mainHead,
+                    logOnSuccess: false,
+                    logOnFailure: false))
+            {
+                return false;
+            }
+
+            return !mergeBase.Trim().SameAs(mainHead.Trim());
+        }
+
         public static async Task<bool> HasMainChangesAsync(string repositoryRootFolder, string mainBranchName = "main", CancellationToken cancellationToken = default)
         {
             if (repositoryRootFolder.IsNullOrEmpty())

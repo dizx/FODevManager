@@ -73,7 +73,7 @@ namespace FODevManager.Services.EasyGit
 
     public interface IEasyGitWorkflowService
     {
-        IReadOnlyCollection<EasyGitRepoStatus> GetRepositoryStatuses(string profileName);
+        IReadOnlyCollection<EasyGitRepoStatus> GetRepositoryStatuses(string profileName, bool includeMainUpdateCheck = true);
         Task<EasyGitOperationResult> AutoSyncRepositoryAsync(string profileName, string repoId, CancellationToken cancellationToken = default);
         Task<EasyGitOperationResult> CreateFeatureBranchAsync(string profileName, string repoId, string taskId, string comment, CancellationToken cancellationToken = default);
         Task<EasyGitOperationResult> CommitAsync(string profileName, string repoId, CancellationToken cancellationToken = default);

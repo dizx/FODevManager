@@ -30,15 +30,25 @@ namespace FODevManager.Services.EasyGit
             _azureDevOpsPrService = azureDevOpsPrService;
         }
 
-        public IReadOnlyCollection<EasyGitRepoStatus> GetRepositoryStatuses(string profileName)
+        public IReadOnlyCollection<EasyGitRepoStatus> GetRepositoryStatuses(string profileName, bool includeMainUpdateCheck = true)
         {
             var profile = _fileService.LoadProfile(profileName);
             var statuses = new List<EasyGitRepoStatus>();
+            var profileChanged = false;
 
             foreach (var repository in profile.Repositories ?? new List<RepositoryModel>())
             {
+                var originalRepoId = repository.RepoId;
+                var originalDisplayName = repository.DisplayName;
+
                 repository.EnsureRepoId();
                 repository.EnsureDisplayName();
+
+                if (!string.Equals(originalRepoId, repository.RepoId, StringComparison.Ordinal)
+                    || !string.Equals(originalDisplayName, repository.DisplayName, StringComparison.Ordinal))
+                {
+                    profileChanged = true;
+                }
 
                 var repoPath = (repository.RepoRootFolder ?? string.Empty).Trim();
                 if (repoPath.IsNullOrEmpty() || !Directory.Exists(repoPath) || !GitHelper.IsGitRepository(repoPath))
@@ -52,14 +62,18 @@ namespace FODevManager.Services.EasyGit
                     Branch = branch,
                     IsDirty = GitHelper.IsWorkingTreeDirty(repoPath),
                     NeedsAttention = GitHelper.RequiresAttention(repoPath),
-                    HasMainUpdates = GitHelper.HasMainChanges(repoPath, repository.MainBranchName),
+                    HasMainUpdates = includeMainUpdateCheck
+                        ? GitHelper.HasMainChangesWithoutFetch(repoPath, repository.MainBranchName)
+                        : false,
                     IsProtectedBranch = GitHelper.IsProtectedBranch(branch, _config.ProtectedBranches)
                 };
 
                 statuses.Add(status);
             }
 
-            _fileService.SaveProfile(profile);
+            if (profileChanged)
+                _fileService.SaveProfile(profile);
+
             return statuses;
         }
 
