@@ -68,6 +68,13 @@ class Program
     {
         var profileService = host.Services.GetRequiredService<ProfileService>();
         var modelService = host.Services.GetRequiredService<ModelDeploymentService>();
+        var appConfig = host.Services.GetRequiredService<AppConfig>();
+
+        if (appConfig.UseEasyGit && IsGitRelatedCommand(commandParser.Command))
+        {
+            MessageLogger.Warning("Git commands are disabled in FODevManager because UseEasyGit=true. Use EasyGit app instead.");
+            return;
+        }
 
         if (commandParser.ModelName == null && !commandParser.Command.SameAs("add")) // Profile level
         {
@@ -166,5 +173,17 @@ class Program
         {
             MessageLogger.Error(ex.ToString());
         }
+    }
+
+    private static bool IsGitRelatedCommand(string? command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return false;
+
+        return command.Equals("git-fetch", StringComparison.OrdinalIgnoreCase)
+               || command.Equals("git-open", StringComparison.OrdinalIgnoreCase)
+               || command.Equals("git-status", StringComparison.OrdinalIgnoreCase)
+               || command.Equals("git-check", StringComparison.OrdinalIgnoreCase)
+               || command.Equals("peri", StringComparison.OrdinalIgnoreCase);
     }
 }

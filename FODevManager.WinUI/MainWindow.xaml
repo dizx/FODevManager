@@ -116,7 +116,7 @@
                         </StackPanel>
                     </Button>
 
-                    <Button ToolTipService.ToolTip="Git actions for all repos in the selected profile">
+                    <Button x:Name="GitActionsButton" ToolTipService.ToolTip="Git actions for all repos in the selected profile">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE777;" FontSize="14" />
                             <TextBlock Text="Git Actions" />

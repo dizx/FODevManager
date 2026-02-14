@@ -359,6 +359,92 @@ namespace FODevManager.Utils
                 logOnFailure: true);
         }
 
+        public static bool IsProtectedBranch(string? branchName, string protectedBranchesCsv)
+        {
+            if (string.IsNullOrWhiteSpace(branchName))
+                return false;
+
+            var protectedBranches = (protectedBranchesCsv ?? "main,master")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            return protectedBranches.Contains(branchName.Trim());
+        }
+
+        public static IReadOnlyCollection<string> GetUnmergedFiles(string repositoryRootFolder)
+        {
+            if (!RunGitCommand(repositoryRootFolder, "diff --name-only --diff-filter=U", out var output, logOnSuccess: false, logOnFailure: false))
+                return Array.Empty<string>();
+
+            var files = output
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.Trim())
+                .Where(line => !line.IsNullOrEmpty())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return files;
+        }
+
+        public static bool StageAll(string repositoryRootFolder)
+        {
+            return RunGitCommand(repositoryRootFolder, "add -A", out _, logOnSuccess: false, logOnFailure: true);
+        }
+
+        public static bool HasStagedChanges(string repositoryRootFolder)
+        {
+            var ok = RunGitCommand(
+                repositoryRootFolder,
+                "diff --cached --name-only",
+                out var output,
+                logOnSuccess: false,
+                logOnFailure: false);
+
+            return ok && !output.Trim().IsNullOrEmpty();
+        }
+
+        public static string GetStagedDiff(string repositoryRootFolder)
+        {
+            if (!RunGitCommand(repositoryRootFolder, "diff --cached", out var output, logOnSuccess: false, logOnFailure: false))
+                return string.Empty;
+
+            return output;
+        }
+
+        public static bool Commit(string repositoryRootFolder, string message)
+        {
+            var safeMessage = EscapeGitArg(message ?? string.Empty);
+            return RunGitCommand(repositoryRootFolder, $"commit -m {safeMessage}", out _, logOnSuccess: true, logOnFailure: true);
+        }
+
+        public static bool PushCurrentBranch(string repositoryRootFolder, bool setUpstreamWhenMissing = true)
+        {
+            var branch = GetActiveBranch(repositoryRootFolder)?.Trim();
+            if (branch.IsNullOrEmpty())
+                return false;
+
+            var pushArgs = setUpstreamWhenMissing
+                ? $"push -u origin {EscapeGitArg(branch)}"
+                : $"push origin {EscapeGitArg(branch)}";
+
+            if (RunGitCommand(repositoryRootFolder, pushArgs, out _, logOnSuccess: true, logOnFailure: false))
+                return true;
+
+            return RunGitCommand(repositoryRootFolder, $"push origin {EscapeGitArg(branch)}", out _, logOnSuccess: true, logOnFailure: true);
+        }
+
+        public static bool HasConflictMarkers(string filePath)
+        {
+            if (filePath.IsNullOrEmpty() || !File.Exists(filePath))
+                return false;
+
+            var text = File.ReadAllText(filePath);
+            return text.Contains("<<<<<<<", StringComparison.Ordinal)
+                   || text.Contains("=======", StringComparison.Ordinal)
+                   || text.Contains(">>>>>>>", StringComparison.Ordinal);
+        }
+
 
         public static bool HasUncommittedChanges(string repoPath)
         {

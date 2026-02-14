@@ -21,6 +21,24 @@ namespace FODevManager.Utils
 
         public bool CheckUncommittedBeforeSwitch { get; set; } = true;
 
+        public bool UseEasyGit { get; set; } = false;
+
+        public int GitAutoSyncIntervalMinutes { get; set; } = 5;
+
+        public string ProtectedBranches { get; set; } = "main,master";
+
+        public double AiAutoResolveConfidenceThreshold { get; set; } = 0.85;
+
+        public string AzureOpenAiEndpoint { get; set; } = string.Empty;
+
+        public string AzureOpenAiDeployment { get; set; } = string.Empty;
+
+        public string AzureOpenAiApiKey { get; set; } = string.Empty;
+
+        public string AzureDevOpsOrganizationUrl { get; set; } = string.Empty;
+
+        public string AzureDevOpsPat { get; set; } = string.Empty;
+
         public AppConfig()
         {
 
@@ -37,6 +55,25 @@ namespace FODevManager.Utils
 
             var toggle = Environment.ExpandEnvironmentVariables(configuration["CheckUncommittedBeforeSwitch"]);
             if (bool.TryParse(toggle, out var onOff)) CheckUncommittedBeforeSwitch = onOff;
+
+            var useEasyGit = Environment.ExpandEnvironmentVariables(configuration["UseEasyGit"]);
+            if (bool.TryParse(useEasyGit, out var easyGitEnabled)) UseEasyGit = easyGitEnabled;
+
+            var syncInterval = Environment.ExpandEnvironmentVariables(configuration["GitAutoSyncIntervalMinutes"]);
+            if (int.TryParse(syncInterval, out var syncMinutes) && syncMinutes > 0)
+                GitAutoSyncIntervalMinutes = syncMinutes;
+
+            ProtectedBranches = Environment.ExpandEnvironmentVariables(configuration["ProtectedBranches"] ?? ProtectedBranches);
+
+            var threshold = Environment.ExpandEnvironmentVariables(configuration["AiAutoResolveConfidenceThreshold"]);
+            if (double.TryParse(threshold, out var confidenceThreshold) && confidenceThreshold > 0)
+                AiAutoResolveConfidenceThreshold = confidenceThreshold;
+
+            AzureOpenAiEndpoint = Environment.ExpandEnvironmentVariables(configuration["AzureOpenAiEndpoint"] ?? string.Empty);
+            AzureOpenAiDeployment = Environment.ExpandEnvironmentVariables(configuration["AzureOpenAiDeployment"] ?? string.Empty);
+            AzureOpenAiApiKey = Environment.ExpandEnvironmentVariables(configuration["AzureOpenAiApiKey"] ?? string.Empty);
+            AzureDevOpsOrganizationUrl = Environment.ExpandEnvironmentVariables(configuration["AzureDevOpsOrganizationUrl"] ?? string.Empty);
+            AzureDevOpsPat = Environment.ExpandEnvironmentVariables(configuration["AzureDevOpsPat"] ?? string.Empty);
 
         }
     }

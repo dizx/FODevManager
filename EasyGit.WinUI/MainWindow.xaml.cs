@@ -1,0 +1,251 @@
+using FODevManager.Messages;
+using FODevManager.Models;
+using FODevManager.Services;
+using FODevManager.Services.EasyGit;
+using FODevManager.Utils;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using System.Collections.ObjectModel;
+using System.Collections.Generic;
+using System.Linq;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace EasyGit.WinUI
+{
+    public sealed partial class MainWindow : Window
+    {
+        private readonly FileService _fileService;
+        private readonly AppConfig _config;
+        private readonly IEasyGitWorkflowService _workflowService;
+        private readonly ObservableCollection<RepoRowViewModel> _rows = new();
+        private readonly SemaphoreSlim _syncLock = new(1, 1);
+
+        private DispatcherQueueTimer? _syncTimer;
+        private string _selectedProfileName = string.Empty;
+
+        public MainWindow(FileService fileService, AppConfig config, IEasyGitWorkflowService workflowService)
+        {
+            InitializeComponent();
+            _fileService = fileService;
+            _config = config;
+            _workflowService = workflowService;
+
+            RepositoriesList.ItemsSource = _rows;
+            LoadProfiles();
+            StartAutoSync();
+        }
+
+        private void LoadProfiles(string preferredProfile = "")
+        {
+            var profiles = _fileService.GetAllProfiles();
+            var names = profiles.Select(profile => profile.ProfileName).OrderBy(name => name).ToList();
+            ProfilesDropdown.ItemsSource = names;
+
+            var selected = preferredProfile;
+            if (selected.IsNullOrEmpty())
+                selected = names.FirstOrDefault() ?? string.Empty;
+
+            if (!selected.IsNullOrEmpty())
+                ProfilesDropdown.SelectedItem = selected;
+        }
+
+        private async void ProfilesDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ProfilesDropdown.SelectedItem is not string profileName)
+                return;
+
+            _selectedProfileName = profileName;
+            await RefreshStatusAsync().ConfigureAwait(true);
+        }
+
+        private async void Refresh_Click(object sender, RoutedEventArgs e)
+        {
+            await RefreshStatusAsync().ConfigureAwait(true);
+        }
+
+        private async void CreateFeature_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.Tag is not string repoId)
+                return;
+
+            if (_selectedProfileName.IsNullOrEmpty())
+                return;
+
+            var taskBox = new TextBox { PlaceholderText = "Task number (e.g. 12345)" };
+            var commentBox = new TextBox { PlaceholderText = "Short task comment" };
+
+            var panel = new StackPanel { Spacing = 10 };
+            panel.Children.Add(taskBox);
+            panel.Children.Add(commentBox);
+
+            var dialog = new ContentDialog
+            {
+                Title = "Create Task/Feature Branch",
+                Content = panel,
+                PrimaryButtonText = "Create",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = Content.XamlRoot
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result != ContentDialogResult.Primary)
+                return;
+
+            var op = await _workflowService
+                .CreateFeatureBranchAsync(_selectedProfileName, repoId, taskBox.Text.Trim(), commentBox.Text.Trim())
+                .ConfigureAwait(true);
+
+            SetStatus(op.Message);
+            await RefreshStatusAsync().ConfigureAwait(true);
+        }
+
+        private async void Commit_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.Tag is not string repoId || _selectedProfileName.IsNullOrEmpty())
+                return;
+
+            var op = await _workflowService.CommitAsync(_selectedProfileName, repoId).ConfigureAwait(true);
+            SetStatus(op.Message);
+            await RefreshStatusAsync().ConfigureAwait(true);
+        }
+
+        private async void CreatePr_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.Tag is not string repoId || _selectedProfileName.IsNullOrEmpty())
+                return;
+
+            var op = await _workflowService.CreatePullRequestAsync(_selectedProfileName, repoId).ConfigureAwait(true);
+            SetStatus(op.Message);
+        }
+
+        private void StartAutoSync()
+        {
+            _syncTimer = DispatcherQueue.CreateTimer();
+            _syncTimer.Interval = TimeSpan.FromMinutes(Math.Max(1, _config.GitAutoSyncIntervalMinutes));
+            _syncTimer.Tick += async (_, _) => await AutoSyncTickAsync().ConfigureAwait(true);
+            _syncTimer.Start();
+        }
+
+        private async Task AutoSyncTickAsync()
+        {
+            if (_selectedProfileName.IsNullOrEmpty())
+                return;
+
+            if (!await _syncLock.WaitAsync(0).ConfigureAwait(true))
+                return;
+
+            try
+            {
+                var statuses = _workflowService.GetRepositoryStatuses(_selectedProfileName);
+                foreach (var status in statuses)
+                {
+                    await _workflowService.AutoSyncRepositoryAsync(_selectedProfileName, status.Repository.RepoId).ConfigureAwait(true);
+                }
+
+                await RefreshStatusAsync().ConfigureAwait(true);
+
+                foreach (var row in _rows.Where(candidate => candidate.StatusText.Contains("main updated", StringComparison.OrdinalIgnoreCase)).ToList())
+                {
+                    await PromptMergeMainAsync(row).ConfigureAwait(true);
+                }
+            }
+            finally
+            {
+                _syncLock.Release();
+            }
+        }
+
+        private async Task PromptMergeMainAsync(RepoRowViewModel row)
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "main is updated",
+                Content = $"Repository '{row.DisplayName}' has updates in main. Update your feature branch now?",
+                PrimaryButtonText = "Update feature branch",
+                CloseButtonText = "Later",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = Content.XamlRoot
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result != ContentDialogResult.Primary)
+                return;
+
+            var op = await _workflowService.MergeMainIntoFeatureAsync(_selectedProfileName, row.RepoId).ConfigureAwait(true);
+            SetStatus(op.Message);
+
+            if (op.RequiresManualReview)
+            {
+                await ShowConflictReviewNoticeAsync(row).ConfigureAwait(true);
+            }
+
+            await RefreshStatusAsync().ConfigureAwait(true);
+        }
+
+        private async Task ShowConflictReviewNoticeAsync(RepoRowViewModel row)
+        {
+            var reviewDialog = new ContentDialog
+            {
+                Title = "Conflict needs review",
+                Content = $"EasyGit could not safely auto-resolve conflicts for '{row.DisplayName}'. Open your merge tool and review the diff.",
+                PrimaryButtonText = "OK",
+                XamlRoot = Content.XamlRoot
+            };
+
+            await reviewDialog.ShowAsync();
+        }
+
+        private async Task RefreshStatusAsync()
+        {
+            if (_selectedProfileName.IsNullOrEmpty())
+                return;
+
+            await _syncLock.WaitAsync().ConfigureAwait(true);
+
+            try
+            {
+                var statuses = _workflowService.GetRepositoryStatuses(_selectedProfileName)
+                    .OrderBy(status => status.Repository.DisplayName, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                _rows.Clear();
+                foreach (var status in statuses)
+                {
+                    var branch = status.Branch.IsNullOrEmpty() ? "(unknown)" : status.Branch;
+
+                    var details = new List<string>();
+                    if (status.IsDirty) details.Add("dirty");
+                    if (status.NeedsAttention) details.Add("needs attention");
+                    if (status.HasMainUpdates) details.Add("main updated");
+                    if (status.IsProtectedBranch) details.Add("protected branch");
+
+                    var row = new RepoRowViewModel
+                    {
+                        RepoId = status.Repository.RepoId,
+                        DisplayName = status.Repository.DisplayName,
+                        BranchInfo = $"Branch: {branch}",
+                        StatusText = details.Count == 0 ? "ready" : string.Join(" | ", details),
+                        IsProtectedBranch = status.IsProtectedBranch
+                    };
+
+                    _rows.Add(row);
+                }
+            }
+            finally
+            {
+                _syncLock.Release();
+            }
+        }
+
+        private void SetStatus(string message)
+        {
+            StatusTextBlock.Text = string.IsNullOrWhiteSpace(message) ? "Done." : message;
+            MessageLogger.Info(StatusTextBlock.Text);
+        }
+    }
+}

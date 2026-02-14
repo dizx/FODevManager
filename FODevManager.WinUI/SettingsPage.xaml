@@ -10,6 +10,16 @@
 
     <StackPanel Spacing="16" Padding="16">
         <ToggleSwitch
+            Header="Use EasyGit (disables FODev Git actions)"
+            IsOn="{Binding UseEasyGit, Mode=TwoWay}"/>
+
+        <TextBlock Text="Protected branches (comma-separated)" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+        <TextBox Width="480" Text="{Binding ProtectedBranches, Mode=TwoWay}" />
+
+        <TextBlock Text="Git auto sync interval (minutes)" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+        <NumberBox Width="180" Minimum="1" Value="{Binding GitAutoSyncIntervalMinutes, Mode=TwoWay}" />
+
+        <ToggleSwitch
             Header="Check uncommitted changes on profile switch"
             IsOn="{Binding CheckUncommittedBeforeSwitch, Mode=TwoWay}"/>
 

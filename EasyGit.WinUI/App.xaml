@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Application
+    x:Class="EasyGit.WinUI.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Microsoft.UI.Xaml.Controls">
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <controls:XamlControlsResources />
+            </ResourceDictionary.MergedDictionaries>
+
+            <SolidColorBrush x:Key="EasyGitBackgroundTopBrush" Color="#F4F6FA" />
+            <SolidColorBrush x:Key="EasyGitBackgroundBottomBrush" Color="#E8ECF3" />
+            <SolidColorBrush x:Key="EasyGitCardBrush" Color="#D7DCE3" />
+            <SolidColorBrush x:Key="EasyGitPrimaryBrush" Color="#005FB8" />
+            <SolidColorBrush x:Key="EasyGitPrimaryHoverBrush" Color="#0A6DCC" />
+            <SolidColorBrush x:Key="EasyGitPrimaryPressedBrush" Color="#00509B" />
+
+            <Style x:Key="PrimaryActionButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+                <Setter Property="Padding" Value="12,6" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Background" Value="{StaticResource EasyGitPrimaryBrush}" />
+                <Setter Property="Foreground" Value="White" />
+            </Style>
+
+            <Style x:Key="SecondaryActionButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+                <Setter Property="Padding" Value="12,6" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

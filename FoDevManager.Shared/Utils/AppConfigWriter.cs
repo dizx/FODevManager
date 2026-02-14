@@ -48,6 +48,33 @@ namespace FODevManager.Shared.Utils
                             break;
                         case nameof(AppConfig.CheckUncommittedBeforeSwitch):
                              _config.CheckUncommittedBeforeSwitch = Convert.ToBoolean(value);
+                             break;
+                        case nameof(AppConfig.UseEasyGit):
+                            _config.UseEasyGit = Convert.ToBoolean(value);
+                            break;
+                        case nameof(AppConfig.GitAutoSyncIntervalMinutes):
+                            _config.GitAutoSyncIntervalMinutes = Convert.ToInt32(value);
+                            break;
+                        case nameof(AppConfig.ProtectedBranches):
+                            _config.ProtectedBranches = Convert.ToString(value) ?? _config.ProtectedBranches;
+                            break;
+                        case nameof(AppConfig.AiAutoResolveConfidenceThreshold):
+                            _config.AiAutoResolveConfidenceThreshold = Convert.ToDouble(value);
+                            break;
+                        case nameof(AppConfig.AzureOpenAiEndpoint):
+                            _config.AzureOpenAiEndpoint = Convert.ToString(value) ?? string.Empty;
+                            break;
+                        case nameof(AppConfig.AzureOpenAiDeployment):
+                            _config.AzureOpenAiDeployment = Convert.ToString(value) ?? string.Empty;
+                            break;
+                        case nameof(AppConfig.AzureOpenAiApiKey):
+                            _config.AzureOpenAiApiKey = Convert.ToString(value) ?? string.Empty;
+                            break;
+                        case nameof(AppConfig.AzureDevOpsOrganizationUrl):
+                            _config.AzureDevOpsOrganizationUrl = Convert.ToString(value) ?? string.Empty;
+                            break;
+                        case nameof(AppConfig.AzureDevOpsPat):
+                            _config.AzureDevOpsPat = Convert.ToString(value) ?? string.Empty;
                             break;
                         case nameof(AppConfig.ProfileStoragePath):
                             _config.ProfileStoragePath = Convert.ToString(value) ?? _config.ProfileStoragePath;

@@ -43,6 +43,7 @@ namespace FODevManager.WinUI
         private readonly FileService _fileService;
         private readonly ModelDeploymentService _deploymentService;
         private readonly AppConfig _appConfig;
+        private readonly bool _gitFunctionsEnabled;
         private MicaController? _micaController;
         private SystemBackdropConfiguration? _backdropConfig;
         private AppWindow _appWindow;
@@ -88,6 +89,14 @@ namespace FODevManager.WinUI
             _fileService = fileService;
             _deploymentService = deploymentService;
             _appConfig = appConfig;
+            _gitFunctionsEnabled = !_appConfig.UseEasyGit;
+
+            if (!_gitFunctionsEnabled)
+            {
+                GitActionsButton.IsEnabled = false;
+                GitActionsButton.Visibility = Visibility.Collapsed;
+                UIMessageHelper.LogToUI("ℹ️ EasyGit mode is enabled. FO Dev Manager Git actions are disabled.");
+            }
 
 
             // Initialize Mica + TitleBar
@@ -631,6 +640,9 @@ namespace FODevManager.WinUI
 
         private void OpenGitForRepo_Click(object sender, RoutedEventArgs e)
         {
+            if (!EnsureGitFunctionsEnabled())
+                return;
+
             if (ProfilesDropdown.SelectedItem is not string profileName) return;
             if (sender is not Button btn) return;
             if (btn.DataContext is not RepoGroupViewModel group) return;
@@ -647,6 +659,9 @@ namespace FODevManager.WinUI
 
         private async void AssignTask_ForRepo_Click(object sender, RoutedEventArgs eventArgs)
         {
+            if (!EnsureGitFunctionsEnabled())
+                return;
+
             if (ProfilesDropdown.SelectedItem is not string profileName)
                 return;
 
@@ -708,6 +723,9 @@ namespace FODevManager.WinUI
 
         private void OpenTask_ForRepo_Click(object sender, RoutedEventArgs eventArgs)
         {
+            if (!EnsureGitFunctionsEnabled())
+                return;
+
             if (sender is not Button button)
                 return;
 
@@ -1328,6 +1346,9 @@ namespace FODevManager.WinUI
 
         private async void RepoHeader_GitMerge_Click(object sender, RoutedEventArgs e)
         {
+            if (!EnsureGitFunctionsEnabled())
+                return;
+
             if (sender is not FrameworkElement frameworkElement)
                 return;
 
@@ -1345,6 +1366,9 @@ namespace FODevManager.WinUI
 
         private async void GitActions_ResetToMain_Click(object sender, RoutedEventArgs routedEventArgs)
         {
+            if (!EnsureGitFunctionsEnabled())
+                return;
+
             if (ProfilesDropdown.SelectedItem is not string profileName)
                 return;
 
@@ -1372,6 +1396,9 @@ namespace FODevManager.WinUI
 
         private async void GitActions_TagRelease_Click(object sender, RoutedEventArgs routedEventArgs)
         {
+            if (!EnsureGitFunctionsEnabled())
+                return;
+
             if (ProfilesDropdown.SelectedItem is not string profileName)
                 return;
 
@@ -1497,6 +1524,15 @@ namespace FODevManager.WinUI
 
             flyout.ShowAt(listView, eventArgs.GetPosition(listView));
             eventArgs.Handled = true;
+        }
+
+        private bool EnsureGitFunctionsEnabled()
+        {
+            if (_gitFunctionsEnabled)
+                return true;
+
+            MessageLogger.Warning("Git actions are disabled in FO Dev Manager because EasyGit mode is enabled.");
+            return false;
         }
 
         private async Task ShowRepositoryPropertiesAsync(RepoGroupViewModel repoGroupViewModel)

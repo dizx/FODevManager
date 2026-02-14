@@ -23,6 +23,27 @@ namespace FODevManager.WinUI.ViewModel
             set => SetProperty(ref _defaultSourceDirectory, value ?? string.Empty);
         }
 
+        private bool _useEasyGit;
+        public bool UseEasyGit
+        {
+            get => _useEasyGit;
+            set => SetProperty(ref _useEasyGit, value);
+        }
+
+        private int _gitAutoSyncIntervalMinutes = 5;
+        public int GitAutoSyncIntervalMinutes
+        {
+            get => _gitAutoSyncIntervalMinutes;
+            set => SetProperty(ref _gitAutoSyncIntervalMinutes, value < 1 ? 1 : value);
+        }
+
+        private string _protectedBranches = "main,master";
+        public string ProtectedBranches
+        {
+            get => _protectedBranches;
+            set => SetProperty(ref _protectedBranches, value ?? "main,master");
+        }
+
         public SettingsViewModel(AppConfigWriter configWriter)
         {
             _configWriter = configWriter ?? throw new ArgumentNullException(nameof(configWriter));
@@ -31,6 +52,9 @@ namespace FODevManager.WinUI.ViewModel
             var cfg = _configWriter.GetConfig();
             _checkUncommittedBeforeSwitch = cfg.CheckUncommittedBeforeSwitch;
             _defaultSourceDirectory = cfg.DefaultSourceDirectory;
+            _useEasyGit = cfg.UseEasyGit;
+            _gitAutoSyncIntervalMinutes = cfg.GitAutoSyncIntervalMinutes;
+            _protectedBranches = cfg.ProtectedBranches;
         }
 
         public void Save()
@@ -40,11 +64,17 @@ namespace FODevManager.WinUI.ViewModel
                 // Persist both settings to the SAME appsettings.json
                 _configWriter.UpdateSetting(nameof(AppConfig.CheckUncommittedBeforeSwitch), CheckUncommittedBeforeSwitch);
                 _configWriter.UpdateSetting(nameof(AppConfig.DefaultSourceDirectory), DefaultSourceDirectory);
+                _configWriter.UpdateSetting(nameof(AppConfig.UseEasyGit), UseEasyGit);
+                _configWriter.UpdateSetting(nameof(AppConfig.GitAutoSyncIntervalMinutes), GitAutoSyncIntervalMinutes);
+                _configWriter.UpdateSetting(nameof(AppConfig.ProtectedBranches), ProtectedBranches);
 
                 // keep in-memory AppConfig aligned, if writer exposes it via GetConfig()
                 var cfg = _configWriter.GetConfig();
                 cfg.CheckUncommittedBeforeSwitch = CheckUncommittedBeforeSwitch;
                 cfg.DefaultSourceDirectory = DefaultSourceDirectory;
+                cfg.UseEasyGit = UseEasyGit;
+                cfg.GitAutoSyncIntervalMinutes = GitAutoSyncIntervalMinutes;
+                cfg.ProtectedBranches = ProtectedBranches;
 
                 MessageLogger.Highlight("Settings saved.");
             }
