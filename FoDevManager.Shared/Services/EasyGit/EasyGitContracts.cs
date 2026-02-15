@@ -18,6 +18,9 @@ namespace FODevManager.Services.EasyGit
         public RepositoryModel Repository { get; init; } = new();
         public string Branch { get; init; } = string.Empty;
         public bool IsDirty { get; init; }
+        public int AddedCount { get; init; }
+        public int DeletedCount { get; init; }
+        public int ModifiedCount { get; init; }
         public bool NeedsAttention { get; init; }
         public bool HasMainUpdates { get; init; }
         public bool IsProtectedBranch { get; init; }

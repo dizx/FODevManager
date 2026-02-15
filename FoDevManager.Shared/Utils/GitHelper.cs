@@ -2,15 +2,19 @@ using FODevManager.Messages;
 using FODevManager.Shared.Models;
 using FODevManager.Shared.Utils;
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
 namespace FODevManager.Utils
 {
     public static class GitHelper
     {
+        private static readonly Lazy<string> GitExecutablePath = new(ResolveGitExecutablePath);
+
         public sealed class GitRepoState
         {
             public string? Branch { get; init; }
@@ -227,6 +231,64 @@ namespace FODevManager.Utils
         public static bool IsWorkingTreeDirty(string repositoryRootFolder)
         {
             return AsyncHelpers.RunSync(() => IsWorkingTreeDirtyAsync(repositoryRootFolder, CancellationToken.None));
+        }
+
+        public sealed class WorkingTreeChangeCounts
+        {
+            public int Added { get; init; }
+            public int Deleted { get; init; }
+            public int Modified { get; init; }
+            public int Total => Added + Deleted + Modified;
+        }
+
+        public static WorkingTreeChangeCounts GetWorkingTreeChangeCounts(string repositoryRootFolder)
+        {
+            if (!RunGitCommand(repositoryRootFolder, "status --porcelain", out var output, logOnSuccess: false, logOnFailure: false))
+                return new WorkingTreeChangeCounts();
+
+            var added = 0;
+            var deleted = 0;
+            var modified = 0;
+
+            var lines = output
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.TrimEnd())
+                .Where(line => !line.IsNullOrEmpty());
+
+            foreach (var line in lines)
+            {
+                var statusCode = line.Length >= 2 ? line.Substring(0, 2) : line;
+
+                if (statusCode.SameAs("??"))
+                {
+                    added++;
+                    continue;
+                }
+
+                if (statusCode.SameAs("!!"))
+                    continue;
+
+                if (statusCode.Contains('D'))
+                {
+                    deleted++;
+                    continue;
+                }
+
+                if (statusCode.Contains('A'))
+                {
+                    added++;
+                    continue;
+                }
+
+                modified++;
+            }
+
+            return new WorkingTreeChangeCounts
+            {
+                Added = added,
+                Deleted = deleted,
+                Modified = modified
+            };
         }
 
         public static async Task<RepoBranchHealth> GetBranchHealthAsync(string repositoryRootFolder, CancellationToken cancellationToken)
@@ -1090,7 +1152,7 @@ namespace FODevManager.Utils
 
             var processStartInfo = new ProcessStartInfo
             {
-                FileName = "git",
+                FileName = GitExecutablePath.Value,
                 Arguments = arguments,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -1151,6 +1213,17 @@ namespace FODevManager.Utils
 
                 return (false, combinedOutput);
             }
+            catch (Win32Exception exception)
+            {
+                var configuredPath = GitExecutablePath.Value;
+                var message =
+                    $"Git executable was not found. Checked '{configuredPath}'. You can set FODEVMANAGER_GIT_PATH or GIT_EXECUTABLE_PATH to a valid git.exe path.";
+
+                if (logOnFailure)
+                    MessageLogger.Error($"❌ {message}");
+
+                return (false, $"{message} {exception.Message}");
+            }
             catch (Exception exception)
             {
                 if (logOnFailure)
@@ -1158,6 +1231,46 @@ namespace FODevManager.Utils
 
                 return (false, exception.Message);
             }
+        }
+
+        private static string ResolveGitExecutablePath()
+        {
+            var configuredPath = Environment.GetEnvironmentVariable("FODEVMANAGER_GIT_PATH")
+                                 ?? Environment.GetEnvironmentVariable("GIT_EXECUTABLE_PATH");
+
+            if (!configuredPath.IsNullOrEmpty())
+            {
+                var expandedPath = Environment.ExpandEnvironmentVariables(configuredPath).Trim();
+                return expandedPath;
+            }
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                var possibleRoots = new[]
+                {
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                    Environment.GetEnvironmentVariable("ProgramW6432") ?? string.Empty,
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs")
+                }
+                .Where(path => !path.IsNullOrEmpty())
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var root in possibleRoots)
+                {
+                    var cmdPath = Path.Combine(root, "Git", "cmd", "git.exe");
+                    if (File.Exists(cmdPath))
+                        return cmdPath;
+
+                    var binPath = Path.Combine(root, "Git", "bin", "git.exe");
+                    if (File.Exists(binPath))
+                        return binPath;
+                }
+
+                return "git.exe";
+            }
+
+            return "git";
         }
 
     }
