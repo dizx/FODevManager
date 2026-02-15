@@ -33,6 +33,12 @@ namespace FODevManager.Models
         // Optional: repo-level Task (you already have repo-level UI actions)
         public string Task { get; set; } = "";
         public string TaskComment { get; set; } = "";
+
+        // EasyGit workflow metadata
+        public string WorkflowStage { get; set; } = "NotStarted";
+        public string? FeatureBranchName { get; set; }
+        public string? PullRequestUrl { get; set; }
+        public int? PullRequestId { get; set; }
     }
 
     public partial class RepositoryModel

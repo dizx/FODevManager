@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using FODevManager.Services.EasyGit;
 
 namespace EasyGit.WinUI
 {
@@ -46,13 +47,68 @@ namespace EasyGit.WinUI
 
                 _isProtectedBranch = value;
                 OnPropertyChanged(nameof(IsProtectedBranch));
+                OnPropertyChanged(nameof(CanCreateFeature));
                 OnPropertyChanged(nameof(CanCommit));
                 OnPropertyChanged(nameof(CanCreatePr));
+                OnPropertyChanged(nameof(CanComplete));
             }
         }
 
-        public bool CanCommit => !IsProtectedBranch;
-        public bool CanCreatePr => !IsProtectedBranch;
+        private EasyGitWorkflowStage _workflowStage;
+        public EasyGitWorkflowStage WorkflowStage
+        {
+            get => _workflowStage;
+            set
+            {
+                if (_workflowStage == value)
+                    return;
+
+                _workflowStage = value;
+                OnPropertyChanged(nameof(WorkflowStage));
+                OnPropertyChanged(nameof(CanCreateFeature));
+                OnPropertyChanged(nameof(CanCommit));
+                OnPropertyChanged(nameof(CanCreatePr));
+                OnPropertyChanged(nameof(CanComplete));
+            }
+        }
+
+        private string _workflowText = string.Empty;
+        public string WorkflowText
+        {
+            get => _workflowText;
+            set
+            {
+                if (_workflowText == value)
+                    return;
+
+                _workflowText = value;
+                OnPropertyChanged(nameof(WorkflowText));
+            }
+        }
+
+        private string? _pullRequestUrl;
+        public string? PullRequestUrl
+        {
+            get => _pullRequestUrl;
+            set
+            {
+                if (_pullRequestUrl == value)
+                    return;
+
+                _pullRequestUrl = value;
+                OnPropertyChanged(nameof(PullRequestUrl));
+                OnPropertyChanged(nameof(HasPullRequest));
+                OnPropertyChanged(nameof(CanViewPr));
+            }
+        }
+
+        public bool HasPullRequest => !string.IsNullOrWhiteSpace(PullRequestUrl);
+
+        public bool CanCreateFeature => !IsProtectedBranch && WorkflowStage == EasyGitWorkflowStage.NotStarted;
+        public bool CanCommit => !IsProtectedBranch && WorkflowStage >= EasyGitWorkflowStage.Created;
+        public bool CanCreatePr => !IsProtectedBranch && WorkflowStage >= EasyGitWorkflowStage.Created && WorkflowStage < EasyGitWorkflowStage.PullRequestCreated;
+        public bool CanViewPr => !string.IsNullOrWhiteSpace(PullRequestUrl);
+        public bool CanComplete => WorkflowStage >= EasyGitWorkflowStage.PullRequestCreated;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
@@ -56,6 +57,21 @@ namespace FODevManager.Services.EasyGit
 
                 var branch = GitHelper.GetActiveBranch(repoPath) ?? string.Empty;
 
+                var branchChanged = !repository.LastKnownBranch.SameAs(branch);
+                if (branchChanged)
+                {
+                    repository.LastKnownBranch = branch;
+                    profileChanged = true;
+                }
+
+                var workflowStage = ResolveWorkflowStage(repository, branch);
+                var workflowStageString = workflowStage.ToString();
+                if (!repository.WorkflowStage.SameAs(workflowStageString))
+                {
+                    repository.WorkflowStage = workflowStageString;
+                    profileChanged = true;
+                }
+
                 var status = new EasyGitRepoStatus
                 {
                     Repository = repository,
@@ -65,7 +81,11 @@ namespace FODevManager.Services.EasyGit
                     HasMainUpdates = includeMainUpdateCheck
                         ? GitHelper.HasMainChangesWithoutFetch(repoPath, repository.MainBranchName)
                         : false,
-                    IsProtectedBranch = GitHelper.IsProtectedBranch(branch, _config.ProtectedBranches)
+                    IsProtectedBranch = GitHelper.IsProtectedBranch(branch, _config.ProtectedBranches),
+                    WorkflowStage = workflowStage,
+                    WorkflowText = BuildWorkflowText(workflowStage),
+                    PullRequestUrl = repository.PullRequestUrl,
+                    PullRequestId = repository.PullRequestId
                 };
 
                 statuses.Add(status);
@@ -121,6 +141,10 @@ namespace FODevManager.Services.EasyGit
             repository.Task = taskId ?? string.Empty;
             repository.TaskComment = comment ?? string.Empty;
             repository.LastKnownBranch = GitHelper.GetActiveBranch(repoPath) ?? branchName;
+            repository.FeatureBranchName = branchName;
+            repository.WorkflowStage = EasyGitWorkflowStage.Created.ToString();
+            repository.PullRequestUrl = null;
+            repository.PullRequestId = null;
             _fileService.SaveProfile(profile);
 
             return EasyGitOperationResult.Success($"Switched to '{branchName}'.");
@@ -157,6 +181,7 @@ namespace FODevManager.Services.EasyGit
                 return EasyGitOperationResult.Fail("Commit succeeded but push failed.");
 
             repository.LastKnownBranch = branch;
+            repository.WorkflowStage = MaxWorkflowStage(repository.WorkflowStage, EasyGitWorkflowStage.Committed).ToString();
             _fileService.SaveProfile(profile);
 
             return EasyGitOperationResult.Success($"Committed and pushed: {commitMessage}");
@@ -164,7 +189,7 @@ namespace FODevManager.Services.EasyGit
 
         public async Task<EasyGitOperationResult> CreatePullRequestAsync(string profileName, string repoId, CancellationToken cancellationToken = default)
         {
-            var (_, repository, error) = LoadRepository(profileName, repoId);
+            var (profile, repository, error) = LoadRepository(profileName, repoId);
             if (!error.IsNullOrEmpty())
                 return EasyGitOperationResult.Fail(error);
 
@@ -191,9 +216,189 @@ namespace FODevManager.Services.EasyGit
                 $"Target: {targetBranch}{Environment.NewLine}" +
                 $"Repository: {repository.DisplayName}";
 
-            return await _azureDevOpsPrService
+            var operation = await _azureDevOpsPrService
                 .CreatePullRequestAsync(repository, sourceBranch, targetBranch, title, description, cancellationToken)
                 .ConfigureAwait(false);
+
+            if (operation.Succeeded)
+            {
+                repository.LastKnownBranch = sourceBranch;
+                repository.FeatureBranchName = sourceBranch;
+                repository.WorkflowStage = EasyGitWorkflowStage.PullRequestCreated.ToString();
+                repository.PullRequestUrl = operation.Url;
+                repository.PullRequestId = TryExtractPullRequestId(operation.Url);
+                _fileService.SaveProfile(profile);
+            }
+
+            return operation;
+        }
+
+        public Task<EasyGitOperationResult> OpenPullRequestAsync(string profileName, string repoId, CancellationToken cancellationToken = default)
+        {
+            var (_, repository, error) = LoadRepository(profileName, repoId);
+            if (!error.IsNullOrEmpty())
+                return Task.FromResult(EasyGitOperationResult.Fail(error));
+
+            var prUrl = (repository.PullRequestUrl ?? string.Empty).Trim();
+            if (prUrl.IsNullOrEmpty())
+                return Task.FromResult(EasyGitOperationResult.Fail("No pull request URL is stored for this repository."));
+
+            GitHelper.OpenBrowserUrl(prUrl);
+            return Task.FromResult(EasyGitOperationResult.Success("Opened pull request in browser.", prUrl));
+        }
+
+        public async Task<EasyGitPullRequestState> GetPullRequestStateAsync(string profileName, string repoId, CancellationToken cancellationToken = default)
+        {
+            var (_, repository, error) = LoadRepository(profileName, repoId);
+            if (!error.IsNullOrEmpty())
+                return new EasyGitPullRequestState { CanVerify = false, IsMerged = false, Message = error };
+
+            var pullRequestId = repository.PullRequestId ?? TryExtractPullRequestId(repository.PullRequestUrl);
+            if (!pullRequestId.HasValue || pullRequestId.Value <= 0)
+            {
+                return new EasyGitPullRequestState
+                {
+                    CanVerify = false,
+                    IsMerged = false,
+                    Message = "Pull request ID is missing."
+                };
+            }
+
+            return await _azureDevOpsPrService
+                .GetPullRequestStateAsync(repository, pullRequestId.Value, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        public async Task<EasyGitOperationResult> CompleteWorkflowAsync(
+            string profileName,
+            string repoId,
+            bool allowWhenMergeCannotBeVerified,
+            CancellationToken cancellationToken = default)
+        {
+            var (profile, repository, error) = LoadRepository(profileName, repoId);
+            if (!error.IsNullOrEmpty())
+                return EasyGitOperationResult.Fail(error);
+
+            var pullRequestState = await GetPullRequestStateAsync(profileName, repoId, cancellationToken).ConfigureAwait(false);
+            if (pullRequestState.CanVerify && !pullRequestState.IsMerged)
+                return EasyGitOperationResult.Fail("Pull request is not completed yet.");
+
+            if (!pullRequestState.CanVerify && !allowWhenMergeCannotBeVerified)
+                return EasyGitOperationResult.Fail(pullRequestState.Message.IsNullOrEmpty() ? "Pull request merge status could not be verified." : pullRequestState.Message);
+
+            var repoPath = repository.RepoRootFolder;
+            var mainBranch = repository.MainBranchName.IsNullOrEmpty() ? "main" : repository.MainBranchName;
+            var currentBranch = GitHelper.GetActiveBranch(repoPath) ?? string.Empty;
+            var featureBranch = (repository.FeatureBranchName ?? currentBranch).Trim();
+
+            if (!GitHelper.ChangeBranch(repoPath, mainBranch, autoStashIfDirty: true, $"EasyGit auto-stash before completing workflow", createIfMissing: false))
+                return EasyGitOperationResult.Fail($"Could not switch to '{mainBranch}' to complete workflow.");
+
+            if (!await GitHelper.FetchAllAsync(repoPath, cancellationToken).ConfigureAwait(false))
+                MessageLogger.Warning($"Fetch failed for '{repository.DisplayName}'. Continuing completion.");
+
+            GitHelper.Pull(repoPath, "origin", mainBranch);
+
+            if (!featureBranch.IsNullOrEmpty() && !featureBranch.SameAs(mainBranch))
+            {
+                GitHelper.DeleteRemoteBranch(repoPath, featureBranch);
+                if (!GitHelper.DeleteLocalBranch(repoPath, featureBranch, forceDelete: false))
+                    GitHelper.DeleteLocalBranch(repoPath, featureBranch, forceDelete: true);
+            }
+
+            repository.LastKnownBranch = GitHelper.GetActiveBranch(repoPath) ?? mainBranch;
+            ClearWorkflowMetadata(repository);
+            _fileService.SaveProfile(profile);
+
+            return EasyGitOperationResult.Success($"Completed workflow for '{repository.DisplayName}'. Switched to '{mainBranch}' and cleaned feature branch.");
+        }
+
+        public async Task<EasyGitOperationResult> ResetProfileWorkflowsAsync(string profileName, CancellationToken cancellationToken = default)
+        {
+            var profile = _fileService.LoadProfile(profileName);
+            var repositories = profile.Repositories ?? new List<RepositoryModel>();
+            var resetCount = 0;
+
+            foreach (var repository in repositories)
+            {
+                var repoPath = (repository.RepoRootFolder ?? string.Empty).Trim();
+                if (repoPath.IsNullOrEmpty() || !Directory.Exists(repoPath) || !GitHelper.IsGitRepository(repoPath))
+                    continue;
+
+                var mainBranch = repository.MainBranchName.IsNullOrEmpty() ? "main" : repository.MainBranchName;
+                _ = GitHelper.ResetToMainAndUpdate(repoPath, mainBranch);
+                repository.LastKnownBranch = GitHelper.GetActiveBranch(repoPath) ?? mainBranch;
+                ClearWorkflowMetadata(repository);
+                resetCount++;
+            }
+
+            _fileService.SaveProfile(profile);
+            await Task.CompletedTask.ConfigureAwait(false);
+            return EasyGitOperationResult.Success($"Reset workflows for {resetCount} repositories.");
+        }
+
+        public async Task<EasyGitOperationResult> SwitchBranchesForProfileAsync(string sourceProfileName, string targetProfileName, CancellationToken cancellationToken = default)
+        {
+            if (sourceProfileName.IsNullOrEmpty() || targetProfileName.IsNullOrEmpty() || sourceProfileName.SameAs(targetProfileName))
+                return EasyGitOperationResult.Success("Branch sync skipped.");
+
+            var sourceProfile = _fileService.LoadProfile(sourceProfileName);
+            var targetProfile = _fileService.LoadProfile(targetProfileName);
+            var sourceRepos = sourceProfile.Repositories ?? new List<RepositoryModel>();
+            var targetRepos = targetProfile.Repositories ?? new List<RepositoryModel>();
+
+            var sourceBranchByRepoKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var sourceRepo in sourceRepos)
+            {
+                var sourceRepoPath = (sourceRepo.RepoRootFolder ?? string.Empty).Trim();
+                if (sourceRepoPath.IsNullOrEmpty() || !Directory.Exists(sourceRepoPath) || !GitHelper.IsGitRepository(sourceRepoPath))
+                    continue;
+
+                var branch = GitHelper.GetActiveBranch(sourceRepoPath) ?? sourceRepo.LastKnownBranch ?? string.Empty;
+                sourceRepo.LastKnownBranch = branch;
+
+                var repoKey = sourceRepo.GetRepoKey();
+                if (!repoKey.IsNullOrEmpty() && !branch.IsNullOrEmpty())
+                    sourceBranchByRepoKey[repoKey] = branch;
+            }
+
+            var switched = 0;
+
+            foreach (var targetRepo in targetRepos)
+            {
+                var targetRepoPath = (targetRepo.RepoRootFolder ?? string.Empty).Trim();
+                if (targetRepoPath.IsNullOrEmpty() || !Directory.Exists(targetRepoPath) || !GitHelper.IsGitRepository(targetRepoPath))
+                    continue;
+
+                var repoKey = targetRepo.GetRepoKey();
+                if (repoKey.IsNullOrEmpty() || !sourceBranchByRepoKey.TryGetValue(repoKey, out var sourceBranch))
+                {
+                    targetRepo.LastKnownBranch = GitHelper.GetActiveBranch(targetRepoPath) ?? targetRepo.LastKnownBranch;
+                    continue;
+                }
+
+                var currentBranch = GitHelper.GetActiveBranch(targetRepoPath) ?? string.Empty;
+                if (!currentBranch.SameAs(sourceBranch))
+                {
+                    var switchedOk = GitHelper.ChangeBranch(
+                        targetRepoPath,
+                        sourceBranch,
+                        autoStashIfDirty: true,
+                        stashMessage: $"EasyGit auto-stash before switching profile branch to {sourceBranch}",
+                        createIfMissing: false);
+
+                    if (switchedOk)
+                        switched++;
+                }
+
+                targetRepo.LastKnownBranch = GitHelper.GetActiveBranch(targetRepoPath) ?? sourceBranch;
+            }
+
+            _fileService.SaveProfile(sourceProfile);
+            _fileService.SaveProfile(targetProfile);
+
+            await Task.CompletedTask.ConfigureAwait(false);
+            return EasyGitOperationResult.Success($"Switched branches for {switched} shared repositories.");
         }
 
         public async Task<EasyGitOperationResult> MergeMainIntoFeatureAsync(string profileName, string repoId, CancellationToken cancellationToken = default)
@@ -329,6 +534,72 @@ namespace FODevManager.Services.EasyGit
                 return $"feat(task-{repository.Task}): {repository.TaskComment}";
 
             return $"chore({branch}): update changes";
+        }
+
+        private static EasyGitWorkflowStage ParseWorkflowStage(string? stage)
+        {
+            if (Enum.TryParse<EasyGitWorkflowStage>(stage ?? string.Empty, ignoreCase: true, out var parsed))
+                return parsed;
+
+            return EasyGitWorkflowStage.NotStarted;
+        }
+
+        private static EasyGitWorkflowStage MaxWorkflowStage(string? currentStage, EasyGitWorkflowStage nextStage)
+        {
+            var current = ParseWorkflowStage(currentStage);
+            return current >= nextStage ? current : nextStage;
+        }
+
+        private static EasyGitWorkflowStage MaxWorkflowStage(EasyGitWorkflowStage currentStage, EasyGitWorkflowStage nextStage)
+        {
+            return currentStage >= nextStage ? currentStage : nextStage;
+        }
+
+        private static EasyGitWorkflowStage ResolveWorkflowStage(RepositoryModel repository, string currentBranch)
+        {
+            var stage = ParseWorkflowStage(repository.WorkflowStage);
+
+            if (!repository.PullRequestUrl.IsNullOrEmpty())
+                stage = MaxWorkflowStage(stage, EasyGitWorkflowStage.PullRequestCreated);
+            else if (!repository.FeatureBranchName.IsNullOrEmpty() || (!currentBranch.IsNullOrEmpty() && currentBranch.StartsWith("feature/", StringComparison.OrdinalIgnoreCase)))
+                stage = MaxWorkflowStage(stage, EasyGitWorkflowStage.Created);
+
+            return stage;
+        }
+
+        private static string BuildWorkflowText(EasyGitWorkflowStage stage)
+        {
+            var current = stage switch
+            {
+                EasyGitWorkflowStage.Created => "commit",
+                EasyGitWorkflowStage.Committed => "create pr",
+                EasyGitWorkflowStage.PullRequestCreated => "complete",
+                _ => "create"
+            };
+
+            return $"create -> commit -> create pr -> complete (current: {current})";
+        }
+
+        private static int? TryExtractPullRequestId(string? pullRequestUrl)
+        {
+            if (pullRequestUrl.IsNullOrEmpty())
+                return null;
+
+            var match = Regex.Match(pullRequestUrl, @"/pullrequest/(\d+)", RegexOptions.IgnoreCase);
+            if (!match.Success)
+                return null;
+
+            return int.TryParse(match.Groups[1].Value, out var id) ? id : null;
+        }
+
+        private static void ClearWorkflowMetadata(RepositoryModel repository)
+        {
+            repository.WorkflowStage = EasyGitWorkflowStage.NotStarted.ToString();
+            repository.FeatureBranchName = null;
+            repository.PullRequestUrl = null;
+            repository.PullRequestId = null;
+            repository.Task = string.Empty;
+            repository.TaskComment = string.Empty;
         }
 
         private static string Slugify(string input)

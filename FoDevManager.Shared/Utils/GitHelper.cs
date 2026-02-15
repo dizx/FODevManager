@@ -464,6 +464,37 @@ namespace FODevManager.Utils
             return RunGitCommand(repositoryRootFolder, $"push origin {EscapeGitArg(branch)}", out _, logOnSuccess: true, logOnFailure: true);
         }
 
+        public static bool DeleteLocalBranch(string repositoryRootFolder, string branchName, bool forceDelete = false)
+        {
+            var safeBranch = (branchName ?? string.Empty).Trim();
+            if (safeBranch.IsNullOrEmpty())
+                return false;
+
+            var deleteArg = forceDelete ? "-D" : "-d";
+            return RunGitCommand(repositoryRootFolder, $"branch {deleteArg} {EscapeGitArg(safeBranch)}", out _, logOnSuccess: true, logOnFailure: false);
+        }
+
+        public static bool DeleteRemoteBranch(string repositoryRootFolder, string branchName, string remoteName = "origin")
+        {
+            var safeBranch = (branchName ?? string.Empty).Trim();
+            if (safeBranch.IsNullOrEmpty())
+                return false;
+
+            var safeRemoteName = (remoteName ?? "origin").Trim();
+            if (safeRemoteName.IsNullOrEmpty())
+                safeRemoteName = "origin";
+
+            return RunGitCommand(repositoryRootFolder, $"push {EscapeGitArg(safeRemoteName)} --delete {EscapeGitArg(safeBranch)}", out _, logOnSuccess: true, logOnFailure: false);
+        }
+
+        public static void OpenBrowserUrl(string url)
+        {
+            if (url.IsNullOrEmpty())
+                return;
+
+            OpenUrl(url);
+        }
+
         public static bool HasConflictMarkers(string filePath)
         {
             if (filePath.IsNullOrEmpty() || !File.Exists(filePath))

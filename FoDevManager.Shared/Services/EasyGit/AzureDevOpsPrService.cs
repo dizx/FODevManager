@@ -58,6 +58,70 @@ namespace FODevManager.Services.EasyGit
             return EasyGitOperationResult.Success("Opened Azure DevOps PR creation page (fallback).", createUrl);
         }
 
+        public async Task<EasyGitPullRequestState> GetPullRequestStateAsync(
+            RepositoryModel repository,
+            int pullRequestId,
+            CancellationToken cancellationToken = default)
+        {
+            if (repository == null)
+                return new EasyGitPullRequestState { CanVerify = false, IsMerged = false, Message = "Repository is not defined." };
+
+            if (pullRequestId <= 0)
+                return new EasyGitPullRequestState { CanVerify = false, IsMerged = false, Message = "Pull request ID is missing." };
+
+            if (_config.AzureDevOpsPat.IsNullOrEmpty())
+                return new EasyGitPullRequestState { CanVerify = false, IsMerged = false, Message = "Azure DevOps PAT is not configured." };
+
+            if (!TryParseRepository(repository, out var details, out var parseError))
+                return new EasyGitPullRequestState { CanVerify = false, IsMerged = false, Message = parseError };
+
+            var apiUrl =
+                $"https://dev.azure.com/{Uri.EscapeDataString(details.Organization)}/{Uri.EscapeDataString(details.Project)}/_apis/git/repositories/{Uri.EscapeDataString(details.RepositoryName)}/pullrequests/{pullRequestId}?api-version=7.1";
+
+            var token = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{_config.AzureDevOpsPat}"));
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Basic", token);
+
+            try
+            {
+                using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+                var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    return new EasyGitPullRequestState
+                    {
+                        CanVerify = false,
+                        IsMerged = false,
+                        Message = $"Azure DevOps API PR status failed: {(int)response.StatusCode} {response.ReasonPhrase}"
+                    };
+                }
+
+                using var doc = JsonDocument.Parse(body);
+                var status = doc.RootElement.TryGetProperty("status", out var statusElement)
+                    ? (statusElement.GetString() ?? string.Empty)
+                    : string.Empty;
+
+                var isMerged = status.Equals("completed", StringComparison.OrdinalIgnoreCase);
+                return new EasyGitPullRequestState
+                {
+                    CanVerify = true,
+                    IsMerged = isMerged,
+                    Message = isMerged ? "Pull request is completed." : $"Pull request status is '{status}'."
+                };
+            }
+            catch (Exception ex)
+            {
+                return new EasyGitPullRequestState
+                {
+                    CanVerify = false,
+                    IsMerged = false,
+                    Message = $"Could not verify pull request status: {ex.Message}"
+                };
+            }
+        }
+
         private async Task<EasyGitOperationResult> TryCreatePrByApiAsync(
             AzureDevOpsRepoDetails details,
             string sourceRef,

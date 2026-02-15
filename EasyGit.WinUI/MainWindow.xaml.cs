@@ -1,5 +1,4 @@
 using FODevManager.Messages;
-using FODevManager.Models;
 using FODevManager.Services;
 using FODevManager.Services.EasyGit;
 using FODevManager.Utils;
@@ -7,10 +6,10 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using System.Collections.ObjectModel;
-using System.Collections.Generic;
-using System.Linq;
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using WinRT.Interop;
@@ -72,6 +71,7 @@ namespace EasyGit.WinUI
             if (ProfilesDropdown.SelectedItem is not string profileName)
                 return;
 
+            var previousProfile = _selectedProfileName;
             _selectedProfileName = profileName;
 
             _profileLoadCancellationTokenSource?.Cancel();
@@ -79,21 +79,28 @@ namespace EasyGit.WinUI
             _profileLoadCancellationTokenSource = new CancellationTokenSource();
 
             var token = _profileLoadCancellationTokenSource.Token;
-            ShowLoading($"Loading '{profileName}'...");
 
             try
             {
-                await RefreshStatusAsync(includeMainUpdateCheck: false, cancellationToken: token).ConfigureAwait(true);
-                _ = RunPostProfileLoadSyncAsync(profileName, token);
+                await RunBusyAsync($"Loading '{profileName}'...", async () =>
+                {
+                    if (!previousProfile.IsNullOrEmpty() && !previousProfile.SameAs(profileName))
+                    {
+                        var branchSync = await _workflowService
+                            .SwitchBranchesForProfileAsync(previousProfile, profileName, token)
+                            .ConfigureAwait(true);
+
+                        if (!branchSync.Message.IsNullOrEmpty())
+                            SetStatus(branchSync.Message);
+                    }
+
+                    await RefreshStatusAsync(includeMainUpdateCheck: false, cancellationToken: token).ConfigureAwait(true);
+                    _ = RunPostProfileLoadSyncAsync(profileName, token);
+                }).ConfigureAwait(true);
             }
             catch (OperationCanceledException)
             {
                 // A new profile selection replaced this load.
-            }
-            finally
-            {
-                if (!token.IsCancellationRequested)
-                    HideLoading();
             }
         }
 
@@ -102,15 +109,37 @@ namespace EasyGit.WinUI
             if (_selectedProfileName.IsNullOrEmpty())
                 return;
 
-            ShowLoading($"Refreshing '{_selectedProfileName}'...");
-            try
+            await RunBusyAsync($"Refreshing '{_selectedProfileName}'...", async () =>
             {
                 await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
-            }
-            finally
+            }).ConfigureAwait(true);
+        }
+
+        private async void GitActions_Reset_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedProfileName.IsNullOrEmpty())
+                return;
+
+            var dialog = new ContentDialog
             {
-                HideLoading();
-            }
+                Title = "Git Reset",
+                Content = "This resets all repositories in the selected profile to main and clears workflow progress. Continue?",
+                PrimaryButtonText = "Reset",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = Content.XamlRoot
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result != ContentDialogResult.Primary)
+                return;
+
+            await RunBusyAsync($"Resetting '{_selectedProfileName}'...", async () =>
+            {
+                var op = await _workflowService.ResetProfileWorkflowsAsync(_selectedProfileName).ConfigureAwait(true);
+                SetStatus(op.Message);
+                await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
+            }).ConfigureAwait(true);
         }
 
         private async void CreateFeature_Click(object sender, RoutedEventArgs e)
@@ -142,12 +171,15 @@ namespace EasyGit.WinUI
             if (result != ContentDialogResult.Primary)
                 return;
 
-            var op = await _workflowService
-                .CreateFeatureBranchAsync(_selectedProfileName, repoId, taskBox.Text.Trim(), commentBox.Text.Trim())
-                .ConfigureAwait(true);
+            await RunBusyAsync("Creating feature branch...", async () =>
+            {
+                var op = await _workflowService
+                    .CreateFeatureBranchAsync(_selectedProfileName, repoId, taskBox.Text.Trim(), commentBox.Text.Trim())
+                    .ConfigureAwait(true);
 
-            SetStatus(op.Message);
-            await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
+                SetStatus(op.Message);
+                await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
+            }).ConfigureAwait(true);
         }
 
         private async void Commit_Click(object sender, RoutedEventArgs e)
@@ -155,9 +187,12 @@ namespace EasyGit.WinUI
             if (sender is not Button button || button.Tag is not string repoId || _selectedProfileName.IsNullOrEmpty())
                 return;
 
-            var op = await _workflowService.CommitAsync(_selectedProfileName, repoId).ConfigureAwait(true);
-            SetStatus(op.Message);
-            await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
+            await RunBusyAsync("Committing changes...", async () =>
+            {
+                var op = await _workflowService.CommitAsync(_selectedProfileName, repoId).ConfigureAwait(true);
+                SetStatus(op.Message);
+                await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
+            }).ConfigureAwait(true);
         }
 
         private async void CreatePr_Click(object sender, RoutedEventArgs e)
@@ -165,8 +200,50 @@ namespace EasyGit.WinUI
             if (sender is not Button button || button.Tag is not string repoId || _selectedProfileName.IsNullOrEmpty())
                 return;
 
-            var op = await _workflowService.CreatePullRequestAsync(_selectedProfileName, repoId).ConfigureAwait(true);
+            await RunBusyAsync("Creating pull request...", async () =>
+            {
+                var op = await _workflowService.CreatePullRequestAsync(_selectedProfileName, repoId).ConfigureAwait(true);
+                SetStatus(op.Message);
+                await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
+            }).ConfigureAwait(true);
+        }
+
+        private async void ViewPr_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.Tag is not string repoId || _selectedProfileName.IsNullOrEmpty())
+                return;
+
+            var op = await _workflowService.OpenPullRequestAsync(_selectedProfileName, repoId).ConfigureAwait(true);
             SetStatus(op.Message);
+        }
+
+        private async void Complete_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.Tag is not string repoId || _selectedProfileName.IsNullOrEmpty())
+                return;
+
+            await RunBusyAsync("Completing workflow...", async () =>
+            {
+                var prState = await _workflowService.GetPullRequestStateAsync(_selectedProfileName, repoId).ConfigureAwait(true);
+                var allowUnverified = false;
+
+                if (!prState.CanVerify)
+                {
+                    allowUnverified = await ConfirmCompleteWhenPrCannotBeVerifiedAsync(prState.Message).ConfigureAwait(true);
+                    if (!allowUnverified)
+                    {
+                        SetStatus("Complete canceled.");
+                        return;
+                    }
+                }
+
+                var op = await _workflowService
+                    .CompleteWorkflowAsync(_selectedProfileName, repoId, allowUnverified)
+                    .ConfigureAwait(true);
+
+                SetStatus(op.Message);
+                await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
+            }).ConfigureAwait(true);
         }
 
         private void StartAutoSync()
@@ -225,15 +302,16 @@ namespace EasyGit.WinUI
             if (result != ContentDialogResult.Primary)
                 return;
 
-            var op = await _workflowService.MergeMainIntoFeatureAsync(_selectedProfileName, row.RepoId).ConfigureAwait(true);
-            SetStatus(op.Message);
-
-            if (op.RequiresManualReview)
+            await RunBusyAsync("Merging main into feature...", async () =>
             {
-                await ShowConflictReviewNoticeAsync(row).ConfigureAwait(true);
-            }
+                var op = await _workflowService.MergeMainIntoFeatureAsync(_selectedProfileName, row.RepoId).ConfigureAwait(true);
+                SetStatus(op.Message);
 
-            await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
+                if (op.RequiresManualReview)
+                    await ShowConflictReviewNoticeAsync(row).ConfigureAwait(true);
+
+                await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
+            }).ConfigureAwait(true);
         }
 
         private async Task ShowConflictReviewNoticeAsync(RepoRowViewModel row)
@@ -247,6 +325,25 @@ namespace EasyGit.WinUI
             };
 
             await reviewDialog.ShowAsync();
+        }
+
+        private async Task<bool> ConfirmCompleteWhenPrCannotBeVerifiedAsync(string message)
+        {
+            var detail = message.IsNullOrEmpty()
+                ? "PR merge status could not be verified."
+                : message;
+
+            var dialog = new ContentDialog
+            {
+                Title = "Complete without merge verification?",
+                Content = $"{detail}\n\nYou can still continue and complete this workflow manually.",
+                PrimaryButtonText = "Complete Anyway",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = Content.XamlRoot
+            };
+
+            return await dialog.ShowAsync() == ContentDialogResult.Primary;
         }
 
         private async Task RefreshStatusAsync(bool includeMainUpdateCheck, CancellationToken cancellationToken = default)
@@ -288,7 +385,10 @@ namespace EasyGit.WinUI
                         DisplayName = status.Repository.DisplayName,
                         BranchInfo = $"Branch: {branch}",
                         StatusText = details.Count == 0 ? "ready" : string.Join(" | ", details),
-                        IsProtectedBranch = status.IsProtectedBranch
+                        IsProtectedBranch = status.IsProtectedBranch,
+                        WorkflowStage = status.WorkflowStage,
+                        WorkflowText = status.WorkflowText,
+                        PullRequestUrl = status.PullRequestUrl
                     };
 
                     _rows.Add(row);
@@ -322,6 +422,19 @@ namespace EasyGit.WinUI
             catch (Exception exception)
             {
                 MessageLogger.Warning($"Background profile sync failed: {exception.Message}");
+            }
+        }
+
+        private async Task RunBusyAsync(string text, Func<Task> action)
+        {
+            ShowLoading(text);
+            try
+            {
+                await action().ConfigureAwait(true);
+            }
+            finally
+            {
+                HideLoading();
             }
         }
 
