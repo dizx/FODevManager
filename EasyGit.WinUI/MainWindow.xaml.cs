@@ -4,6 +4,7 @@ using FODevManager.Services;
 using FODevManager.Services.EasyGit;
 using FODevManager.Utils;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using System.Collections.ObjectModel;
@@ -12,6 +13,7 @@ using System.Linq;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using WinRT.Interop;
 
 namespace EasyGit.WinUI
 {
@@ -35,9 +37,20 @@ namespace EasyGit.WinUI
             _config = config;
             _workflowService = workflowService;
 
+            SetTitleBar(AppTitleBar);
+            var appWindow = GetAppWindowForCurrentWindow();
+            appWindow.TitleBar.ExtendsContentIntoTitleBar = true;
+
             RepositoriesList.ItemsSource = _rows;
             LoadProfiles();
             StartAutoSync();
+        }
+
+        private AppWindow GetAppWindowForCurrentWindow()
+        {
+            var hwnd = WindowNative.GetWindowHandle(this);
+            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+            return AppWindow.GetFromWindowId(windowId);
         }
 
         private void LoadProfiles(string preferredProfile = "")

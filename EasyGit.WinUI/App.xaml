@@ -11,28 +11,17 @@
                 <controls:XamlControlsResources />
             </ResourceDictionary.MergedDictionaries>
 
-            <SolidColorBrush x:Key="EasyGitBackgroundTopBrush" Color="#B1B1B1" />
-            <SolidColorBrush x:Key="EasyGitBackgroundBottomBrush" Color="#A5A5A5" />
-            <SolidColorBrush x:Key="EasyGitCardBrush" Color="#989898" />
-            <SolidColorBrush x:Key="EasyGitPrimaryBrush" Color="#005FB8" />
-            <SolidColorBrush x:Key="EasyGitPrimaryHoverBrush" Color="#0A6DCC" />
-            <SolidColorBrush x:Key="EasyGitPrimaryPressedBrush" Color="#00509B" />
-
             <Style x:Key="PrimaryActionButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
                 <Setter Property="Padding" Value="12,6" />
                 <Setter Property="CornerRadius" Value="8" />
                 <Setter Property="FontSize" Value="14" />
                 <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Background" Value="{StaticResource EasyGitPrimaryBrush}" />
-                <Setter Property="Foreground" Value="White" />
             </Style>
 
             <Style x:Key="ToolbarBlueButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
                 <Setter Property="Padding" Value="16,8" />
                 <Setter Property="CornerRadius" Value="10" />
                 <Setter Property="FontSize" Value="16" />
-                <Setter Property="Background" Value="{StaticResource EasyGitPrimaryBrush}" />
-                <Setter Property="Foreground" Value="White" />
             </Style>
 
             <Style x:Key="SecondaryActionButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
@@ -40,14 +29,6 @@
                 <Setter Property="CornerRadius" Value="8" />
                 <Setter Property="FontSize" Value="14" />
                 <Setter Property="FontWeight" Value="SemiBold" />
-            </Style>
-
-            <Style x:Key="SoftGrayButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-                <Setter Property="Padding" Value="12,6" />
-                <Setter Property="CornerRadius" Value="10" />
-                <Setter Property="FontSize" Value="14" />
-                <Setter Property="Background" Value="#7E7E7E" />
-                <Setter Property="Foreground" Value="White" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>
