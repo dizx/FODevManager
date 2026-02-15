@@ -72,11 +72,16 @@ namespace FODevManager.Services.EasyGit
                     profileChanged = true;
                 }
 
+                var changeCounts = GitHelper.GetWorkingTreeChangeCounts(repoPath);
+
                 var status = new EasyGitRepoStatus
                 {
                     Repository = repository,
                     Branch = branch,
-                    IsDirty = GitHelper.IsWorkingTreeDirty(repoPath),
+                    IsDirty = changeCounts.Total > 0,
+                    AddedCount = changeCounts.Added,
+                    DeletedCount = changeCounts.Deleted,
+                    ModifiedCount = changeCounts.Modified,
                     NeedsAttention = GitHelper.RequiresAttention(repoPath),
                     HasMainUpdates = includeMainUpdateCheck
                         ? GitHelper.HasMainChangesWithoutFetch(repoPath, repository.MainBranchName)
@@ -569,15 +574,13 @@ namespace FODevManager.Services.EasyGit
 
         private static string BuildWorkflowText(EasyGitWorkflowStage stage)
         {
-            var current = stage switch
+            return stage switch
             {
-                EasyGitWorkflowStage.Created => "commit",
-                EasyGitWorkflowStage.Committed => "create pr",
-                EasyGitWorkflowStage.PullRequestCreated => "complete",
-                _ => "create"
+                EasyGitWorkflowStage.Created => "Next: commit and push your current feature branch changes.",
+                EasyGitWorkflowStage.Committed => "Next: create a pull request from your feature branch.",
+                EasyGitWorkflowStage.PullRequestCreated => "Next: complete the workflow after the pull request is merged.",
+                _ => "Next: create a feature branch to start the workflow."
             };
-
-            return $"create -> commit -> create pr -> complete (current: {current})";
         }
 
         private static int? TryExtractPullRequestId(string? pullRequestUrl)

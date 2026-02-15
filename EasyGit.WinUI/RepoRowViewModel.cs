@@ -86,6 +86,57 @@ namespace EasyGit.WinUI
             }
         }
 
+        private int _addedCount;
+        public int AddedCount
+        {
+            get => _addedCount;
+            set
+            {
+                if (_addedCount == value)
+                    return;
+
+                _addedCount = value;
+                OnPropertyChanged(nameof(AddedCount));
+                OnPropertyChanged(nameof(AddedDisplay));
+                OnPropertyChanged(nameof(HasChanges));
+                OnPropertyChanged(nameof(CanCommit));
+            }
+        }
+
+        private int _deletedCount;
+        public int DeletedCount
+        {
+            get => _deletedCount;
+            set
+            {
+                if (_deletedCount == value)
+                    return;
+
+                _deletedCount = value;
+                OnPropertyChanged(nameof(DeletedCount));
+                OnPropertyChanged(nameof(DeletedDisplay));
+                OnPropertyChanged(nameof(HasChanges));
+                OnPropertyChanged(nameof(CanCommit));
+            }
+        }
+
+        private int _modifiedCount;
+        public int ModifiedCount
+        {
+            get => _modifiedCount;
+            set
+            {
+                if (_modifiedCount == value)
+                    return;
+
+                _modifiedCount = value;
+                OnPropertyChanged(nameof(ModifiedCount));
+                OnPropertyChanged(nameof(ModifiedDisplay));
+                OnPropertyChanged(nameof(HasChanges));
+                OnPropertyChanged(nameof(CanCommit));
+            }
+        }
+
         private string? _pullRequestUrl;
         public string? PullRequestUrl
         {
@@ -103,9 +154,14 @@ namespace EasyGit.WinUI
         }
 
         public bool HasPullRequest => !string.IsNullOrWhiteSpace(PullRequestUrl);
+        public bool HasChanges => AddedCount + DeletedCount + ModifiedCount > 0;
+
+        public string AddedDisplay => $"+ {AddedCount}";
+        public string DeletedDisplay => $"- {DeletedCount}";
+        public string ModifiedDisplay => ModifiedCount.ToString();
 
         public bool CanCreateFeature => !IsProtectedBranch && WorkflowStage == EasyGitWorkflowStage.NotStarted;
-        public bool CanCommit => !IsProtectedBranch && WorkflowStage >= EasyGitWorkflowStage.Created;
+        public bool CanCommit => !IsProtectedBranch && WorkflowStage >= EasyGitWorkflowStage.Created && HasChanges;
         public bool CanCreatePr => !IsProtectedBranch && WorkflowStage >= EasyGitWorkflowStage.Created && WorkflowStage < EasyGitWorkflowStage.PullRequestCreated;
         public bool CanViewPr => !string.IsNullOrWhiteSpace(PullRequestUrl);
         public bool CanComplete => WorkflowStage >= EasyGitWorkflowStage.PullRequestCreated;
