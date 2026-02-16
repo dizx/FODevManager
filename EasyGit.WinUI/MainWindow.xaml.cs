@@ -47,6 +47,7 @@ namespace EasyGit.WinUI
             SetTitleBar(AppTitleBar);
             var appWindow = GetAppWindowForCurrentWindow();
             appWindow.TitleBar.ExtendsContentIntoTitleBar = true;
+            SetWindowIcon(appWindow);
 
             _statusSubscriber = new StatusMessageSubscriber(DispatcherQueue, message =>
             {
@@ -73,6 +74,20 @@ namespace EasyGit.WinUI
             var hwnd = WindowNative.GetWindowHandle(this);
             var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
             return AppWindow.GetFromWindowId(windowId);
+        }
+
+        private static void SetWindowIcon(AppWindow appWindow)
+        {
+            try
+            {
+                var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "easygit_logo.ico");
+                if (File.Exists(iconPath))
+                    appWindow.SetIcon(iconPath);
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Warning($"Could not set window icon: {exception.Message}");
+            }
         }
 
         private void LoadProfiles(string preferredProfile = "")
@@ -396,10 +411,40 @@ namespace EasyGit.WinUI
         {
             var version = typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "unknown";
 
+            var logoSource = Application.Current.Resources.TryGetValue("EasyGitLogoImage", out var resource)
+                ? resource as Microsoft.UI.Xaml.Media.Imaging.BitmapImage
+                : null;
+
+            var content = new StackPanel { Spacing = 10 };
+
+            if (logoSource != null)
+            {
+                content.Children.Add(new Image
+                {
+                    Source = logoSource,
+                    Width = 128,
+                    Height = 128,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Stretch = Stretch.Uniform
+                });
+            }
+
+            content.Children.Add(new TextBlock
+            {
+                Text = "EasyGit helps manage your FO repositories and workflow stages.",
+                TextWrapping = TextWrapping.WrapWholeWords
+            });
+
+            content.Children.Add(new TextBlock
+            {
+                Text = $"Version: {version}",
+                Opacity = 0.8
+            });
+
             var dialog = new ContentDialog
             {
                 Title = "About EasyGit",
-                Content = $"EasyGit helps manage your FO repositories and workflow stages.\nVersion: {version}",
+                Content = content,
                 CloseButtonText = "Close",
                 XamlRoot = Content.XamlRoot
             };
