@@ -2,6 +2,7 @@ using FODevManager.Messages;
 using FODevManager.Models;
 using FODevManager.Utils;
 using System.Diagnostics;
+using System.Linq;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -33,20 +34,24 @@ namespace FODevManager.Services.EasyGit
             if (!TryParseRepository(repository, out var details, out var parseError))
                 return EasyGitOperationResult.Fail(parseError);
 
-            var sourceRef = sourceBranch.StartsWith("refs/heads/", StringComparison.OrdinalIgnoreCase)
-                ? sourceBranch
-                : $"refs/heads/{sourceBranch}";
+            if (!TryBuildRepositoryWebBase(repository, out var repositoryWebBase, out var webBaseError))
+                return EasyGitOperationResult.Fail(webBaseError);
 
-            var targetRef = targetBranch.StartsWith("refs/heads/", StringComparison.OrdinalIgnoreCase)
-                ? targetBranch
-                : $"refs/heads/{targetBranch}";
+            if (!TryNormalizeBranchName(sourceBranch, out var sourceBranchName, out var sourceBranchError))
+                return EasyGitOperationResult.Fail(sourceBranchError);
 
-            var createUrl = BuildCreatePrUrl(details.Organization, details.Project, details.RepositoryName, sourceRef, targetRef);
+            if (!TryNormalizeBranchName(targetBranch, out var targetBranchName, out var targetBranchError))
+                return EasyGitOperationResult.Fail(targetBranchError);
+
+            var sourceRef = $"refs/heads/{sourceBranchName}";
+            var targetRef = $"refs/heads/{targetBranchName}";
+
+            var createUrl = BuildCreatePrUrl(repositoryWebBase, sourceBranchName, targetBranchName);
 
             if (_config.AzureDevOpsPat.IsNullOrEmpty())
             {
                 OpenBrowser(createUrl);
-                return EasyGitOperationResult.Success("Opened Azure DevOps PR creation page.", createUrl);
+                return EasyGitOperationResult.Success("Opened Azure DevOps PR creation page. Complete creation in browser, then refresh.", createUrl);
             }
 
             var apiResult = await TryCreatePrByApiAsync(details, sourceRef, targetRef, title, description, cancellationToken).ConfigureAwait(false);
@@ -55,7 +60,7 @@ namespace FODevManager.Services.EasyGit
 
             MessageLogger.Warning($"API PR creation failed. Falling back to browser URL. {apiResult.Message}");
             OpenBrowser(createUrl);
-            return EasyGitOperationResult.Success("Opened Azure DevOps PR creation page (fallback).", createUrl);
+            return EasyGitOperationResult.Success("API create failed. Opened Azure DevOps PR creation page in browser. Complete creation there, then refresh.", createUrl);
         }
 
         public async Task<EasyGitPullRequestState> GetPullRequestStateAsync(
@@ -164,8 +169,7 @@ namespace FODevManager.Services.EasyGit
 
                 if (doc.RootElement.TryGetProperty("pullRequestId", out var idElement) && idElement.TryGetInt32(out var prId))
                 {
-                    var browseUrl =
-                        $"https://dev.azure.com/{details.Organization}/{details.Project}/_git/{details.RepositoryName}/pullrequest/{prId}";
+                    var browseUrl = BuildBrowsePrUrl(details.RepositoryWebBaseUrl, prId);
                     return EasyGitOperationResult.Success("Pull request created.", browseUrl);
                 }
 
@@ -177,11 +181,16 @@ namespace FODevManager.Services.EasyGit
             }
         }
 
-        private static string BuildCreatePrUrl(string organization, string project, string repositoryName, string sourceRef, string targetRef)
+        private static string BuildCreatePrUrl(string repositoryWebBaseUrl, string sourceBranchName, string targetBranchName)
         {
-            var sourceEscaped = Uri.EscapeDataString(sourceRef);
-            var targetEscaped = Uri.EscapeDataString(targetRef);
-            return $"https://dev.azure.com/{organization}/{project}/_git/{repositoryName}/pullrequestcreate?sourceRef={sourceEscaped}&targetRef={targetEscaped}";
+            var sourceEscaped = Uri.EscapeDataString(sourceBranchName);
+            var targetEscaped = Uri.EscapeDataString(targetBranchName);
+            return $"{repositoryWebBaseUrl}/pullrequestcreate?sourceRef={sourceEscaped}&targetRef={targetEscaped}";
+        }
+
+        private static string BuildBrowsePrUrl(string repositoryWebBaseUrl, int pullRequestId)
+        {
+            return $"{repositoryWebBaseUrl}/pullrequest/{pullRequestId}";
         }
 
         private static bool TryParseRepository(RepositoryModel repository, out AzureDevOpsRepoDetails details, out string error)
@@ -212,7 +221,22 @@ namespace FODevManager.Services.EasyGit
 
             var project = Uri.UnescapeDataString(segments[gitIndex - 1]);
             var repoName = Uri.UnescapeDataString(segments[gitIndex + 1]);
-            var organization = Uri.UnescapeDataString(segments[0]);
+
+            var organization = string.Empty;
+            if (uri.Host.Equals("dev.azure.com", StringComparison.OrdinalIgnoreCase))
+            {
+                organization = gitIndex >= 2
+                    ? Uri.UnescapeDataString(segments[gitIndex - 2])
+                    : string.Empty;
+            }
+            else if (uri.Host.EndsWith(".visualstudio.com", StringComparison.OrdinalIgnoreCase))
+            {
+                organization = uri.Host.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? string.Empty;
+            }
+            else
+            {
+                organization = Uri.UnescapeDataString(segments[0]);
+            }
 
             if (project.IsNullOrEmpty() || repoName.IsNullOrEmpty() || organization.IsNullOrEmpty())
             {
@@ -220,7 +244,69 @@ namespace FODevManager.Services.EasyGit
                 return false;
             }
 
-            details = new AzureDevOpsRepoDetails(organization, project, repoName);
+            if (!TryBuildRepositoryWebBase(repository, out var repositoryWebBaseUrl, out error))
+                return false;
+
+            details = new AzureDevOpsRepoDetails(organization, project, repoName, repositoryWebBaseUrl);
+            return true;
+        }
+
+        private static bool TryBuildRepositoryWebBase(RepositoryModel repository, out string repositoryWebBaseUrl, out string error)
+        {
+            repositoryWebBaseUrl = string.Empty;
+            error = string.Empty;
+
+            var remoteUrl = (repository.GitUrl ?? string.Empty).Trim();
+            if (remoteUrl.IsNullOrEmpty())
+            {
+                error = "Repository remote URL is empty.";
+                return false;
+            }
+
+            if (!Uri.TryCreate(remoteUrl.Replace(" ", "%20"), UriKind.Absolute, out var uri))
+            {
+                error = "Repository remote URL is invalid for Azure DevOps.";
+                return false;
+            }
+
+            var rawSegments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var gitIndex = Array.FindIndex(rawSegments, segment => Uri.UnescapeDataString(segment).Equals("_git", StringComparison.OrdinalIgnoreCase));
+            if (gitIndex < 1 || gitIndex + 1 >= rawSegments.Length)
+            {
+                error = "Repository remote URL does not match Azure DevOps format.";
+                return false;
+            }
+
+            var prefix = string.Join("/", rawSegments.Take(gitIndex));
+            var repositorySegment = rawSegments[gitIndex + 1];
+            repositoryWebBaseUrl = $"{uri.Scheme}://{uri.Authority}/{prefix}/_git/{repositorySegment}";
+            return true;
+        }
+
+        private static bool TryNormalizeBranchName(string? branch, out string normalizedBranch, out string error)
+        {
+            normalizedBranch = string.Empty;
+            error = string.Empty;
+
+            var safeBranch = (branch ?? string.Empty).Trim();
+            if (safeBranch.IsNullOrEmpty())
+            {
+                error = "Branch is empty.";
+                return false;
+            }
+
+            const string refsPrefix = "refs/heads/";
+            if (safeBranch.StartsWith(refsPrefix, StringComparison.OrdinalIgnoreCase))
+                safeBranch = safeBranch.Substring(refsPrefix.Length);
+
+            safeBranch = safeBranch.Trim();
+            if (safeBranch.IsNullOrEmpty())
+            {
+                error = "Branch is invalid.";
+                return false;
+            }
+
+            normalizedBranch = safeBranch;
             return true;
         }
 
@@ -240,6 +326,6 @@ namespace FODevManager.Services.EasyGit
             }
         }
 
-        private readonly record struct AzureDevOpsRepoDetails(string Organization, string Project, string RepositoryName);
+        private readonly record struct AzureDevOpsRepoDetails(string Organization, string Project, string RepositoryName, string RepositoryWebBaseUrl);
     }
 }

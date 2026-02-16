@@ -160,7 +160,7 @@ namespace EasyGit.WinUI
         public string DeletedDisplay => $"- {DeletedCount}";
         public string ModifiedDisplay => ModifiedCount.ToString();
 
-        public bool CanCreateFeature => !IsProtectedBranch && WorkflowStage == EasyGitWorkflowStage.NotStarted;
+        public bool CanCreateFeature => WorkflowStage == EasyGitWorkflowStage.NotStarted;
         public bool CanCommit => !IsProtectedBranch && WorkflowStage >= EasyGitWorkflowStage.Created && HasChanges;
         public bool CanCreatePr => !IsProtectedBranch && WorkflowStage >= EasyGitWorkflowStage.Created && WorkflowStage < EasyGitWorkflowStage.PullRequestCreated;
         public bool CanViewPr => !string.IsNullOrWhiteSpace(PullRequestUrl);
