@@ -50,7 +50,25 @@ namespace EasyGit.WinUI
                 OnPropertyChanged(nameof(CanCreateFeature));
                 OnPropertyChanged(nameof(CanCommit));
                 OnPropertyChanged(nameof(CanCreatePr));
+                OnPropertyChanged(nameof(CanPrimaryPrAction));
+                OnPropertyChanged(nameof(ShowPrimaryPrAction));
+                OnPropertyChanged(nameof(ShowDisabledPrAction));
                 OnPropertyChanged(nameof(CanComplete));
+            }
+        }
+
+        private bool _hasMainUpdates;
+        public bool HasMainUpdates
+        {
+            get => _hasMainUpdates;
+            set
+            {
+                if (_hasMainUpdates == value)
+                    return;
+
+                _hasMainUpdates = value;
+                OnPropertyChanged(nameof(HasMainUpdates));
+                OnPropertyChanged(nameof(CanUpdateBranch));
             }
         }
 
@@ -68,6 +86,9 @@ namespace EasyGit.WinUI
                 OnPropertyChanged(nameof(CanCreateFeature));
                 OnPropertyChanged(nameof(CanCommit));
                 OnPropertyChanged(nameof(CanCreatePr));
+                OnPropertyChanged(nameof(CanPrimaryPrAction));
+                OnPropertyChanged(nameof(ShowPrimaryPrAction));
+                OnPropertyChanged(nameof(ShowDisabledPrAction));
                 OnPropertyChanged(nameof(CanComplete));
             }
         }
@@ -99,6 +120,7 @@ namespace EasyGit.WinUI
                 OnPropertyChanged(nameof(AddedCount));
                 OnPropertyChanged(nameof(AddedDisplay));
                 OnPropertyChanged(nameof(HasChanges));
+                OnPropertyChanged(nameof(CanViewChangedFiles));
                 OnPropertyChanged(nameof(CanCommit));
             }
         }
@@ -116,6 +138,7 @@ namespace EasyGit.WinUI
                 OnPropertyChanged(nameof(DeletedCount));
                 OnPropertyChanged(nameof(DeletedDisplay));
                 OnPropertyChanged(nameof(HasChanges));
+                OnPropertyChanged(nameof(CanViewChangedFiles));
                 OnPropertyChanged(nameof(CanCommit));
             }
         }
@@ -133,6 +156,7 @@ namespace EasyGit.WinUI
                 OnPropertyChanged(nameof(ModifiedCount));
                 OnPropertyChanged(nameof(ModifiedDisplay));
                 OnPropertyChanged(nameof(HasChanges));
+                OnPropertyChanged(nameof(CanViewChangedFiles));
                 OnPropertyChanged(nameof(CanCommit));
             }
         }
@@ -149,7 +173,11 @@ namespace EasyGit.WinUI
                 _pullRequestUrl = value;
                 OnPropertyChanged(nameof(PullRequestUrl));
                 OnPropertyChanged(nameof(HasPullRequest));
+                OnPropertyChanged(nameof(PrActionText));
                 OnPropertyChanged(nameof(CanViewPr));
+                OnPropertyChanged(nameof(CanPrimaryPrAction));
+                OnPropertyChanged(nameof(ShowPrimaryPrAction));
+                OnPropertyChanged(nameof(ShowDisabledPrAction));
             }
         }
 
@@ -164,7 +192,13 @@ namespace EasyGit.WinUI
         public bool CanCommit => !IsProtectedBranch && WorkflowStage >= EasyGitWorkflowStage.Created && HasChanges;
         public bool CanCreatePr => !IsProtectedBranch && WorkflowStage >= EasyGitWorkflowStage.Created && WorkflowStage < EasyGitWorkflowStage.PullRequestCreated;
         public bool CanViewPr => !string.IsNullOrWhiteSpace(PullRequestUrl);
+        public bool CanPrimaryPrAction => HasPullRequest ? CanViewPr : CanCreatePr;
+        public bool ShowPrimaryPrAction => CanPrimaryPrAction;
+        public bool ShowDisabledPrAction => !CanPrimaryPrAction;
+        public string PrActionText => HasPullRequest ? "View PR" : "Create PR";
         public bool CanComplete => WorkflowStage >= EasyGitWorkflowStage.PullRequestCreated;
+        public bool CanUpdateBranch => HasMainUpdates;
+        public bool CanViewChangedFiles => HasChanges;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 

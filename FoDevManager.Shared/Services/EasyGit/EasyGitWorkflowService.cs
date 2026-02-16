@@ -172,6 +172,11 @@ namespace FODevManager.Services.EasyGit
 
         public async Task<EasyGitOperationResult> CommitAsync(string profileName, string repoId, CancellationToken cancellationToken = default)
         {
+            return await CommitWithMessageAsync(profileName, repoId, commitMessage: null, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<EasyGitOperationResult> CommitWithMessageAsync(string profileName, string repoId, string? commitMessage, CancellationToken cancellationToken = default)
+        {
             var (profile, repository, error) = LoadRepository(profileName, repoId);
             if (!error.IsNullOrEmpty())
                 return EasyGitOperationResult.Fail(error);
@@ -188,13 +193,17 @@ namespace FODevManager.Services.EasyGit
             if (!GitHelper.HasStagedChanges(repoPath))
                 return EasyGitOperationResult.Fail("No staged changes to commit.");
 
-            var stagedDiff = GitHelper.GetStagedDiff(repoPath);
-            var aiCommit = await _aiGitAssistant.GenerateCommitMessageAsync(stagedDiff, cancellationToken).ConfigureAwait(false);
-            var commitMessage = aiCommit.Succeeded && !aiCommit.CommitMessage.IsNullOrEmpty()
-                ? aiCommit.CommitMessage
-                : BuildFallbackCommitMessage(repository, branch);
+            var message = (commitMessage ?? string.Empty).Trim();
+            if (message.IsNullOrEmpty())
+            {
+                var stagedDiff = GitHelper.GetStagedDiff(repoPath);
+                var aiCommit = await _aiGitAssistant.GenerateCommitMessageAsync(stagedDiff, cancellationToken).ConfigureAwait(false);
+                message = aiCommit.Succeeded && !aiCommit.CommitMessage.IsNullOrEmpty()
+                    ? aiCommit.CommitMessage
+                    : BuildFallbackCommitMessage(repository, branch);
+            }
 
-            if (!GitHelper.Commit(repoPath, commitMessage))
+            if (!GitHelper.Commit(repoPath, message))
                 return EasyGitOperationResult.Fail("Git commit failed.");
 
             if (!GitHelper.PushCurrentBranch(repoPath, setUpstreamWhenMissing: true))
@@ -204,7 +213,61 @@ namespace FODevManager.Services.EasyGit
             repository.WorkflowStage = MaxWorkflowStage(repository.WorkflowStage, EasyGitWorkflowStage.Committed).ToString();
             _fileService.SaveProfile(profile);
 
-            return EasyGitOperationResult.Success($"Committed and pushed: {commitMessage}");
+            return EasyGitOperationResult.Success($"Committed and pushed: {message}");
+        }
+
+        public async Task<EasyGitCommitPreview> GetCommitPreviewAsync(string profileName, string repoId, CancellationToken cancellationToken = default)
+        {
+            var (_, repository, error) = LoadRepository(profileName, repoId);
+            if (!error.IsNullOrEmpty())
+            {
+                return new EasyGitCommitPreview
+                {
+                    CanCommit = false,
+                    Message = error,
+                    ProposedCommitMessage = string.Empty,
+                    ChangedFiles = Array.Empty<EasyGitChangedFile>()
+                };
+            }
+
+            var repoPath = repository.RepoRootFolder;
+            var branch = GitHelper.GetActiveBranch(repoPath) ?? string.Empty;
+            if (GitHelper.IsProtectedBranch(branch, _config.ProtectedBranches))
+            {
+                return new EasyGitCommitPreview
+                {
+                    CanCommit = false,
+                    Message = $"Commit is blocked on protected branch '{branch}'.",
+                    ProposedCommitMessage = string.Empty,
+                    ChangedFiles = Array.Empty<EasyGitChangedFile>()
+                };
+            }
+
+            var changedFiles = GetChangedFiles(profileName, repoId);
+            if (changedFiles.Count == 0)
+            {
+                return new EasyGitCommitPreview
+                {
+                    CanCommit = false,
+                    Message = "No pending changes to commit.",
+                    ProposedCommitMessage = string.Empty,
+                    ChangedFiles = Array.Empty<EasyGitChangedFile>()
+                };
+            }
+
+            var diff = GitHelper.GetDiffAgainstHead(repoPath);
+            var aiCommit = await _aiGitAssistant.GenerateCommitMessageAsync(diff, cancellationToken).ConfigureAwait(false);
+            var proposedCommitMessage = aiCommit.Succeeded && !aiCommit.CommitMessage.IsNullOrEmpty()
+                ? aiCommit.CommitMessage
+                : BuildFallbackCommitMessage(repository, branch);
+
+            return new EasyGitCommitPreview
+            {
+                CanCommit = true,
+                Message = "Review files and commit message before committing.",
+                ProposedCommitMessage = proposedCommitMessage,
+                ChangedFiles = changedFiles
+            };
         }
 
         public async Task<EasyGitOperationResult> CreatePullRequestAsync(string profileName, string repoId, CancellationToken cancellationToken = default)
@@ -277,6 +340,26 @@ namespace FODevManager.Services.EasyGit
             return Task.FromResult(EasyGitOperationResult.Success("Opened pull request in browser.", prUrl));
         }
 
+        public IReadOnlyCollection<EasyGitChangedFile> GetChangedFiles(string profileName, string repoId)
+        {
+            var (_, repository, error) = LoadRepository(profileName, repoId);
+            if (!error.IsNullOrEmpty())
+                return Array.Empty<EasyGitChangedFile>();
+
+            return GitHelper.GetWorkingTreeChangedFiles(repository.RepoRootFolder)
+                .Select(change => new EasyGitChangedFile
+                {
+                    Path = change.Path,
+                    ChangeType = change.Kind switch
+                    {
+                        GitHelper.WorkingTreeFileChangeKind.Added => "Added",
+                        GitHelper.WorkingTreeFileChangeKind.Deleted => "Deleted",
+                        _ => "Changed"
+                    }
+                })
+                .ToList();
+        }
+
         public async Task<EasyGitPullRequestState> GetPullRequestStateAsync(string profileName, string repoId, CancellationToken cancellationToken = default)
         {
             var (_, repository, error) = LoadRepository(profileName, repoId);
@@ -341,6 +424,37 @@ namespace FODevManager.Services.EasyGit
             _fileService.SaveProfile(profile);
 
             return EasyGitOperationResult.Success($"Completed workflow for '{repository.DisplayName}'. Switched to '{mainBranch}' and cleaned feature branch.");
+        }
+
+        public async Task<EasyGitOperationResult> ResetRepositoryWorkflowAsync(string profileName, string repoId, CancellationToken cancellationToken = default)
+        {
+            var (profile, repository, error) = LoadRepository(profileName, repoId);
+            if (!error.IsNullOrEmpty())
+                return EasyGitOperationResult.Fail(error);
+
+            var repoPath = repository.RepoRootFolder;
+            var mainBranch = NormalizeMainBranchName(repository.MainBranchName);
+
+            if (!GitHelper.ChangeBranch(
+                    repoPath,
+                    mainBranch,
+                    autoStashIfDirty: true,
+                    stashMessage: $"EasyGit auto-stash before reset workflow for {repository.DisplayName}",
+                    createIfMissing: false))
+            {
+                return EasyGitOperationResult.Fail($"Could not switch to '{mainBranch}' while resetting workflow.");
+            }
+
+            if (!await GitHelper.FetchAllAsync(repoPath, cancellationToken).ConfigureAwait(false))
+                MessageLogger.Warning($"Fetch failed for '{repository.DisplayName}' during workflow reset.");
+
+            GitHelper.Pull(repoPath, "origin", mainBranch);
+
+            repository.LastKnownBranch = GitHelper.GetActiveBranch(repoPath) ?? mainBranch;
+            ClearWorkflowMetadata(repository);
+            _fileService.SaveProfile(profile);
+
+            return EasyGitOperationResult.Success($"Workflow reset for '{repository.DisplayName}'. Stashed changes if needed and switched to '{mainBranch}'.");
         }
 
         public async Task<EasyGitOperationResult> ResetProfileWorkflowsAsync(string profileName, CancellationToken cancellationToken = default)

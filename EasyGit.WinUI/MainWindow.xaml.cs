@@ -1,17 +1,24 @@
+using EasyGit.WinUI.Framework;
 using FODevManager.Messages;
 using FODevManager.Services;
 using FODevManager.Services.EasyGit;
 using FODevManager.Utils;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Documents;
+using Microsoft.UI.Xaml.Media;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Windows.UI;
 using WinRT.Interop;
 
 namespace EasyGit.WinUI
@@ -26,6 +33,7 @@ namespace EasyGit.WinUI
         private int _isAutoSyncRunning;
 
         private DispatcherQueueTimer? _syncTimer;
+        private StatusMessageSubscriber? _statusSubscriber;
         private CancellationTokenSource? _profileLoadCancellationTokenSource;
         private string _selectedProfileName = string.Empty;
 
@@ -40,9 +48,24 @@ namespace EasyGit.WinUI
             var appWindow = GetAppWindowForCurrentWindow();
             appWindow.TitleBar.ExtendsContentIntoTitleBar = true;
 
+            _statusSubscriber = new StatusMessageSubscriber(DispatcherQueue, message =>
+            {
+                StatusTextBlock.Text = string.IsNullOrWhiteSpace(message) ? "Ready." : message;
+            });
+
+            Closed += MainWindow_Closed;
             RepositoriesList.ItemsSource = _rows;
             LoadProfiles();
             StartAutoSync();
+        }
+
+        private void MainWindow_Closed(object sender, WindowEventArgs args)
+        {
+            _syncTimer?.Stop();
+            _profileLoadCancellationTokenSource?.Cancel();
+            _profileLoadCancellationTokenSource?.Dispose();
+            _statusSubscriber?.Dispose();
+            _syncLock.Dispose();
         }
 
         private AppWindow GetAppWindowForCurrentWindow()
@@ -91,7 +114,7 @@ namespace EasyGit.WinUI
                             .ConfigureAwait(true);
 
                         if (!branchSync.Message.IsNullOrEmpty())
-                            SetStatus(branchSync.Message);
+                            SetOperationStatus(branchSync);
                     }
 
                     await RefreshStatusAsync(includeMainUpdateCheck: false, cancellationToken: token).ConfigureAwait(true);
@@ -137,7 +160,7 @@ namespace EasyGit.WinUI
             await RunBusyAsync($"Resetting '{_selectedProfileName}'...", async () =>
             {
                 var op = await _workflowService.ResetProfileWorkflowsAsync(_selectedProfileName).ConfigureAwait(true);
-                SetStatus(op.Message);
+                SetOperationStatus(op);
                 await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
             }).ConfigureAwait(true);
         }
@@ -177,7 +200,7 @@ namespace EasyGit.WinUI
                     .CreateFeatureBranchAsync(_selectedProfileName, repoId, taskBox.Text.Trim(), commentBox.Text.Trim())
                     .ConfigureAwait(true);
 
-                SetStatus(op.Message);
+                SetOperationStatus(op);
                 await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
             }).ConfigureAwait(true);
         }
@@ -187,34 +210,111 @@ namespace EasyGit.WinUI
             if (sender is not Button button || button.Tag is not string repoId || _selectedProfileName.IsNullOrEmpty())
                 return;
 
+            await ReviewAndCommitAsync(repoId).ConfigureAwait(true);
+        }
+
+        private async Task ReviewAndCommitAsync(string repoId)
+        {
+            if (_selectedProfileName.IsNullOrEmpty())
+                return;
+
+            EasyGitCommitPreview preview = new();
+            await RunBusyAsync("Preparing commit preview...", async () =>
+            {
+                preview = await _workflowService.GetCommitPreviewAsync(_selectedProfileName, repoId).ConfigureAwait(true);
+            }).ConfigureAwait(true);
+
+            if (!preview.CanCommit)
+            {
+                SetStatus(preview.Message, MessageType.Warning);
+                return;
+            }
+
+            var panel = BuildCommitReviewPanel(preview, out var commitMessageBox);
+
+            var dialog = new ContentDialog
+            {
+                Title = "Review and Commit",
+                Content = panel,
+                PrimaryButtonText = "Commit and Push",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = Content.XamlRoot
+            };
+
+            var decision = await dialog.ShowAsync();
+            if (decision != ContentDialogResult.Primary)
+                return;
+
             await RunBusyAsync("Committing changes...", async () =>
             {
-                var op = await _workflowService.CommitAsync(_selectedProfileName, repoId).ConfigureAwait(true);
-                SetStatus(op.Message);
+                var op = await _workflowService
+                    .CommitWithMessageAsync(_selectedProfileName, repoId, commitMessageBox.Text?.Trim())
+                    .ConfigureAwait(true);
+                SetOperationStatus(op);
                 await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
             }).ConfigureAwait(true);
         }
 
-        private async void CreatePr_Click(object sender, RoutedEventArgs e)
+        private async Task CreatePrAsync(string repoId)
         {
-            if (sender is not Button button || button.Tag is not string repoId || _selectedProfileName.IsNullOrEmpty())
+            if (_selectedProfileName.IsNullOrEmpty())
                 return;
 
             await RunBusyAsync("Creating pull request...", async () =>
             {
                 var op = await _workflowService.CreatePullRequestAsync(_selectedProfileName, repoId).ConfigureAwait(true);
-                SetStatus(op.Message);
+                SetOperationStatus(op);
                 await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
             }).ConfigureAwait(true);
         }
 
-        private async void ViewPr_Click(object sender, RoutedEventArgs e)
+        private async Task ViewPrAsync(string repoId)
         {
-            if (sender is not Button button || button.Tag is not string repoId || _selectedProfileName.IsNullOrEmpty())
+            if (_selectedProfileName.IsNullOrEmpty())
                 return;
 
             var op = await _workflowService.OpenPullRequestAsync(_selectedProfileName, repoId).ConfigureAwait(true);
-            SetStatus(op.Message);
+            SetOperationStatus(op);
+        }
+
+        private async void PrimaryPrAction_Click(SplitButton sender, SplitButtonClickEventArgs e)
+        {
+            if (!TryGetRepoIdFromElement(sender, out var repoId) || _selectedProfileName.IsNullOrEmpty())
+                return;
+
+            var row = _rows.FirstOrDefault(candidate => candidate.RepoId.SameAs(repoId));
+            if (row?.HasPullRequest == true)
+                await ViewPrAsync(repoId).ConfigureAwait(true);
+            else
+                await CreatePrAsync(repoId).ConfigureAwait(true);
+        }
+
+        private void OpenDevOps_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryGetRepoId(sender, out var repoId) || _selectedProfileName.IsNullOrEmpty())
+                return;
+
+            var profile = _fileService.LoadProfile(_selectedProfileName);
+            var repository = (profile.Repositories ?? new List<FODevManager.Models.RepositoryModel>())
+                .FirstOrDefault(candidate => candidate.RepoId.SameAs(repoId));
+
+            var url = NormalizeDevOpsUrl(repository?.GitUrl);
+            if (url.IsNullOrEmpty())
+            {
+                SetStatus("Could not resolve DevOps URL for this repository.", MessageType.Warning);
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                SetStatus("Opened repository in DevOps.", MessageType.Highlight);
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Could not open DevOps URL: {ex.Message}", MessageType.Error);
+            }
         }
 
         private async void Complete_Click(object sender, RoutedEventArgs e)
@@ -232,7 +332,7 @@ namespace EasyGit.WinUI
                     allowUnverified = await ConfirmCompleteWhenPrCannotBeVerifiedAsync(prState.Message).ConfigureAwait(true);
                     if (!allowUnverified)
                     {
-                        SetStatus("Complete canceled.");
+                        SetStatus("Complete canceled.", MessageType.Info);
                         return;
                     }
                 }
@@ -241,9 +341,349 @@ namespace EasyGit.WinUI
                     .CompleteWorkflowAsync(_selectedProfileName, repoId, allowUnverified)
                     .ConfigureAwait(true);
 
-                SetStatus(op.Message);
+                SetOperationStatus(op);
                 await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
             }).ConfigureAwait(true);
+        }
+
+        private void GitActions_OpenSolution_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedProfileName.IsNullOrEmpty())
+                return;
+
+            var profile = _fileService.LoadProfile(_selectedProfileName);
+            var solutionPath = (profile.SolutionFilePath ?? string.Empty).Trim();
+            if (solutionPath.IsNullOrEmpty() || !File.Exists(solutionPath))
+            {
+                SetStatus($"Solution not found for profile '{_selectedProfileName}'.");
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo(solutionPath) { UseShellExecute = true });
+                SetStatus("Opened profile solution.", MessageType.Highlight);
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Could not open solution: {ex.Message}", MessageType.Error);
+            }
+        }
+
+        private async void Settings_Click(object sender, RoutedEventArgs e)
+        {
+            var settingsPage = new SettingsPage
+            {
+                MinWidth = 760,
+                MinHeight = 520
+            };
+
+            var dialog = new ContentDialog
+            {
+                Title = "Options",
+                Content = settingsPage,
+                PrimaryButtonText = "Close",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = Content.XamlRoot
+            };
+
+            dialog.MaxWidth = 1100;
+            dialog.MinWidth = 760;
+            await dialog.ShowAsync();
+        }
+
+        private async void About_Click(object sender, RoutedEventArgs e)
+        {
+            var version = typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "unknown";
+
+            var dialog = new ContentDialog
+            {
+                Title = "About EasyGit",
+                Content = $"EasyGit helps manage your FO repositories and workflow stages.\nVersion: {version}",
+                CloseButtonText = "Close",
+                XamlRoot = Content.XamlRoot
+            };
+
+            await dialog.ShowAsync();
+        }
+
+        private async void Advanced_UpdateBranch_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryGetRepoId(sender, out var repoId) || _selectedProfileName.IsNullOrEmpty())
+                return;
+
+            await RunBusyAsync("Updating feature branch...", async () =>
+            {
+                var op = await _workflowService.MergeMainIntoFeatureAsync(_selectedProfileName, repoId).ConfigureAwait(true);
+                SetOperationStatus(op);
+
+                var row = _rows.FirstOrDefault(candidate => candidate.RepoId.SameAs(repoId));
+                if (op.RequiresManualReview && row != null)
+                    await ShowConflictReviewNoticeAsync(row).ConfigureAwait(true);
+
+                await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
+            }).ConfigureAwait(true);
+        }
+
+        private async void Advanced_ViewChangedFiles_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryGetRepoId(sender, out var repoId) || _selectedProfileName.IsNullOrEmpty())
+                return;
+
+            var row = _rows.FirstOrDefault(candidate => candidate.RepoId.SameAs(repoId));
+            if (row == null || !row.CanViewChangedFiles)
+                return;
+
+            var changedFiles = _workflowService.GetChangedFiles(_selectedProfileName, repoId);
+            var content = BuildChangedFilesPanel(changedFiles, minHeight: 420);
+
+            var dialog = new ContentDialog
+            {
+                Title = $"Changed files - {row.DisplayName}",
+                Content = content,
+                PrimaryButtonText = "Commit...",
+                CloseButtonText = "Close",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = Content.XamlRoot
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Primary)
+                await ReviewAndCommitAsync(repoId).ConfigureAwait(true);
+        }
+
+        private FrameworkElement BuildCommitReviewPanel(EasyGitCommitPreview preview, out TextBox commitMessageBox)
+        {
+            var panel = new StackPanel
+            {
+                Spacing = 12,
+                MinWidth = 760,
+                MaxWidth = 920
+            };
+
+            var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            header.Children.Add(new FontIcon { Glyph = "\uE70F", FontSize = 14, Opacity = 0.85 });
+            header.Children.Add(new TextBlock
+            {
+                Text = "Review files and fine-tune the commit message before pushing.",
+                FontWeight = FontWeights.SemiBold,
+                Opacity = 0.9
+            });
+            panel.Children.Add(header);
+
+            panel.Children.Add(BuildChangeSummaryBadges(preview.ChangedFiles));
+            panel.Children.Add(BuildChangedFilesPanel(preview.ChangedFiles, minHeight: 290));
+
+            commitMessageBox = new TextBox
+            {
+                Header = "Commit message",
+                Text = preview.ProposedCommitMessage,
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.Wrap,
+                MinHeight = 96
+            };
+            panel.Children.Add(commitMessageBox);
+
+            return panel;
+        }
+
+        private FrameworkElement BuildChangedFilesPanel(IReadOnlyCollection<EasyGitChangedFile> changedFiles, double minHeight)
+        {
+            var container = new StackPanel { Spacing = 10 };
+
+            if (changedFiles.Count == 0)
+            {
+                container.Children.Add(new TextBlock
+                {
+                    Text = "No modified files were detected.",
+                    Opacity = 0.75
+                });
+            }
+            else
+            {
+                AddChangedFilesSection(container, "Added", "\uE710", "Added", Color.FromArgb(255, 76, 175, 80), changedFiles);
+                AddChangedFilesSection(container, "Deleted", "\uE74D", "Deleted", Color.FromArgb(255, 229, 57, 53), changedFiles);
+                AddChangedFilesSection(container, "Changed", "\uE70F", "Changed", Color.FromArgb(255, 37, 99, 235), changedFiles);
+            }
+
+            var scroll = new ScrollViewer
+            {
+                Content = container,
+                MinHeight = minHeight,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto
+            };
+
+            return new Border
+            {
+                Padding = new Thickness(12),
+                CornerRadius = new CornerRadius(10),
+                BorderThickness = new Thickness(1),
+                BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+                Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
+                Child = scroll
+            };
+        }
+
+        private static FrameworkElement BuildChangeSummaryBadges(IReadOnlyCollection<EasyGitChangedFile> changedFiles)
+        {
+            var added = changedFiles.Count(file => file.ChangeType.SameAs("Added"));
+            var deleted = changedFiles.Count(file => file.ChangeType.SameAs("Deleted"));
+            var changed = changedFiles.Count(file => file.ChangeType.SameAs("Changed"));
+
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            row.Children.Add(CreateBadge($"Added {added}", Color.FromArgb(255, 76, 175, 80)));
+            row.Children.Add(CreateBadge($"Deleted {deleted}", Color.FromArgb(255, 229, 57, 53)));
+            row.Children.Add(CreateBadge($"Changed {changed}", Color.FromArgb(255, 37, 99, 235)));
+            row.Children.Add(CreateBadge($"Total {changedFiles.Count}", Color.FromArgb(255, 99, 102, 241)));
+            return row;
+        }
+
+        private static Border CreateBadge(string text, Color color)
+        {
+            return new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(40, color.R, color.G, color.B)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(140, color.R, color.G, color.B)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(10, 3, 10, 3),
+                Child = new TextBlock
+                {
+                    Text = text,
+                    FontSize = 12,
+                    FontWeight = FontWeights.SemiBold
+                }
+            };
+        }
+
+        private static void AddChangedFilesSection(
+            Panel container,
+            string title,
+            string glyph,
+            string changeType,
+            Color color,
+            IReadOnlyCollection<EasyGitChangedFile> changedFiles)
+        {
+            var files = changedFiles
+                .Where(file => file.ChangeType.SameAs(changeType))
+                .Select(file => file.Path)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (files.Count == 0)
+                return;
+
+            var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            header.Children.Add(new FontIcon { Glyph = glyph, FontSize = 13, Foreground = new SolidColorBrush(color) });
+            header.Children.Add(new TextBlock
+            {
+                Text = $"{title} ({files.Count})",
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(color)
+            });
+            container.Children.Add(header);
+
+            foreach (var path in files)
+            {
+                container.Children.Add(BuildChangedFileLine(path));
+            }
+        }
+
+        private static TextBlock BuildChangedFileLine(string fullPath)
+        {
+            var (directoryPath, fileName) = SplitPathForDisplay(fullPath);
+
+            var line = new TextBlock
+            {
+                TextWrapping = TextWrapping.WrapWholeWords,
+                Opacity = 0.95
+            };
+
+            line.Inlines.Add(new Run { Text = "  - " });
+
+            if (!directoryPath.IsNullOrEmpty())
+            {
+                line.Inlines.Add(new Run
+                {
+                    Text = directoryPath,
+                    Foreground = new SolidColorBrush(Color.FromArgb(160, 120, 120, 120))
+                });
+            }
+
+            line.Inlines.Add(new Run
+            {
+                Text = fileName,
+                FontWeight = FontWeights.SemiBold
+            });
+
+            return line;
+        }
+
+        private static (string DirectoryPath, string FileName) SplitPathForDisplay(string fullPath)
+        {
+            if (fullPath.IsNullOrEmpty())
+                return (string.Empty, string.Empty);
+
+            var lastSeparator = Math.Max(fullPath.LastIndexOf('/'), fullPath.LastIndexOf('\\'));
+            if (lastSeparator < 0)
+                return (string.Empty, fullPath);
+
+            var directoryPath = fullPath.Substring(0, lastSeparator + 1);
+            var fileName = fullPath[(lastSeparator + 1)..];
+            return (directoryPath, fileName);
+        }
+
+        private async void Advanced_ResetWorkflow_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryGetRepoId(sender, out var repoId) || _selectedProfileName.IsNullOrEmpty())
+                return;
+
+            var row = _rows.FirstOrDefault(candidate => candidate.RepoId.SameAs(repoId));
+            var displayName = row?.DisplayName ?? repoId;
+
+            var dialog = new ContentDialog
+            {
+                Title = "Reset workflow",
+                Content = $"Reset workflow for '{displayName}'? Uncommitted changes will be stashed, PR metadata will be cleared, and repository will switch to main and pull latest.",
+                PrimaryButtonText = "Reset",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = Content.XamlRoot
+            };
+
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                return;
+
+            await RunBusyAsync("Resetting repository workflow...", async () =>
+            {
+                var op = await _workflowService.ResetRepositoryWorkflowAsync(_selectedProfileName, repoId).ConfigureAwait(true);
+                SetOperationStatus(op);
+                await RefreshStatusAsync(includeMainUpdateCheck: true).ConfigureAwait(true);
+            }).ConfigureAwait(true);
+        }
+
+        private void Advanced_BrowseRepo_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryGetRepoId(sender, out var repoId) || _selectedProfileName.IsNullOrEmpty())
+                return;
+
+            if (!TryGetRepositoryPath(repoId, out var repoPath))
+            {
+                SetStatus("Repository path not found.", MessageType.Warning);
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{repoPath}\"") { UseShellExecute = true });
+                SetStatus("Opened repository folder.", MessageType.Highlight);
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Could not open repository folder: {ex.Message}", MessageType.Error);
+            }
         }
 
         private void StartAutoSync()
@@ -374,7 +814,7 @@ namespace EasyGit.WinUI
                     var branch = status.Branch.IsNullOrEmpty() ? "(unknown)" : status.Branch;
 
                     var details = new List<string>();
-                    if (status.IsDirty) details.Add("dirty");
+                    if (status.IsDirty) details.Add("changes pending");
                     if (status.NeedsAttention) details.Add("needs attention");
                     if (status.HasMainUpdates) details.Add("main updated");
                     if (status.IsProtectedBranch) details.Add("protected branch");
@@ -383,12 +823,13 @@ namespace EasyGit.WinUI
                     {
                         RepoId = status.Repository.RepoId,
                         DisplayName = status.Repository.DisplayName,
-                        BranchInfo = $"Branch: {branch}",
+                        BranchInfo = $"{branch}",
                         StatusText = details.Count == 0 ? "ready" : string.Join(" | ", details),
                         AddedCount = status.AddedCount,
                         DeletedCount = status.DeletedCount,
                         ModifiedCount = status.ModifiedCount,
                         IsProtectedBranch = status.IsProtectedBranch,
+                        HasMainUpdates = status.HasMainUpdates,
                         WorkflowStage = status.WorkflowStage,
                         WorkflowText = status.WorkflowText,
                         PullRequestUrl = status.PullRequestUrl
@@ -403,10 +844,43 @@ namespace EasyGit.WinUI
             }
         }
 
-        private void SetStatus(string message)
+        private void SetStatus(string message, MessageType type = MessageType.Info)
         {
-            StatusTextBlock.Text = string.IsNullOrWhiteSpace(message) ? "Done." : message;
-            MessageLogger.Info(StatusTextBlock.Text);
+            var safeMessage = string.IsNullOrWhiteSpace(message) ? "Done." : message.Trim();
+
+            switch (type)
+            {
+                case MessageType.Error:
+                    MessageLogger.Error(safeMessage);
+                    break;
+                case MessageType.Warning:
+                    MessageLogger.Warning(safeMessage);
+                    break;
+                case MessageType.Highlight:
+                    MessageLogger.Highlight(safeMessage);
+                    break;
+                case MessageType.LogOnly:
+                    MessageLogger.LogOnly(safeMessage);
+                    break;
+                default:
+                    MessageLogger.Info(safeMessage);
+                    break;
+            }
+        }
+
+        private void SetOperationStatus(EasyGitOperationResult operation)
+        {
+            if (operation == null)
+                return;
+
+            if (operation.Succeeded)
+            {
+                SetStatus(operation.Message, MessageType.Highlight);
+                return;
+            }
+
+            var level = operation.RequiresManualReview ? MessageType.Warning : MessageType.Error;
+            SetStatus(operation.Message, level);
         }
 
         private async Task RunPostProfileLoadSyncAsync(string profileName, CancellationToken cancellationToken)
@@ -439,6 +913,62 @@ namespace EasyGit.WinUI
             {
                 HideLoading();
             }
+        }
+
+        private bool TryGetRepoId(object sender, out string repoId)
+        {
+            repoId = string.Empty;
+
+            if (sender is not MenuFlyoutItem menuItem)
+                return false;
+
+            var value = menuItem.Tag?.ToString() ?? string.Empty;
+            if (value.IsNullOrEmpty())
+                return false;
+
+            repoId = value;
+            return true;
+        }
+
+        private static bool TryGetRepoIdFromElement(object sender, out string repoId)
+        {
+            repoId = string.Empty;
+
+            if (sender is not FrameworkElement element)
+                return false;
+
+            var value = element.Tag?.ToString() ?? string.Empty;
+            if (value.IsNullOrEmpty())
+                return false;
+
+            repoId = value;
+            return true;
+        }
+
+        private bool TryGetRepositoryPath(string repoId, out string repoPath)
+        {
+            repoPath = string.Empty;
+
+            var profile = _fileService.LoadProfile(_selectedProfileName);
+            var repository = (profile.Repositories ?? new List<FODevManager.Models.RepositoryModel>())
+                .FirstOrDefault(candidate => candidate.RepoId.SameAs(repoId));
+            if (repository == null)
+                return false;
+
+            repoPath = (repository.RepoRootFolder ?? string.Empty).Trim();
+            return !repoPath.IsNullOrEmpty() && Directory.Exists(repoPath);
+        }
+
+        private static string NormalizeDevOpsUrl(string? gitUrl)
+        {
+            var url = (gitUrl ?? string.Empty).Trim();
+            if (url.IsNullOrEmpty())
+                return string.Empty;
+
+            if (url.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+                url = url[..^4];
+
+            return url;
         }
 
         private void ShowLoading(string text)

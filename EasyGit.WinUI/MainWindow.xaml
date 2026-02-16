@@ -34,27 +34,41 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10">
-                    <ComboBox x:Name="ProfilesDropdown" Width="300" SelectionChanged="ProfilesDropdown_SelectionChanged" ToolTipService.ToolTip="Select an existing profile" PlaceholderText="Select profile" />
-                    <Button Style="{StaticResource ToolbarBlueButtonStyle}" Click="Refresh_Click" ToolTipService.ToolTip="Refresh repositories for selected profile">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE72C;" FontSize="14" />
-                            <TextBlock Text="Refresh Profile" />
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                        <ComboBox x:Name="ProfilesDropdown" Width="300" SelectionChanged="ProfilesDropdown_SelectionChanged" ToolTipService.ToolTip="Select an existing profile" PlaceholderText="Select profile" />
+                        <Button Style="{StaticResource ToolbarBlueButtonStyle}" Click="Refresh_Click" ToolTipService.ToolTip="Refresh repositories for selected profile">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE72C;" FontSize="14" />
+                                <TextBlock Text="Refresh Profile" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource SecondaryActionButtonStyle}" ToolTipService.ToolTip="Git actions for selected profile">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE777;" FontSize="14" />
+                                <TextBlock Text="Git Actions" />
+                            </StackPanel>
+                            <Button.Flyout>
+                                <MenuFlyout>
+                                    <MenuFlyoutItem Text="Git Reset" Click="GitActions_Reset_Click" />
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
+                        <TextBlock Text="Auto sync is active" VerticalAlignment="Center" Opacity="0.75" FontStyle="Italic" />
+                    </StackPanel>
+
+                    <Button Grid.Column="1" Style="{StaticResource SecondaryActionButtonStyle}" Click="GitActions_OpenSolution_Click" ToolTipService.ToolTip="Open the selected profile solution">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8A5;" FontSize="14" />
+                            <TextBlock Text="Open Solution" />
                         </StackPanel>
                     </Button>
-                    <Button Style="{StaticResource SecondaryActionButtonStyle}" ToolTipService.ToolTip="Git actions for selected profile">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE777;" FontSize="14" />
-                            <TextBlock Text="Git Actions" />
-                        </StackPanel>
-                        <Button.Flyout>
-                            <MenuFlyout>
-                                <MenuFlyoutItem Text="Git Reset" Click="GitActions_Reset_Click" />
-                            </MenuFlyout>
-                        </Button.Flyout>
-                    </Button>
-                    <TextBlock Text="Auto sync is active" VerticalAlignment="Center" Opacity="0.75" FontStyle="Italic" />
-                </StackPanel>
+                </Grid>
 
                 <Border Grid.Row="1" Background="{ThemeResource SystemFillColorNeutralBackgroundBrush}" CornerRadius="12" Padding="8">
                     <ListView x:Name="RepositoriesList" SelectionMode="None" Background="Transparent" BorderThickness="0">
@@ -68,6 +82,7 @@
                                         </Grid.RowDefinitions>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="2*" />
+                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
@@ -88,15 +103,36 @@
                                             <TextBlock Text="{x:Bind StatusText}" />
                                         </Border>
 
-                                        <Button Grid.Row="0" Grid.Column="2" Margin="8,0,0,0" Width="146" Height="38" Content="Create Task/Feature" Tag="{x:Bind RepoId}" Style="{StaticResource ToolbarBlueButtonStyle}" Click="CreateFeature_Click" IsEnabled="{x:Bind CanCreateFeature}" />
+                                        <Button Grid.Row="0" Grid.Column="2" Margin="8,0,0,0" Width="146" Height="38" Content="Create Task" Tag="{x:Bind RepoId}" Style="{StaticResource ToolbarBlueButtonStyle}" Click="CreateFeature_Click" IsEnabled="{x:Bind CanCreateFeature}" />
                                         <Button Grid.Row="0" Grid.Column="3" Margin="8,0,0,0" Width="146" Height="38" Content="Commit" Tag="{x:Bind RepoId}" Style="{StaticResource ToolbarBlueButtonStyle}" Click="Commit_Click" IsEnabled="{x:Bind CanCommit}" />
-                                        <Button Grid.Row="0" Grid.Column="4" Margin="8,0,0,0" Width="146" Height="38" Content="Create PR" Tag="{x:Bind RepoId}" Style="{StaticResource PrimaryActionButtonStyle}" Click="CreatePr_Click" IsEnabled="{x:Bind CanCreatePr}" Visibility="{Binding HasPullRequest, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
-                                        <Button Grid.Row="0" Grid.Column="5" Margin="8,0,0,0" Width="146" Height="38" Content="View PR" Tag="{x:Bind RepoId}" Style="{StaticResource SecondaryActionButtonStyle}" Click="ViewPr_Click" IsEnabled="{x:Bind CanViewPr}" Visibility="{Binding HasPullRequest, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                        <Button Grid.Row="0" Grid.Column="6" Margin="8,0,0,0" Width="146" Height="38" Content="Complete" Tag="{x:Bind RepoId}" Style="{StaticResource SecondaryActionButtonStyle}" Click="Complete_Click" IsEnabled="{x:Bind CanComplete}" />
+                                        <Grid Grid.Row="0" Grid.Column="4" Margin="8,0,0,0" Width="146" Height="38">
+                                            <SplitButton Width="146" Height="38" Content="{x:Bind PrActionText}" Tag="{x:Bind RepoId}" Click="PrimaryPrAction_Click" IsEnabled="{x:Bind CanPrimaryPrAction}" Style="{StaticResource ToolbarBlueSplitButtonStyle}" Visibility="{Binding ShowPrimaryPrAction, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                <SplitButton.Flyout>
+                                                    <MenuFlyout>
+                                                        <MenuFlyoutItem Text="Open DevOps" Tag="{x:Bind RepoId}" Click="OpenDevOps_Click" />
+                                                    </MenuFlyout>
+                                                </SplitButton.Flyout>
+                                            </SplitButton>
+
+                                            <Button Width="146" Height="38" Content="{x:Bind PrActionText}" IsEnabled="False" Style="{StaticResource ToolbarBlueButtonStyle}" Visibility="{Binding ShowDisabledPrAction, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        </Grid>
+                                        <Button Grid.Row="0" Grid.Column="5" Margin="8,0,0,0" Width="146" Height="38" Content="Complete" Tag="{x:Bind RepoId}" Style="{StaticResource SecondaryActionButtonStyle}" Click="Complete_Click" IsEnabled="{x:Bind CanComplete}" />
+                                        <Button Grid.Row="0" Grid.Column="6" Margin="8,0,0,0" Width="38" Height="38" Style="{StaticResource SecondaryActionButtonStyle}" ToolTipService.ToolTip="Advanced repository actions">
+                                            <FontIcon Glyph="&#xE712;" FontSize="14" />
+                                            <Button.Flyout>
+                                                <MenuFlyout>
+                                                    <MenuFlyoutItem Text="Update Branch" Tag="{x:Bind RepoId}" Click="Advanced_UpdateBranch_Click" IsEnabled="{x:Bind CanUpdateBranch}" />
+                                                    <MenuFlyoutItem Text="View Changed Files" Tag="{x:Bind RepoId}" Click="Advanced_ViewChangedFiles_Click" IsEnabled="{x:Bind CanViewChangedFiles}" />
+                                                    <MenuFlyoutItem Text="Reset Workflow" Tag="{x:Bind RepoId}" Click="Advanced_ResetWorkflow_Click" />
+                                                    <MenuFlyoutSeparator />
+                                                    <MenuFlyoutItem Text="Browse Repo" Tag="{x:Bind RepoId}" Click="Advanced_BrowseRepo_Click" />
+                                                </MenuFlyout>
+                                            </Button.Flyout>
+                                        </Button>
 
                                         <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Text="{x:Bind WorkflowText}" FontSize="12" Opacity="0.72" TextWrapping="WrapWholeWords" />
 
-                                        <StackPanel Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="5" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="14">
+                                        <StackPanel Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="6" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="14">
                                             <TextBlock Text="{x:Bind AddedDisplay}" FontSize="12" Foreground="#80D779" />
                                             <TextBlock Text="{x:Bind DeletedDisplay}" FontSize="12" Foreground="#FF8C8C" />
                                             <StackPanel Orientation="Horizontal" Spacing="5">
@@ -112,9 +148,32 @@
                 </Border>
             </Grid>
 
-            <Border Grid.Row="2" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="10,6" Margin="10,0,10,8">
-                <TextBlock x:Name="StatusTextBlock" Text="Ready." Opacity="0.85" />
-            </Border>
+            <Grid Grid.Row="2" Margin="10,0,10,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="10,6">
+                    <TextBlock x:Name="StatusTextBlock" Text="Ready." Opacity="0.85" />
+                </Border>
+
+                <StackPanel Grid.Column="1" Orientation="Vertical" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="12,0,0,0">
+                    <Button Style="{StaticResource ToolbarBlueButtonStyle}" Click="Settings_Click" ToolTipService.ToolTip="Open EasyGit options">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE713;" FontSize="14" />
+                            <TextBlock Text="Settings" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource ToolbarBlueButtonStyle}" Click="About_Click" ToolTipService.ToolTip="About EasyGit">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE946;" FontSize="14" />
+                            <TextBlock Text="About" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
 
             <Grid x:Name="LoadingOverlay" Grid.RowSpan="3" Background="#66000000" Visibility="Collapsed">
                 <Border Width="340" Padding="20" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center">

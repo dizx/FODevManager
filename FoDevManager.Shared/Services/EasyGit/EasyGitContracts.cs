@@ -58,6 +58,20 @@ namespace FODevManager.Services.EasyGit
         public string Message { get; init; } = string.Empty;
     }
 
+    public sealed class EasyGitChangedFile
+    {
+        public string Path { get; init; } = string.Empty;
+        public string ChangeType { get; init; } = "Changed";
+    }
+
+    public sealed class EasyGitCommitPreview
+    {
+        public bool CanCommit { get; init; }
+        public string Message { get; init; } = string.Empty;
+        public string ProposedCommitMessage { get; init; } = string.Empty;
+        public IReadOnlyCollection<EasyGitChangedFile> ChangedFiles { get; init; } = new List<EasyGitChangedFile>();
+    }
+
     public sealed class AiConflictResolutionRequest
     {
         public string RepositoryRootFolder { get; init; } = string.Empty;
@@ -104,10 +118,14 @@ namespace FODevManager.Services.EasyGit
         Task<EasyGitOperationResult> AutoSyncRepositoryAsync(string profileName, string repoId, CancellationToken cancellationToken = default);
         Task<EasyGitOperationResult> CreateFeatureBranchAsync(string profileName, string repoId, string taskId, string comment, CancellationToken cancellationToken = default);
         Task<EasyGitOperationResult> CommitAsync(string profileName, string repoId, CancellationToken cancellationToken = default);
+        Task<EasyGitOperationResult> CommitWithMessageAsync(string profileName, string repoId, string? commitMessage, CancellationToken cancellationToken = default);
+        Task<EasyGitCommitPreview> GetCommitPreviewAsync(string profileName, string repoId, CancellationToken cancellationToken = default);
         Task<EasyGitOperationResult> CreatePullRequestAsync(string profileName, string repoId, CancellationToken cancellationToken = default);
         Task<EasyGitOperationResult> OpenPullRequestAsync(string profileName, string repoId, CancellationToken cancellationToken = default);
+        IReadOnlyCollection<EasyGitChangedFile> GetChangedFiles(string profileName, string repoId);
         Task<EasyGitPullRequestState> GetPullRequestStateAsync(string profileName, string repoId, CancellationToken cancellationToken = default);
         Task<EasyGitOperationResult> CompleteWorkflowAsync(string profileName, string repoId, bool allowWhenMergeCannotBeVerified, CancellationToken cancellationToken = default);
+        Task<EasyGitOperationResult> ResetRepositoryWorkflowAsync(string profileName, string repoId, CancellationToken cancellationToken = default);
         Task<EasyGitOperationResult> ResetProfileWorkflowsAsync(string profileName, CancellationToken cancellationToken = default);
         Task<EasyGitOperationResult> SwitchBranchesForProfileAsync(string sourceProfileName, string targetProfileName, CancellationToken cancellationToken = default);
         Task<EasyGitOperationResult> MergeMainIntoFeatureAsync(string profileName, string repoId, CancellationToken cancellationToken = default);

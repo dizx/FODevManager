@@ -61,7 +61,7 @@ namespace FODevManager.Services.EasyGit
             if (!CanUseAi(out var reason))
                 return new AiConflictResolutionResult { Succeeded = false, FailureReason = reason };
 
-            var systemPrompt = "You are a senior C#/XML/JSON merge resolver. " +
+            var systemPrompt = "You are a senior C#/XML/JSON merge resolver. " +    
                                "Resolve git conflict markers safely. " +
                                "Return strict JSON only with keys: confidence (0..1), resolvedContent. " +
                                "Do not include markdown.";

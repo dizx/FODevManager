@@ -241,6 +241,19 @@ namespace FODevManager.Utils
             public int Total => Added + Deleted + Modified;
         }
 
+        public enum WorkingTreeFileChangeKind
+        {
+            Added,
+            Deleted,
+            Changed
+        }
+
+        public sealed class WorkingTreeFileChange
+        {
+            public string Path { get; init; } = string.Empty;
+            public WorkingTreeFileChangeKind Kind { get; init; } = WorkingTreeFileChangeKind.Changed;
+        }
+
         public static WorkingTreeChangeCounts GetWorkingTreeChangeCounts(string repositoryRootFolder)
         {
             if (!RunGitCommand(repositoryRootFolder, "status --porcelain", out var output, logOnSuccess: false, logOnFailure: false))
@@ -289,6 +302,61 @@ namespace FODevManager.Utils
                 Deleted = deleted,
                 Modified = modified
             };
+        }
+
+        public static IReadOnlyCollection<WorkingTreeFileChange> GetWorkingTreeChangedFiles(string repositoryRootFolder)
+        {
+            if (!RunGitCommand(repositoryRootFolder, "status --porcelain", out var output, logOnSuccess: false, logOnFailure: false))
+                return Array.Empty<WorkingTreeFileChange>();
+
+            var files = new List<WorkingTreeFileChange>();
+
+            var lines = output
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.TrimEnd())
+                .Where(line => !line.IsNullOrEmpty());
+
+            foreach (var line in lines)
+            {
+                if (line.Length < 3)
+                    continue;
+
+                var statusCode = line.Substring(0, 2);
+                if (statusCode.SameAs("!!"))
+                    continue;
+
+                var pathStartIndex = line.Length > 2 && char.IsWhiteSpace(line[2]) ? 3 : 2;
+                if (pathStartIndex >= line.Length)
+                    continue;
+
+                var path = line.Substring(pathStartIndex).TrimStart().TrimEnd();
+                if (path.IsNullOrEmpty())
+                    continue;
+
+                var renameArrowIndex = path.LastIndexOf(" -> ", StringComparison.Ordinal);
+                if (renameArrowIndex >= 0)
+                    path = path[(renameArrowIndex + 4)..].Trim();
+
+                if (!path.IsNullOrEmpty())
+                    files.Add(new WorkingTreeFileChange { Path = path, Kind = ResolveChangeKind(statusCode) });
+            }
+
+            return files
+                .GroupBy(file => file.Path, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.OrderByDescending(item => item.Kind).First())
+                .OrderBy(file => file.Path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static WorkingTreeFileChangeKind ResolveChangeKind(string statusCode)
+        {
+            if (statusCode.SameAs("??") || statusCode.Contains('A'))
+                return WorkingTreeFileChangeKind.Added;
+
+            if (statusCode.Contains('D'))
+                return WorkingTreeFileChangeKind.Deleted;
+
+            return WorkingTreeFileChangeKind.Changed;
         }
 
         public static async Task<RepoBranchHealth> GetBranchHealthAsync(string repositoryRootFolder, CancellationToken cancellationToken)
@@ -499,6 +567,14 @@ namespace FODevManager.Utils
         public static string GetStagedDiff(string repositoryRootFolder)
         {
             if (!RunGitCommand(repositoryRootFolder, "diff --cached", out var output, logOnSuccess: false, logOnFailure: false))
+                return string.Empty;
+
+            return output;
+        }
+
+        public static string GetDiffAgainstHead(string repositoryRootFolder)
+        {
+            if (!RunGitCommand(repositoryRootFolder, "diff HEAD", out var output, logOnSuccess: false, logOnFailure: false))
                 return string.Empty;
 
             return output;
