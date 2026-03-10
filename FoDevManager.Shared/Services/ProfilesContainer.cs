@@ -1,4 +1,4 @@
-﻿using FODevManager.Messages;
+using FODevManager.Messages;
 using FODevManager.Models;
 using FODevManager.Shared.Models;
 using FODevManager.Utils;
@@ -39,9 +39,22 @@ namespace FODevManager.Services
 
             lock (_syncRoot)
             {
-                _profilesByName = loadedProfiles
-                    .Where(p => !p.ProfileName.IsNullOrEmpty())
-                    .ToDictionary(p => p.ProfileName, StringComparer.OrdinalIgnoreCase);
+                var profilesByName = new Dictionary<string, ProfileModel>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var profile in loadedProfiles)
+                {
+                    if (profile?.ProfileName.IsNullOrEmpty() != false)
+                        continue;
+
+                    if (profilesByName.ContainsKey(profile.ProfileName))
+                    {
+                        MessageLogger.Warning($"Duplicate profile name '{profile.ProfileName}' detected while refreshing profiles. Keeping the latest loaded profile.");
+                    }
+
+                    profilesByName[profile.ProfileName] = profile;
+                }
+
+                _profilesByName = profilesByName;
             }
         }
 
@@ -71,7 +84,7 @@ namespace FODevManager.Services
             }
             catch (Exception ex)
             {
-                MessageLogger.Warning($"⚠️ Failed to load profile '{profileName}': {ex.Message}");
+                MessageLogger.Warning($"Failed to load profile '{profileName}': {ex.Message}");
                 return null;
             }
         }
