@@ -27,6 +27,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.System;
 using Windows.UI.Text;
 using WinRT;
@@ -1020,12 +1021,39 @@ namespace FODevManager.WinUI
             }
         }
 
+        private async void PasteModelPath_Click(object sender, RoutedEventArgs e)
+        {
+            var dataPackageView = Clipboard.GetContent();
+            if (dataPackageView == null || !dataPackageView.Contains(StandardDataFormats.Text))
+            {
+                UpdateStatus("Clipboard does not contain text.");
+                return;
+            }
+
+            var text = (await dataPackageView.GetTextAsync())?.Trim() ?? string.Empty;
+            if (text.IsNullOrEmpty())
+            {
+                UpdateStatus("Clipboard text is empty.");
+                return;
+            }
+
+            ModelPathTextBox.Text = text;
+        }
+
         private async void AddModel_Click(object sender, RoutedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is string profileName && !ModelPathTextBox.Text.IsNullOrEmpty())
             {
                 var path = ModelPathTextBox.Text;
-                await AddModelToProfile(profileName, path);
+                if (LooksLikeNugetUrl(path))
+                {
+                    await AddNugetModelToProfile(profileName, path);
+                }
+                else
+                {
+                    await AddModelToProfile(profileName, path);
+                }
+
                 LoadModelListViewData(profileName);
                 ModelPathTextBox.Text = string.Empty;
             }
@@ -1189,6 +1217,85 @@ namespace FODevManager.WinUI
 
         }
 
+        private async Task<bool> AddNugetModelToProfile(string profileName, string packageUrl)
+        {
+            var profile = LoadProfileByName(profileName);
+            if (profile == null)
+                return false;
+
+            var repositories = profile.Repositories?
+                .Where(repo => repo != null && !repo.RepoId.IsNullOrEmpty())
+                .ToList() ?? new List<RepositoryModel>();
+
+            if (repositories.Count == 0)
+            {
+                UpdateStatus($"No repositories are available in profile '{profileName}' for NuGet package installation.");
+                return false;
+            }
+
+            var selectedRepository = repositories.Count == 1
+                ? repositories[0]
+                : await ShowNugetRepositoryPickerAsync(repositories, packageUrl);
+
+            if (selectedRepository == null)
+                return false;
+
+            var ret = await RunOperationAsync(
+                () => _profileService.AddNugetModel(profileName, selectedRepository.RepoId, string.Empty, packageUrl),
+                "Add NuGet model to profile");
+
+            if (!ret) return false;
+
+            LoadModelListViewData(profileName);
+            return true;
+        }
+
+        private async Task<RepositoryModel?> ShowNugetRepositoryPickerAsync(IReadOnlyList<RepositoryModel> repositories, string packageUrl)
+        {
+            var repositoryComboBox = new ComboBox
+            {
+                PlaceholderText = "Select repository",
+                DisplayMemberPath = nameof(RepositoryModel.DisplayName),
+                ItemsSource = repositories,
+                SelectedIndex = 0,
+                MinWidth = 320
+            };
+
+            var content = new StackPanel { Spacing = 8 };
+            content.Children.Add(new TextBlock { Text = "Choose which repository should own this package." });
+            content.Children.Add(repositoryComboBox);
+            content.Children.Add(new TextBlock { Text = "Package URL:" });
+            content.Children.Add(new TextBlock
+            {
+                Text = packageUrl,
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            var dialog = new ContentDialog
+            {
+                Title = "Add NuGet package",
+                Content = content,
+                PrimaryButtonText = "Add",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result != ContentDialogResult.Primary)
+                return null;
+
+            return repositoryComboBox.SelectedItem as RepositoryModel;
+        }
+
+        private static bool LooksLikeNugetUrl(string value)
+        {
+            if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+                return false;
+
+            return string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+        }
         private async Task<bool> CreateProfile(string profileName)
         {
             return await RunOperationAsync(() => _profileService.CreateProfile(profileName), "Create profile");

@@ -22,9 +22,10 @@ namespace FODevManager.Services
         private readonly FileService _fileService;
         private readonly VisualStudioSolutionService _solutionService;
         private readonly ModelDeploymentService _modelDeploymentService;
+        private readonly DeployablePackageService _deployablePackageService;
         private readonly ProfilesContainer _profilesContainer;
 
-        public ProfileService(AppConfig config, FileService fileService, VisualStudioSolutionService solutionService, ModelDeploymentService modelDeploymentService, ProfilesContainer profilesContainer)
+        public ProfileService(AppConfig config, FileService fileService, VisualStudioSolutionService solutionService, ModelDeploymentService modelDeploymentService, DeployablePackageService deployablePackageService, ProfilesContainer profilesContainer)
         {
             _defaultSourceDirectory = config.DefaultSourceDirectory;
             _deploymentBasePath = config.DeploymentBasePath;
@@ -33,6 +34,7 @@ namespace FODevManager.Services
             _fileService = fileService;
             _solutionService = solutionService;
             _modelDeploymentService = modelDeploymentService;
+            _deployablePackageService = deployablePackageService;
             _profilesContainer = profilesContainer;
             FileHelper.EnsureDirectoryExists(_defaultSourceDirectory);
             
@@ -58,7 +60,7 @@ namespace FODevManager.Services
 
             _fileService.SaveProfile(profile, skipExistCheck: true);
             
-            MessageLogger.Info($"✅ Profile '{profileName}' created with solution file: {solutionFilePath}");
+            MessageLogger.Info($"? Profile '{profileName}' created with solution file: {solutionFilePath}");
         }
 
         public bool SwitchProfile(string newProfileName)
@@ -68,13 +70,13 @@ namespace FODevManager.Services
             
             if (currentProfileName == newProfileName)
             {
-                MessageLogger.Info($"ℹ️ Profile '{newProfileName}' is already active.");
+                MessageLogger.Info($"?? Profile '{newProfileName}' is already active.");
                 return false;
             }
 
             if (currentProfileName.IsNullOrEmpty())
             {
-                MessageLogger.Info("ℹ️ No active profile found. Proceeding to switch.");
+                MessageLogger.Info("?? No active profile found. Proceeding to switch.");
             }
 
             if (!currentProfileName.IsNullOrEmpty())
@@ -93,17 +95,17 @@ namespace FODevManager.Services
 
                         if (GitHelper.HasUncommittedChanges(repo.RepoRootFolder))
                         {
-                            MessageLogger.Error($"❌ Uncommitted Git changes found in repo '{repo.DisplayName}'. Switch aborted.");
+                            MessageLogger.Error($"? Uncommitted Git changes found in repo '{repo.DisplayName}'. Switch aborted.");
                             return false;
                         }
                     }
                 }
 
-                MessageLogger.Info($"🧹 Undeploying models from '{currentProfileName}'...");
+                MessageLogger.Info($"?? Undeploying models from '{currentProfileName}'...");
                 _modelDeploymentService.UnDeployAllModels(currentProfileName);
             }
 
-            MessageLogger.Info($"📂 Switching to profile '{newProfileName}'...");
+            MessageLogger.Info($"?? Switching to profile '{newProfileName}'...");
 
             var newProfile = _fileService.LoadProfile(newProfileName);
             
@@ -114,10 +116,12 @@ namespace FODevManager.Services
 
             UpdateDeploymentStatus(newProfileName);
 
+            if (_deployablePackageService.EnsureCompiledNugetModels(newProfile))
+                _fileService.SaveProfile(newProfile, updateExternal: true);
             _modelDeploymentService.DeployAllUndeployedModels(newProfileName);
             ApplyDatabase(newProfileName);
             SetActiveProfile(newProfileName);
-            MessageLogger.Highlight($"✅ Successfully switched to profile '{newProfileName}'.");
+            MessageLogger.Highlight($"? Successfully switched to profile '{newProfileName}'.");
 
             return true;
         }
@@ -294,7 +298,7 @@ namespace FODevManager.Services
                 return false;
             }
 
-            MessageLogger.Highlight($"✅ Profile export: Exported external profile to '{exportedProfilePath}'.");
+            MessageLogger.Highlight($"? Profile export: Exported external profile to '{exportedProfilePath}'.");
             return true;
         }
 
@@ -333,7 +337,7 @@ namespace FODevManager.Services
                 // 1) Import repositories (clone once per repo, configure models)
                 foreach (var repository in sourceProfile.Repositories ?? new List<RepositoryModel>())
                 {
-                    ImportRepository(repository);
+                    EnsureRepositoryAvailable(repository);
                 }
 
                 // 2) Import standalone models (non-repo)
@@ -391,47 +395,7 @@ namespace FODevManager.Services
             }
         }
 
-        private void ImportRepository(RepositoryModel repository)
-        {
-            if (repository == null)
-                return;
-
-            if (repository.GitUrl.IsNullOrEmpty())
-            {
-                MessageLogger.Warning($"Repo '{repository.DisplayName}' has no GitUrl. Skipping clone.");
-                return;
-            }
-
-            var repoFolderName = GitHelper.ExtractAzureDevOpsRepo(repository.GitUrl);
-            if (repoFolderName.IsNullOrEmpty())
-                repoFolderName = repository.RepoRootFolder;
-
-            var repoRootFolder = Path.Combine(_defaultSourceDirectory, repoFolderName);
-            FileHelper.EnsureDirectoryExists(repoRootFolder);
-
-            if (GitHelper.IsGitRepository(repoRootFolder))
-            {
-                MessageLogger.Info($"✅ Repo already exists at {repoRootFolder}. Skipping clone.");
-            }
-            else
-            {
-                if (!GitHelper.CloneRepository(repository.GitUrl, repoRootFolder))
-                {
-                    MessageLogger.Error($"Failed to clone repository '{repository.DisplayName}'.");
-                    return;
-                }
-            }
-
-            repository.RepoRootFolder = repoRootFolder;
-
-            foreach (var model in repository.Models ?? new List<ProfileEnvironmentModel>())
-            {
-                // Backwards-compat: model points to repo root
-                model.ModelRootFolder = repoRootFolder;
-
-                ConfigureModelPathsAndDeployment(model, repoRootFolder);
-            }
-        }
+        
 
         private void ImportStandaloneModel(ProfileEnvironmentModel model)
         {
@@ -443,7 +407,7 @@ namespace FODevManager.Services
 
             model.ModelRootFolder = modelRootFolder;
 
-            ConfigureModelPathsAndDeployment(model, modelRootFolder);
+            ConfigureModelPathsAndDeployment(null, model, modelRootFolder);
         }
 
         public ProfileModel ImportProfileFromRepoUrl(string repoUrl)
@@ -490,7 +454,7 @@ namespace FODevManager.Services
                 return null!;
             }
 
-            MessageLogger.Highlight($"📦 Importing profile from: {profileJsonPath}");
+            MessageLogger.Highlight($"?? Importing profile from: {profileJsonPath}");
             return ImportProfile(profileJsonPath);
         }
 
@@ -548,16 +512,35 @@ namespace FODevManager.Services
             profile.SolutionFilePath = Path.GetFullPath(Path.Combine(baseFolder, relative));
         }
 
-        private void ConfigureModelPathsAndDeployment(ProfileEnvironmentModel model, string modelRootFolder)
+        private void ConfigureModelPathsAndDeployment(RepositoryModel? repository, ProfileEnvironmentModel model, string modelRootFolder)
         {
             if (model.ModelType == ModelType.Source)
             {
                 model.ProjectFilePath = FileHelper.GetProjectFilePath(model.ModelName, modelRootFolder);
                 model.MetadataFolder = FileHelper.GetMetadataFolder(model.ModelName, modelRootFolder);
+                model.CompiledModelFolder = string.Empty;
+                model.PackageId = string.Empty;
+                model.PackageVersion = string.Empty;
+                model.PackageUrl = string.Empty;
+            }
+            else if (model.ModelType == ModelType.Compiled)
+            {
+                model.ProjectFilePath = string.Empty;
+                model.MetadataFolder = string.Empty;
+                model.CompiledModelFolder = FileHelper.GetLibsFolder(model.ModelName, modelRootFolder);
+            }
+            else if (repository != null)
+            {
+                model.ProjectFilePath = string.Empty;
+                model.MetadataFolder = string.Empty;
+                model.CompiledModelFolder = string.Empty;
+                model.ModelRootFolder = repository.RepoRootFolder;
             }
             else
             {
-                model.CompiledModelFolder = FileHelper.GetLibsFolder(model.ModelName, modelRootFolder);
+                model.ProjectFilePath = string.Empty;
+                model.MetadataFolder = string.Empty;
+                MessageLogger.Warning($"Compiled NuGet model '{model.ModelName}' is standalone. Repository package resolution is skipped.");
             }
 
             var deploymentLinkPath = Path.Combine(_deploymentBasePath, model.ModelName);
@@ -593,7 +576,7 @@ namespace FODevManager.Services
             var newDbName = (dbName ?? string.Empty).Trim();
             if (newDbName.IsNullOrEmpty())
             {
-                MessageLogger.Warning("⚠️ Database name cannot be empty.");
+                MessageLogger.Warning("?? Database name cannot be empty.");
                 return;
             }
 
@@ -603,7 +586,7 @@ namespace FODevManager.Services
             // If unchanged, do nothing (prevents repeated saves/exports)
             if ((profile.DatabaseName ?? "AXDB").SameAs(normalizedNew))
             {
-                MessageLogger.Info($"ℹ️ Database name unchanged ('{normalizedNew}').");
+                MessageLogger.Info($"?? Database name unchanged ('{normalizedNew}').");
                 return;
             }
 
@@ -623,7 +606,7 @@ namespace FODevManager.Services
                 ApplyDatabase(profileName);
             }
 
-            MessageLogger.Info($"✅ Database name '{dbName}' set for profile '{profileName}'.");
+            MessageLogger.Info($"? Database name '{dbName}' set for profile '{profileName}'.");
         }
 
         public void SetActiveProfile(string profileName)
@@ -636,7 +619,7 @@ namespace FODevManager.Services
                 _fileService.SaveProfile(profile);
             }
 
-            MessageLogger.Highlight($"📌 Profile '{profileName}' marked as active.");
+            MessageLogger.Highlight($"?? Profile '{profileName}' marked as active.");
         }
 
         public string? GetActiveProfileName()
@@ -662,24 +645,23 @@ namespace FODevManager.Services
                 profile.DatabaseName = "AXDB";
                 _fileService.SaveProfile(profile, updateExternal: true);
             }
-            
+
             var currentDb = WebConfigHelper.GetCurrentDatabaseName();
 
             if (currentDb.SameAs(profile.DatabaseName))
             {
-                MessageLogger.Info($"ℹ️ Database is already set to '{currentDb}'. No change needed.");
+                MessageLogger.Info($"?? Database is already set to '{currentDb}'. No change needed.");
                 return;
             }
 
             try
             {
-                
                 ServiceHelper.StopW3SVC();
                 WebConfigHelper.UpdateWebConfigDatabase(profile.DatabaseName);
             }
             catch (Exception ex)
             {
-                MessageLogger.Error($"❌ Error applying database '{profile.DatabaseName}': {ex.Message}");
+                MessageLogger.Error($"? Error applying database '{profile.DatabaseName}': {ex.Message}");
             }
             finally
             {
@@ -689,7 +671,11 @@ namespace FODevManager.Services
 
         public void AddModel(string profileName, string modelName, string environmentPath)
         {
-            var isGit = GitHelper.IsGitRepository(environmentPath);
+            if (LooksLikeNugetUrl(environmentPath))
+            {
+                MessageLogger.Error("AddModel: a NuGet URL requires repository selection. Use AddNugetModel instead.");
+                return;
+            }
 
             if (IsInstalledModel(environmentPath))
             {
@@ -699,10 +685,9 @@ namespace FODevManager.Services
 
             bool anyAdded = false;
 
-            // 1. Compiled models under Libs
             if (HasCompiledModelsInLibs(environmentPath, out var compiledFolders))
             {
-                MessageLogger.Highlight("📦 Detected compiled model(s) under Libs\\. Adding...");
+                MessageLogger.Highlight("Detected compiled model(s) under Libs. Adding...");
 
                 foreach (var folder in compiledFolders)
                 {
@@ -712,12 +697,11 @@ namespace FODevManager.Services
                         anyAdded = true;
                     }
                 }
-             }
+            }
 
-            // 2. Source models under Metadata
             if (HasSourceModelsInMetadata(environmentPath, out var sourceFolders))
             {
-                MessageLogger.Highlight("📦 Detected source model(s) under Metadata\\. Adding...");
+                MessageLogger.Highlight("Detected source model(s) under Metadata. Adding...");
 
                 foreach (var folder in sourceFolders)
                 {
@@ -728,14 +712,12 @@ namespace FODevManager.Services
                 }
             }
 
-            // 3. Direct compiled model folder
             if (!anyAdded && IsCompiledModelFolder(environmentPath, out var compiledName))
             {
                 _modelDeploymentService.AddModelToProfileIfNotExists(profileName, compiledName, environmentPath, ModelType.Compiled);
                 return;
             }
 
-            // 4. Direct source model folder
             var parent = Directory.GetParent(environmentPath)?.Name;
             if (!anyAdded && parent.SameAs("Metadata"))
             {
@@ -745,13 +727,70 @@ namespace FODevManager.Services
                 return;
             }
 
-            // 5. Fallback
             if (!anyAdded)
             {
                 _modelDeploymentService.AddModelToProfileIfNotExists(profileName, modelName, environmentPath, ModelType.Source);
                 AddProjectToVsSolution(profileName, modelName);
             }
-                
+        }
+
+        public void AddNugetModel(string profileName, string repoId, string modelName, string packageUrl)
+        {
+            if (profileName.IsNullOrEmpty() || repoId.IsNullOrEmpty() || packageUrl.IsNullOrEmpty())
+            {
+                MessageLogger.Error("AddNugetModel: profile, repository, and package URL are required.");
+                return;
+            }
+
+            var profile = _fileService.LoadProfile(profileName);
+            var repository = profile.Repositories.FirstOrDefault(repo => repo.RepoId.SameAs(repoId));
+            if (repository == null)
+            {
+                MessageLogger.Error($"AddNugetModel: repository '{repoId}' not found in profile '{profileName}'.");
+                return;
+            }
+
+            if (!_deployablePackageService.AddOrUpdatePackageFromUrl(profile, repository, packageUrl.Trim()))
+            {
+                MessageLogger.Warning($"Package from '{packageUrl}' was added to Build\\isv.config, but no compiled models were discovered yet.");
+            }
+
+            _fileService.SaveProfile(profile, updateExternal: true);
+            MessageLogger.Info($"NuGet package '{packageUrl}' added to repository '{repository.DisplayName}'.");
+        }
+
+        private static bool LooksLikeNugetUrl(string value)
+        {
+            if (value.IsNullOrEmpty())
+                return false;
+
+            return Uri.TryCreate(value, UriKind.Absolute, out var uri)
+                && (uri.Scheme.SameAs("http") || uri.Scheme.SameAs("https"));
+        }
+
+        private static bool TryParseNugetPackageUrl(string packageUrl, out string packageId, out string packageVersion)
+        {
+            packageId = string.Empty;
+            packageVersion = string.Empty;
+
+            if (!Uri.TryCreate(packageUrl, UriKind.Absolute, out var packageUri))
+                return false;
+
+            var segments = packageUri.AbsolutePath
+                .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(Uri.UnescapeDataString)
+                .ToArray();
+
+            var nugetIndex = Array.FindIndex(segments, segment => segment.SameAs("NuGet"));
+            if (nugetIndex < 0 || nugetIndex + 3 >= segments.Length)
+                return false;
+
+            packageId = segments[nugetIndex + 1];
+            packageVersion = segments[nugetIndex + 3];
+
+            return !packageId.IsNullOrEmpty()
+                && segments[nugetIndex + 2].SameAs("overview")
+                && !packageVersion.IsNullOrEmpty();
         }
 
         private static bool IsCompiledModelFolder(string path, out string modelName)
@@ -823,13 +862,13 @@ namespace FODevManager.Services
             bool success = _modelDeploymentService.ConvertInstalledModelToProjectModel(targetFolderName, profile);
             if (!success)
             {
-                MessageLogger.Error($"❌ Failed to convert installed model at '{environmentPath}'.");
+                MessageLogger.Error($"? Failed to convert installed model at '{environmentPath}'.");
                 return;
             }
 
             AddProjectToVsSolution(profile, modelName);
 
-            MessageLogger.Highlight($"✅ Converted model '{modelName}' registered into solution.");
+            MessageLogger.Highlight($"? Converted model '{modelName}' registered into solution.");
         }
 
         private void AddProjectToVsSolution(string profileName, string modelName) => AddProjectToVsSolution(_fileService.LoadProfile(profileName), modelName);  
@@ -839,12 +878,12 @@ namespace FODevManager.Services
             var model = profile.FindModel(modelName);
             if (model == null)
             {
-                MessageLogger.Error($"❌ Error: Model '{modelName}' not found in profile after creation.");
+                MessageLogger.Error($"? Error: Model '{modelName}' not found in profile after creation.");
                 return;
             }
             _solutionService.AddProjectToSolution(profile, model);
 
-            MessageLogger.Info($"✅ Model '{modelName}' added to profile '{profile.ProfileName}' and included in solution.");
+            MessageLogger.Info($"? Model '{modelName}' added to profile '{profile.ProfileName}' and included in solution.");
 
         }
 
@@ -866,6 +905,13 @@ namespace FODevManager.Services
             }
 
             MessageLogger.Info($"Profile: {profile.ProfileName}");
+            EnsureRepositories(profile);
+
+            foreach (var repository in profile.Repositories ?? new List<RepositoryModel>())
+            {
+                EnsureRepositoryAvailable(repository);
+            }
+
             foreach (var model in profile.AllModels)
             {
                 _modelDeploymentService.CheckModelDeployment(profile, model.ModelName);
@@ -911,14 +957,14 @@ namespace FODevManager.Services
 
             if (profile.Repositories == null || profile.Repositories.Count == 0)
             {
-                MessageLogger.Info("ℹ️ Git reset: No repositories found in profile.");
+                MessageLogger.Info("?? Git reset: No repositories found in profile.");
                 return true;
             }
 
             var succeeded = 0;
             var failedRepos = new List<string>();
 
-            MessageLogger.Highlight($"🔄 Git reset profile: {profile.ProfileName}");
+            MessageLogger.Highlight($"?? Git reset profile: {profile.ProfileName}");
 
             foreach (var repository in profile.Repositories)
             {
@@ -930,7 +976,7 @@ namespace FODevManager.Services
 
                 var mainBranchName = repository.MainBranchName.IsNullOrEmpty() ? "main" : repository.MainBranchName;
 
-                MessageLogger.Info($"➡️ {repository.DisplayName}: stash → checkout {mainBranchName} → fetch → pull");
+                MessageLogger.Info($"?? {repository.DisplayName}: stash ? checkout {mainBranchName} ? fetch ? pull");
 
                 var ok = GitHelper.ResetToMainAndUpdate(repository.RepoRootFolder, mainBranchName);
                 if (ok)
@@ -948,12 +994,12 @@ namespace FODevManager.Services
 
             if (failedRepos.Count > 0)
             {
-                MessageLogger.Warning($"⚠️ Git reset finished with errors. OK: {succeeded}, Failed: {failedRepos.Count}");
+                MessageLogger.Warning($"?? Git reset finished with errors. OK: {succeeded}, Failed: {failedRepos.Count}");
                 MessageLogger.Warning($"Failed repos: {string.Join(", ", failedRepos)}");
                 return false;
             }
 
-            MessageLogger.Highlight($"✅ Git reset finished. Repos updated: {succeeded}");
+            MessageLogger.Highlight($"? Git reset finished. Repos updated: {succeeded}");
             return true;
         }
 
@@ -964,12 +1010,12 @@ namespace FODevManager.Services
 
             if (profile.Repositories == null || profile.Repositories.Count == 0)
             {
-                MessageLogger.Warning("⚠️ Tag release: profile has no repositories.");
+                MessageLogger.Warning("?? Tag release: profile has no repositories.");
                 return false;
             }
 
             var tagName = $"Release-{DateTime.UtcNow:yyyy-MM-dd}";
-            
+
             var firstGitRepoPath = profile.Repositories?
                 .FirstOrDefault(r => r?.RepoRootFolder.IsNullOrEmpty() == false && GitHelper.IsGitRepository(r.RepoRootFolder))
                 ?.RepoRootFolder;
@@ -981,7 +1027,7 @@ namespace FODevManager.Services
             var succeeded = 0;
             var failedRepos = new List<string>();
 
-            MessageLogger.Highlight($"🏷️ Tag release: {profile.ProfileName} → {tagName}");
+            MessageLogger.Highlight($"??? Tag release: {profile.ProfileName} ? {tagName}");
 
             foreach (var repository in profile.Repositories)
             {
@@ -999,14 +1045,14 @@ namespace FODevManager.Services
 
                 if (!isOnMain && !isOnRelease)
                 {
-                    MessageLogger.Error($"❌ {repository.DisplayName}: not on main/release branch (current: '{activeBranch}').");
+                    MessageLogger.Error($"? {repository.DisplayName}: not on main/release branch (current: '{activeBranch}').");
                     failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
                     continue;
                 }
 
                 if (GitHelper.HasUncommittedChanges(repository.RepoRootFolder))
                 {
-                    MessageLogger.Error($"❌ {repository.DisplayName}: has uncommitted changes. Tagging aborted for this repo.");
+                    MessageLogger.Error($"? {repository.DisplayName}: has uncommitted changes. Tagging aborted for this repo.");
                     failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
                     continue;
                 }
@@ -1020,7 +1066,7 @@ namespace FODevManager.Services
                     $"Created at: {DateTime.Now:yyyy-MM-dd HH:mm:ss}"
                 };
 
-                MessageLogger.Info($"➡️ {repository.DisplayName}: create tag → push");
+                MessageLogger.Info($"?? {repository.DisplayName}: create tag ? push");
 
                 var created = GitHelper.CreateTag(repository.RepoRootFolder, tagName, messageLines);
                 if (!created)
@@ -1029,7 +1075,6 @@ namespace FODevManager.Services
                     continue;
                 }
 
-                // Push tag to origin 
                 if (!GitHelper.PushTag(repository.RepoRootFolder, tagName, "origin"))
                 {
                     failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
@@ -1041,15 +1086,14 @@ namespace FODevManager.Services
 
             if (failedRepos.Count > 0)
             {
-                MessageLogger.Warning($"⚠️ Tag release finished with errors. OK: {succeeded}, Failed: {failedRepos.Count}");
+                MessageLogger.Warning($"?? Tag release finished with errors. OK: {succeeded}, Failed: {failedRepos.Count}");
                 MessageLogger.Warning($"Failed repos: {string.Join(", ", failedRepos)}");
                 return false;
             }
 
-            MessageLogger.Highlight($"✅ Tag release finished. Repos tagged: {succeeded}");
+            MessageLogger.Highlight($"? Tag release finished. Repos tagged: {succeeded}");
             return true;
         }
-
 
         public void UndeployAllModels()
         {
@@ -1057,7 +1101,6 @@ namespace FODevManager.Services
             var models = _profilesContainer.GetDeployedModelsAcrossAllProfiles(out var dirtyProfiles);
             _modelDeploymentService.UnDeployModels(models);
             _profilesContainer.SaveProfiles(dirtyProfiles, updateExternal: false);
-
         }
 
         public void RemoveModelFromProfile(string profileName, string modelName)
@@ -1072,21 +1115,31 @@ namespace FODevManager.Services
 
             _solutionService.RemoveProjectFromSolution(profile, model.ModelName);
 
-            // Remove from repository if it belongs to one; otherwise remove from standalone.
-            var removed = false;
+            if (model.ModelType == ModelType.CompiledNuget)
+            {
+                var repository = profile.FindRepositoryForModel(model);
+                if (repository == null)
+                {
+                    MessageLogger.Warning($"NuGet-backed model '{modelName}' is not mapped to a repository.");
+                    return;
+                }
 
+                _deployablePackageService.RemovePackage(profile, repository, model.PackageId);
+                _fileService.SaveProfile(profile, updateExternal: true);
+                MessageLogger.Info($"Removed NuGet package '{model.PackageId}' from repository '{repository.DisplayName}'.");
+                return;
+            }
+
+            var removed = false;
             var repo = profile.FindRepositoryForModel(model);
             if (repo != null && repo.Models != null)
             {
-                var toRemove = repo.Models
-                    .FirstOrDefault(m => m != null && m.ModelName.SameAs(model.ModelName));
-
+                var toRemove = repo.Models.FirstOrDefault(m => m != null && m.ModelName.SameAs(model.ModelName));
                 if (toRemove != null)
                 {
                     repo.Models.Remove(toRemove);
                     removed = true;
 
-                    // If the repo has no models left, remove the repo entry as well.
                     if (repo.Models.Count == 0)
                     {
                         profile.Repositories.Remove(repo);
@@ -1096,38 +1149,11 @@ namespace FODevManager.Services
 
             if (!removed && profile.StandaloneModels != null)
             {
-                var standalone = profile.StandaloneModels
-                    .FirstOrDefault(m => m != null && m.ModelName.SameAs(model.ModelName));
-
+                var standalone = profile.StandaloneModels.FirstOrDefault(m => m != null && m.ModelName.SameAs(model.ModelName));
                 if (standalone != null)
                 {
                     profile.StandaloneModels.Remove(standalone);
                     removed = true;
-                }
-            }
-
-            if (!removed)
-            {
-                // Fallback: as a last resort, try removing by name from any repo models.
-                foreach (var repository in profile.Repositories ?? new List<RepositoryModel>())
-                {
-                    if (repository.Models == null)
-                        continue;
-
-                    var repoModel = repository.Models
-                        .FirstOrDefault(m => m != null && m.ModelName.SameAs(model.ModelName));
-
-                    if (repoModel != null)
-                    {
-                        repository.Models.Remove(repoModel);
-                        removed = true;
-
-                        if (repository.Models.Count == 0)
-                        {
-                            profile.Repositories.Remove(repository);
-                        }
-                        break;
-                    }
                 }
             }
 
@@ -1138,7 +1164,6 @@ namespace FODevManager.Services
             }
 
             _fileService.SaveProfile(profile, updateExternal: true);
-
             MessageLogger.Info($"Model '{modelName}' removed from profile '{profileName}'.");
         }
 
@@ -1153,17 +1178,39 @@ namespace FODevManager.Services
             }
         }
 
+        public void ListModelsInProfile(string profileName)
+        {
+            var profile = _fileService.LoadProfile(profileName);
+
+            if (profile.AllModels.Count == 0)
+            {
+                MessageLogger.Warning($"No models found in profile '{profileName}'.");
+                return;
+            }
+
+            MessageLogger.Info($"Models in Profile '{profileName}':");
+            foreach (var model in profile.AllModels)
+            {
+                string status = model.IsDeployed ? "? Deployed" : "? Not Deployed";
+                string gitStatus = model.GitUrl.IsNullOrEmpty() ? string.Empty : "? Git Repo";
+                MessageLogger.Info($"   - {model.ModelName}\t\t - {status} - {gitStatus}");
+            }
+        }
+
         public ProfileModel LoadProfile(string profileName)
         {
             var profile = _fileService.LoadProfile(profileName);
 
-            if(EnsureRepositories(profile))
+            var updated = EnsureRepositories(profile);
+            if (_deployablePackageService.EnsureCompiledNugetModels(profile))
+                updated = true;
+
+            if (updated)
                 _fileService.SaveProfile(profile, updateExternal: true);
 
             UpdateGitBranchesInProfile(profile);
 
             return profile;
-
         }
 
         public void UpdateGitBranchesInProfile(ProfileModel profile)
@@ -1192,25 +1239,6 @@ namespace FODevManager.Services
             repository.LastKnownCommit = GitHelper.GetHeadCommit(repository.RepoRootFolder);
         }
 
-        public void ListModelsInProfile(string profileName)
-        {
-            var profile = _fileService.LoadProfile(profileName);
-
-            if (profile.AllModels.Count == 0)
-            {
-                MessageLogger.Warning($"No models found in profile '{profileName}'.");
-                return;
-            }
-
-            MessageLogger.Info($"Models in Profile '{profileName}':");
-            foreach (var model in profile.AllModels)
-            {
-                string status = model.IsDeployed ? "✅ Deployed" : "❌ Not Deployed";
-                string gitStatus = model.GitUrl.IsNullOrEmpty() ? "" : "✅ Git Repo" ; 
-                MessageLogger.Info($"   - {model.ModelName}\t\t - {status} - { gitStatus }");
-            }
-        }
-
         public List<ProfileEnvironmentModel> GetModelsInProfile(string profileName)
         {
             var profile = LoadProfile(profileName);
@@ -1221,6 +1249,100 @@ namespace FODevManager.Services
         {
             var profile = LoadProfile(profileName);
             return profile.FindModel(modelName);
+        }
+
+        private bool EnsureRepositoryAvailable(RepositoryModel? repository)
+        {
+            if (repository == null)
+                return false;
+
+            if (repository.GitUrl.IsNullOrEmpty())
+            {
+                MessageLogger.Warning($"Repo '{repository.DisplayName}' has no GitUrl. Skipping clone.");
+                return false;
+            }
+
+            var repoRootFolder = ResolveRepositoryRootFolder(repository);
+            if (repoRootFolder.IsNullOrEmpty())
+            {
+                MessageLogger.Warning($"Repo '{repository.DisplayName}' has no target folder. Skipping clone.");
+                return false;
+            }
+
+            var hasExistingGitRepo = GitHelper.IsGitRepository(repoRootFolder);
+            var shouldClone = false;
+
+            if (!Directory.Exists(repoRootFolder))
+            {
+                Directory.CreateDirectory(repoRootFolder);
+                shouldClone = true;
+            }
+            else if (!hasExistingGitRepo)
+            {
+                if (!Directory.EnumerateFileSystemEntries(repoRootFolder).Any())
+                {
+                    shouldClone = true;
+                }
+                else
+                {
+                    MessageLogger.Warning($"Repo folder '{repoRootFolder}' exists but is not a git repository. Skipping clone.");
+                    repository.RepoRootFolder = repoRootFolder;
+                    return false;
+                }
+            }
+
+            if (shouldClone)
+            {
+                if (!GitHelper.CloneRepository(repository.GitUrl, repoRootFolder))
+                {
+                    MessageLogger.Error($"Failed to clone repository '{repository.DisplayName}'.");
+                    repository.RepoRootFolder = repoRootFolder;
+                    return false;
+                }
+            }
+            else
+            {
+                MessageLogger.Info($"Repo already exists at {repoRootFolder}. Skipping clone.");
+            }
+
+            var repoRootChanged = !string.Equals(repository.RepoRootFolder, repoRootFolder, StringComparison.OrdinalIgnoreCase);
+            repository.RepoRootFolder = repoRootFolder;
+
+            foreach (var model in repository.Models ?? new List<ProfileEnvironmentModel>())
+            {
+                model.ModelRootFolder = repoRootFolder;
+                ConfigureModelPathsAndDeployment(repository, model, repoRootFolder);
+            }
+
+            var packageModelsChanged = _deployablePackageService.EnsureCompiledNugetModels(new ProfileModel 
+                { 
+                    Repositories = new List<RepositoryModel> { repository } 
+                }, repository);
+
+            UpdateLastKnownGitState(repository);
+            return shouldClone || repoRootChanged || packageModelsChanged;
+        }
+
+        private string ResolveRepositoryRootFolder(RepositoryModel repository)
+        {
+            var repoRootFolder = (repository.RepoRootFolder ?? string.Empty).Trim();
+            if (!repoRootFolder.IsNullOrEmpty() && Path.IsPathRooted(repoRootFolder))
+                return repoRootFolder;
+
+            var repoFolderName = GitHelper.ExtractAzureDevOpsRepo(repository.GitUrl);
+            if (repoFolderName.IsNullOrEmpty() && !repoRootFolder.IsNullOrEmpty())
+                repoFolderName = Path.GetFileName(repoRootFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+            if (repoFolderName.IsNullOrEmpty())
+                repoFolderName = repository.DisplayName;
+
+            if (repoFolderName.IsNullOrEmpty())
+                repoFolderName = repository.RepoId;
+
+            if (repoFolderName.IsNullOrEmpty())
+                return string.Empty;
+
+            return Path.Combine(_defaultSourceDirectory, repoFolderName);
         }
 
        
@@ -1243,7 +1365,7 @@ namespace FODevManager.Services
             if (updated)
             {
                 _fileService.SaveProfile(profile);
-                MessageLogger.Info($"🔍 Deployment status updated for profile '{profileName}'");
+                MessageLogger.Info($"?? Deployment status updated for profile '{profileName}'");
             }
         }
 
@@ -1313,7 +1435,7 @@ namespace FODevManager.Services
 
             profile.StandaloneModels = standaloneModels;
 
-            MessageLogger.Info($"📦 Repositories built: {profile.Repositories.Count}. Standalone models: {profile.StandaloneModels.Count}");
+            MessageLogger.Info($"?? Repositories built: {profile.Repositories.Count}. Standalone models: {profile.StandaloneModels.Count}");
             return true;
         }
 
@@ -1393,7 +1515,7 @@ namespace FODevManager.Services
             existingRepository.TaskComment = updatedRepository.TaskComment ?? string.Empty;
 
             _fileService.SaveProfile(profile, updateExternal: true);
-            MessageLogger.Info($"✅ Repository properties saved: {existingRepository.DisplayName}");
+            MessageLogger.Info($"? Repository properties saved: {existingRepository.DisplayName}");
         }
 
         public void UpdateModelProperties(string profileName, ProfileEnvironmentModel updatedEnvironment)
@@ -1421,8 +1543,6 @@ namespace FODevManager.Services
                 return;
             }
 
-
-            // Guardrail: only one Main FO model
             if (updatedEnvironment.IsMainFOModel)
             {
                 foreach (var environment in profile.AllModels)
@@ -1435,9 +1555,24 @@ namespace FODevManager.Services
                 targetEnvironment.IsMainFOModel = false;
             }
 
+            if (targetEnvironment.ModelType == ModelType.CompiledNuget)
+            {
+                var repository = profile.FindRepositoryForModel(targetEnvironment);
+                if (repository == null)
+                {
+                    MessageLogger.Error($"UpdateModelProperties: model '{targetEnvironment.ModelName}' is not mapped to a repository.");
+                    return;
+                }
+
+                _deployablePackageService.UpdatePackageFromUrl(
+                    profile,
+                    repository,
+                    targetEnvironment.PackageId,
+                    updatedEnvironment.PackageUrl?.Trim() ?? string.Empty);
+            }
+
             _fileService.SaveProfile(profile, updateExternal: true);
-            MessageLogger.Info($"✅ Model properties saved: {targetEnvironment.ModelName}");
+            MessageLogger.Info($"Model properties saved: {targetEnvironment.ModelName}");
         }
     }
 }
-

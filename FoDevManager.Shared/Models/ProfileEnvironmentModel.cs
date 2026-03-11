@@ -1,4 +1,4 @@
-﻿using FODevManager.Shared.Models;
+using FODevManager.Shared.Models;
 
 namespace FODevManager.Models
 {
@@ -16,7 +16,12 @@ namespace FODevManager.Models
 
         public string GitUrl { get; set; } = "";
 
-        
+        public string PackageId { get; set; } = "";
+
+        public string PackageVersion { get; set; } = "";
+
+        public string PackageUrl { get; set; } = "";
+
         public bool IsDeployed { get; set; } = false;
 
         public bool IsMainFOModel { get; set; } = false;
@@ -26,9 +31,10 @@ namespace FODevManager.Models
     }
     public enum ModelType
     {
-        Source,   
-        Compiled  
+        Source = 0,
+        Compiled = 1,
+        CompiledNuget = 2
     }
 
-   
+
 }

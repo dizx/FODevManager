@@ -68,7 +68,10 @@ namespace FODevManager.Models
             {
                 ModelName = environment.ModelName,
                 IsMainFOModel = environment.IsMainFOModel,
-                ModelType = environment.ModelType,                
+                ModelType = environment.ModelType,
+                PackageId = environment.PackageId,
+                PackageVersion = environment.PackageVersion,
+                PackageUrl = environment.PackageUrl
             };
         }
 
@@ -99,7 +102,10 @@ namespace FODevManager.Models
             {
                 ModelName = exportEnvironment.ModelName ?? string.Empty,
                 IsMainFOModel = exportEnvironment.IsMainFOModel,
-                ModelType = exportEnvironment.ModelType                
+                ModelType = exportEnvironment.ModelType,
+                PackageId = exportEnvironment.PackageId ?? string.Empty,
+                PackageVersion = exportEnvironment.PackageVersion ?? string.Empty,
+                PackageUrl = exportEnvironment.PackageUrl ?? string.Empty
             };
         }
 
@@ -110,7 +116,9 @@ namespace FODevManager.Models
                 ModelName = exportEnvironment.ModelName ?? string.Empty,
                 IsMainFOModel = exportEnvironment.IsMainFOModel,
                 ModelType = exportEnvironment.ModelType,
-                
+                PackageId = exportEnvironment.PackageId ?? string.Empty,
+                PackageVersion = exportEnvironment.PackageVersion ?? string.Empty,
+                PackageUrl = exportEnvironment.PackageUrl ?? string.Empty
             };
         }
 
@@ -164,3 +172,4 @@ namespace FODevManager.Models
 
     }
 }
+

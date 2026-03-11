@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,6 +11,7 @@ namespace FODevManager.Utils
     {
         public string ProfileStoragePath { get; set; }
         public string DeploymentBasePath { get; set; }
+        public string DeployablePackages { get; set; }
         public string DefaultSourceDirectory { get; set; }
 
         public string TaskUrl { get; set; }
@@ -30,6 +31,7 @@ namespace FODevManager.Utils
         {
             ProfileStoragePath = Environment.ExpandEnvironmentVariables(configuration["ProfileStoragePath"]);
             DeploymentBasePath = Environment.ExpandEnvironmentVariables(configuration["DeploymentBasePath"]);
+            DeployablePackages = Environment.ExpandEnvironmentVariables(configuration["DeployablePackages"] ?? string.Empty);
             DefaultSourceDirectory = Environment.ExpandEnvironmentVariables(configuration["DefaultSourceDirectory"]);
             TaskUrl = Environment.ExpandEnvironmentVariables(configuration["TaskUrl"]);
             ModelIdBegin = int.Parse(Environment.ExpandEnvironmentVariables(configuration["ModelIdBegin"] ?? "896001001"));

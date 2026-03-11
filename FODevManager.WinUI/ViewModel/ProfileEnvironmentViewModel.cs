@@ -44,7 +44,7 @@ namespace FODevManager.WinUI.ViewModel
             }
         }
 
-        public bool IsCompiled => ModelType == ModelType.Compiled;
+        public bool IsCompiled => ModelType == ModelType.Compiled || ModelType == ModelType.CompiledNuget;
         public bool IsSource => ModelType == ModelType.Source;
 
         public event PropertyChangedEventHandler? PropertyChanged;

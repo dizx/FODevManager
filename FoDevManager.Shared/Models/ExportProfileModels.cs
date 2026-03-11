@@ -43,6 +43,13 @@ namespace FODevManager.Models
         public bool IsMainFOModel { get; set; } = false;
 
         public ModelType ModelType { get; set; } = ModelType.Source;
+
+        public string PackageId { get; set; } = "";
+
+        public string PackageVersion { get; set; } = "";
+
+        public string PackageUrl { get; set; } = "";
         
     }
 }
+

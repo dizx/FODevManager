@@ -20,12 +20,14 @@ namespace FODevManager.Services
         private readonly FileService _fileService;
         private readonly string _deploymentBasePath;
         private readonly string _defaultSourceDirectory;
+        private readonly DeployablePackageService _deployablePackageService;
         private readonly int _modelIdBegin;
         private readonly int _modelIdEnd;
 
-        public ModelDeploymentService(AppConfig config, FileService fileService)
+        public ModelDeploymentService(AppConfig config, FileService fileService, DeployablePackageService deployablePackageService)
         {
             _fileService = fileService;
+            _deployablePackageService = deployablePackageService;
             _deploymentBasePath = config.DeploymentBasePath;
             _defaultSourceDirectory = config.DefaultSourceDirectory;
             _modelIdBegin = config.ModelIdBegin;
@@ -239,11 +241,13 @@ namespace FODevManager.Services
                     MessageLogger.Error($"❌ Model '{modelName}' not found in profile '{profile.ProfileName}'.");
                     return false;
                 }
-                
                 string targetDir = Path.Combine(_deploymentBasePath, modelName);
 
+                if (model.ModelType == ModelType.CompiledNuget)
+                    _deployablePackageService.EnsureCompiledNugetModel(profile, model);
+
                 string linkPath = targetDir;
-                string sourcePath = model.ModelType == ModelType.Compiled ? model.CompiledModelFolder : model.MetadataFolder;
+                string sourcePath = model.ModelType == ModelType.Source ? model.MetadataFolder : model.CompiledModelFolder;
 
                 if (!Directory.Exists(sourcePath))
                 {
@@ -907,4 +911,3 @@ namespace FODevManager.Services
         }
     }
 }
-

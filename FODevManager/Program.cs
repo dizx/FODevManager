@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using FODevManager.Services;
@@ -55,6 +55,8 @@ class Program
                 services.AddSingleton(new AppConfig(configuration));
                 services.AddSingleton<ProfileService>();
                 services.AddSingleton<FileService>();
+                services.AddSingleton<ProfilesContainer>();
+                services.AddSingleton<DeployablePackageService>();
                 services.AddSingleton<ModelDeploymentService>();
                 services.AddSingleton<VisualStudioSolutionService>();
             })
