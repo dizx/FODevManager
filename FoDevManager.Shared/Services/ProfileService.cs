@@ -440,7 +440,7 @@ namespace FODevManager.Services
                     return null!;
                 }
 
-                if (!GitHelper.CloneRepository(repoUrl, targetRepoRoot))
+                if (!GitHelper.CloneRepository(repoUrl, targetRepoRoot, allowCredentialPrompt: true))
                 {
                     MessageLogger.Error($"Failed to clone repository: {repoUrl}");
                     return null!;
@@ -1202,15 +1202,25 @@ namespace FODevManager.Services
             var profile = _fileService.LoadProfile(profileName);
 
             var updated = EnsureRepositories(profile);
-            if (_deployablePackageService.EnsureCompiledNugetModels(profile))
-                updated = true;
-
             if (updated)
                 _fileService.SaveProfile(profile, updateExternal: true);
 
             UpdateGitBranchesInProfile(profile);
 
             return profile;
+        }
+
+        public bool PrepareCompiledNugetModels(string profileName)
+        {
+            var profile = _fileService.LoadProfile(profileName);
+            if (profile == null)
+                return false;
+
+            if (!_deployablePackageService.EnsureCompiledNugetModels(profile))
+                return false;
+
+            _fileService.SaveProfile(profile, updateExternal: true);
+            return true;
         }
 
         public void UpdateGitBranchesInProfile(ProfileModel profile)
@@ -1293,7 +1303,7 @@ namespace FODevManager.Services
 
             if (shouldClone)
             {
-                if (!GitHelper.CloneRepository(repository.GitUrl, repoRootFolder))
+                if (!GitHelper.CloneRepository(repository.GitUrl, repoRootFolder, allowCredentialPrompt: true))
                 {
                     MessageLogger.Error($"Failed to clone repository '{repository.DisplayName}'.");
                     repository.RepoRootFolder = repoRootFolder;

@@ -1,4 +1,4 @@
-﻿using FODevManager.Messages;
+using FODevManager.Messages;
 using FODevManager.Utils;
 using System;
 using System.IO;
@@ -64,6 +64,15 @@ namespace FODevManager.Shared.Utils
                         case nameof(AppConfig.TaskUrl):
                             _config.TaskUrl = Convert.ToString(value) ?? _config.TaskUrl;
                             break;
+                        case nameof(AppConfig.AzureArtifactsUsername):
+                            _config.AzureArtifactsUsername = Convert.ToString(value) ?? string.Empty;
+                            break;
+                        case nameof(AppConfig.AzureArtifactsPat):
+                            _config.AzureArtifactsPat = Convert.ToString(value) ?? string.Empty;
+                            break;
+                        case nameof(AppConfig.AzureArtifactsApiKey):
+                            _config.AzureArtifactsApiKey = Convert.ToString(value) ?? string.Empty;
+                            break;
                         default:
                             // unknown key: JSON updated; no in-memory mapping
                             break;
@@ -80,3 +89,4 @@ namespace FODevManager.Shared.Utils
         }
     }
 }
+

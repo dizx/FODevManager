@@ -15,6 +15,9 @@ namespace FODevManager.Utils
         public string DefaultSourceDirectory { get; set; }
 
         public string TaskUrl { get; set; }
+        public string AzureArtifactsUsername { get; set; } = string.Empty;
+        public string AzureArtifactsPat { get; set; } = string.Empty;
+        public string AzureArtifactsApiKey { get; set; } = string.Empty;
 
         public int ModelIdBegin { get; set; }
 
@@ -34,6 +37,9 @@ namespace FODevManager.Utils
             DeployablePackages = Environment.ExpandEnvironmentVariables(configuration["DeployablePackages"] ?? string.Empty);
             DefaultSourceDirectory = Environment.ExpandEnvironmentVariables(configuration["DefaultSourceDirectory"]);
             TaskUrl = Environment.ExpandEnvironmentVariables(configuration["TaskUrl"]);
+            AzureArtifactsUsername = Environment.ExpandEnvironmentVariables(configuration["AzureArtifactsUsername"] ?? string.Empty);
+            AzureArtifactsPat = Environment.ExpandEnvironmentVariables(configuration["AzureArtifactsPat"] ?? string.Empty);
+            AzureArtifactsApiKey = Environment.ExpandEnvironmentVariables(configuration["AzureArtifactsApiKey"] ?? string.Empty);
             ModelIdBegin = int.Parse(Environment.ExpandEnvironmentVariables(configuration["ModelIdBegin"] ?? "896001001"));
             ModelIdEnd = int.Parse(Environment.ExpandEnvironmentVariables(configuration["ModelIdEnd"] ?? "896009999"));
 
@@ -43,3 +49,6 @@ namespace FODevManager.Utils
         }
     }
 }
+
+
+

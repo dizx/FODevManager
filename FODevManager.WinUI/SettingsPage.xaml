@@ -19,6 +19,18 @@
             <Button Content="Browse…" Click="OnBrowseClick"/>
         </StackPanel>
 
+        <TextBlock Text="Azure Artifacts username" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+        <TextBox Width="480" Text="{Binding AzureArtifactsUsername, Mode=TwoWay}" />
+
+        <TextBlock Text="Azure Artifacts PAT" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+        <TextBox Width="480" Text="{Binding AzureArtifactsPat, Mode=TwoWay}" />
+
+        <TextBlock Text="Azure Artifacts API key" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+        <TextBox Width="480" Text="{Binding AzureArtifactsApiKey, Mode=TwoWay}" />
+
         <Button Content="Save" Click="OnSaveClick" />
     </StackPanel>
 </Page>
+
+
+

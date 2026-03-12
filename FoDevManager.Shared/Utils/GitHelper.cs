@@ -730,7 +730,7 @@ namespace FODevManager.Utils
         }
 
 
-        public static bool CloneRepository(string gitUrl, string targetPath)
+        public static bool CloneRepository(string gitUrl, string targetPath, bool allowCredentialPrompt = false)
         {
             try
             {
@@ -743,7 +743,7 @@ namespace FODevManager.Utils
                 string result;
                 MessageLogger.Info($"🌀 Cloning '{gitUrl}' into '{targetPath}'...");
 
-                if (RunGitCommand(Directory.GetParent(targetPath).FullName, $"clone {gitUrl} \"{targetPath}\"", out result))
+                if (RunGitCommand(Directory.GetParent(targetPath).FullName, $"clone {gitUrl} \"{targetPath}\"", out result, allowCredentialPrompt: allowCredentialPrompt))
                 {
                     MessageLogger.Highlight($"✅ Successfully cloned {gitUrl}");
                     return true;
@@ -913,13 +913,13 @@ namespace FODevManager.Utils
             }
         }
 
-        private static bool RunGitCommand(string workingDirectory, string arguments, bool logOnSuccess = false, bool logOnFailure = true)
+        private static bool RunGitCommand(string workingDirectory, string arguments, bool logOnSuccess = false, bool logOnFailure = true, bool allowCredentialPrompt = false)
         {
             var result = string.Empty;
-            return RunGitCommand(workingDirectory, arguments, out result, logOnSuccess, logOnFailure);
+            return RunGitCommand(workingDirectory, arguments, out result, logOnSuccess, logOnFailure, allowCredentialPrompt);
         }
 
-        private static bool RunGitCommand(string workingDirectory, string arguments, out string combinedOutput, bool logOnSuccess = false, bool logOnFailure = true)
+        private static bool RunGitCommand(string workingDirectory, string arguments, out string combinedOutput, bool logOnSuccess = false, bool logOnFailure = true, bool allowCredentialPrompt = false)
         {
             var (ok, output) = RunGitCommandAsync(
                     workingDirectory,
@@ -927,7 +927,8 @@ namespace FODevManager.Utils
                     timeout: TimeSpan.FromSeconds(60),
                     cancellationToken: CancellationToken.None,
                     logOnSuccess: logOnSuccess,
-                    logOnFailure: logOnFailure)
+                    logOnFailure: logOnFailure,
+                    allowCredentialPrompt: allowCredentialPrompt)
                 .GetAwaiter()
                 .GetResult();
 
@@ -936,7 +937,7 @@ namespace FODevManager.Utils
         }
 
         private static async Task<(bool Ok, string Output)> RunGitCommandAsync(string workingDirectory, string arguments, TimeSpan timeout, 
-            CancellationToken cancellationToken, bool logOnSuccess = false, bool logOnFailure = true)
+            CancellationToken cancellationToken, bool logOnSuccess = false, bool logOnFailure = true, bool allowCredentialPrompt = false)
         {
             if (workingDirectory.IsNullOrEmpty())
                 return (false, "Working directory is null or empty.");
@@ -952,9 +953,12 @@ namespace FODevManager.Utils
                 WorkingDirectory = workingDirectory
             };
 
-            // Prevent Git from prompting for credentials in a non-interactive process.
-            processStartInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
-            processStartInfo.Environment["GCM_INTERACTIVE"] = "Never";
+            if (!allowCredentialPrompt)
+            {
+                // Prevent Git from prompting for credentials in a non-interactive process.
+                processStartInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+                processStartInfo.Environment["GCM_INTERACTIVE"] = "Never";
+            }
 
             try
             {

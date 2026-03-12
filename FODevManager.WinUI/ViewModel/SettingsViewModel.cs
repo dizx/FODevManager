@@ -1,4 +1,4 @@
-﻿using FODevManager.Messages;
+using FODevManager.Messages;
 using FODevManager.Shared.Utils; // AppConfigWriter
 using FODevManager.Utils;
 using System;
@@ -23,6 +23,27 @@ namespace FODevManager.WinUI.ViewModel
             set => SetProperty(ref _defaultSourceDirectory, value ?? string.Empty);
         }
 
+        private string _azureArtifactsUsername = string.Empty;
+        public string AzureArtifactsUsername
+        {
+            get => _azureArtifactsUsername;
+            set => SetProperty(ref _azureArtifactsUsername, value ?? string.Empty);
+        }
+
+        private string _azureArtifactsPat = string.Empty;
+        public string AzureArtifactsPat
+        {
+            get => _azureArtifactsPat;
+            set => SetProperty(ref _azureArtifactsPat, value ?? string.Empty);
+        }
+
+        private string _azureArtifactsApiKey = string.Empty;
+        public string AzureArtifactsApiKey
+        {
+            get => _azureArtifactsApiKey;
+            set => SetProperty(ref _azureArtifactsApiKey, value ?? string.Empty);
+        }
+
         public SettingsViewModel(AppConfigWriter configWriter)
         {
             _configWriter = configWriter ?? throw new ArgumentNullException(nameof(configWriter));
@@ -31,6 +52,9 @@ namespace FODevManager.WinUI.ViewModel
             var cfg = _configWriter.GetConfig();
             _checkUncommittedBeforeSwitch = cfg.CheckUncommittedBeforeSwitch;
             _defaultSourceDirectory = cfg.DefaultSourceDirectory;
+            _azureArtifactsUsername = cfg.AzureArtifactsUsername;
+            _azureArtifactsPat = cfg.AzureArtifactsPat;
+            _azureArtifactsApiKey = cfg.AzureArtifactsApiKey;
         }
 
         public void Save()
@@ -40,11 +64,17 @@ namespace FODevManager.WinUI.ViewModel
                 // Persist both settings to the SAME appsettings.json
                 _configWriter.UpdateSetting(nameof(AppConfig.CheckUncommittedBeforeSwitch), CheckUncommittedBeforeSwitch);
                 _configWriter.UpdateSetting(nameof(AppConfig.DefaultSourceDirectory), DefaultSourceDirectory);
+                _configWriter.UpdateSetting(nameof(AppConfig.AzureArtifactsUsername), AzureArtifactsUsername);
+                _configWriter.UpdateSetting(nameof(AppConfig.AzureArtifactsPat), AzureArtifactsPat);
+                _configWriter.UpdateSetting(nameof(AppConfig.AzureArtifactsApiKey), AzureArtifactsApiKey);
 
                 // keep in-memory AppConfig aligned, if writer exposes it via GetConfig()
                 var cfg = _configWriter.GetConfig();
                 cfg.CheckUncommittedBeforeSwitch = CheckUncommittedBeforeSwitch;
                 cfg.DefaultSourceDirectory = DefaultSourceDirectory;
+                cfg.AzureArtifactsUsername = AzureArtifactsUsername;
+                cfg.AzureArtifactsPat = AzureArtifactsPat;
+                cfg.AzureArtifactsApiKey = AzureArtifactsApiKey;
 
                 MessageLogger.Highlight("Settings saved.");
             }
@@ -55,3 +85,4 @@ namespace FODevManager.WinUI.ViewModel
         }
     }
 }
+

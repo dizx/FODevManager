@@ -19,6 +19,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Serilog;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -58,6 +59,8 @@ namespace FODevManager.WinUI
         private BackgroundQueue? _backgroundQueue;
         private UiDispatcher? _uiDispatcher;
         private int _isGitCheckRunning;
+        private int _profileLoadRequestId;
+        private readonly ConcurrentDictionary<string, byte> _queuedNugetPreparationProfiles = new(StringComparer.OrdinalIgnoreCase);
 
         private UiDispatcher Ui => _uiDispatcher ?? throw new InvalidOperationException("BusyOps.Initialize must be called before using BusyOps.");
 
@@ -210,14 +213,26 @@ namespace FODevManager.WinUI
         }
 
 
+        private sealed class ProfileLoadResult
+        {
+            public required ProfileModel Profile { get; init; }
+            public required ModelsGroupingViewModel Grouping { get; init; }
+            public required List<object> CombinedItems { get; init; }
+        }
+
         private void LoadProfiles(string setProfile = "")
         {
-            var profiles = _fileService.GetAllProfiles();
+            _ = LoadProfilesAsync(setProfile);
+        }
+
+        private async Task LoadProfilesAsync(string setProfile = "")
+        {
+            var profiles = await Task.Run(() => _fileService.GetAllProfiles());
             ProfilesDropdown.ItemsSource = profiles.Select(x => x.ProfileName).ToList();
 
             if (profiles.Any())
             {
-                UIMessageHelper.LogToUI($"🔔 {profiles.Count} profiles loaded");
+                UIMessageHelper.LogToUI($"{profiles.Count} profiles loaded");
 
                 var currentProfile = !setProfile.IsNullOrEmpty() ? profiles.FirstOrDefault(x => x.ProfileName == setProfile) : (profiles.FirstOrDefault(x => x.IsActive) ?? profiles.First());
 
@@ -226,8 +241,8 @@ namespace FODevManager.WinUI
                     UIMessageHelper.LogToUI($"No active profile", MessageType.Warning);
                 }
 
-                SetSelectedProfile(currentProfile);
-
+                if (currentProfile != null)
+                    await SetSelectedProfileAsync(currentProfile.ProfileName);
             }
         }
 
@@ -248,32 +263,96 @@ namespace FODevManager.WinUI
             if (profile == null)
                 return;
 
+            _ = SetSelectedProfileAsync(profile.ProfileName);
+        }
+
+        private async Task SetSelectedProfileAsync(string profileName)
+        {
+            var requestId = Interlocked.Increment(ref _profileLoadRequestId);
+            var loadResult = await Task.Run(() => BuildProfileLoadResult(profileName));
+            if (requestId != _profileLoadRequestId || loadResult == null)
+                return;
+
             ProfilesDropdown.SelectionChanged -= ProfilesDropdown_SelectionChanged;
             try
             {
-                ProfilesDropdown.SelectedItem = profile.ProfileName;
+                ProfilesDropdown.SelectedItem = profileName;
             }
             finally
             {
                 ProfilesDropdown.SelectionChanged += ProfilesDropdown_SelectionChanged;
             }
 
-            SetActiveProfile(profile);
+            ApplyLoadedProfile(loadResult);
         }
 
-        private void SetActiveProfile(ProfileModel? profile)
+        private ProfileLoadResult? BuildProfileLoadResult(string profileName)
         {
+            var profile = _profileService.LoadProfile(profileName);
             if (profile == null)
+                return null;
+
+            var modelViewModels = profile.AllModels
+                .Select(model => model.ToViewModel(profile.ProfileName))
+                .ToList();
+
+            var groupingVm = new ModelsGroupingViewModel(profile, modelViewModels);
+            var firstRepoGroup = groupingVm.GitGroups.FirstOrDefault();
+            if (firstRepoGroup != null)
+                firstRepoGroup.IsExpanded = true;
+
+            var combinedItems = new List<object>();
+            combinedItems.AddRange(groupingVm.GitGroups);
+            combinedItems.AddRange(groupingVm.NonGitModels);
+
+            return new ProfileLoadResult
+            {
+                Profile = profile,
+                Grouping = groupingVm,
+                CombinedItems = combinedItems
+            };
+        }
+
+        private void ApplyLoadedProfile(ProfileLoadResult loadResult)
+        {
+            ActiveProfile = loadResult.Profile;
+            _groupingVm = loadResult.Grouping;
+            CombinedList.ItemsSource = loadResult.CombinedItems;
+            UpdateProfileFields(loadResult.Profile);
+
+            QueueNugetPreparation(loadResult.Profile);
+            StartProfileSyncMonitoring(loadResult.Profile);
+            LogActiveEnvironmentInfo(loadResult.Profile);
+        }
+
+        private void QueueNugetPreparation(ProfileModel profile)
+        {
+            if (profile == null || profile.Repositories == null || profile.Repositories.Count == 0)
                 return;
 
-            ActiveProfile = profile;
-            LoadModelListViewData(profile.ProfileName);
-            UpdateProfileFields(profile);
+            if (!_queuedNugetPreparationProfiles.TryAdd(profile.ProfileName, 0))
+                return;
 
-            StartProfileSyncMonitoring(profile);
-            
-            LogActiveEnvironmentInfo(profile);
+            _backgroundQueue ??= new BackgroundQueue();
+            _backgroundQueue.TryEnqueue(async cancellationToken =>
+            {
+                try
+                {
+                    var updated = _profileService.PrepareCompiledNugetModels(profile.ProfileName);
+                    if (!updated || cancellationToken.IsCancellationRequested)
+                        return;
 
+                    await Ui.EnqueueAsync(async () =>
+                    {
+                        await RefreshProfileViewAsync(profile.ProfileName);
+                        return;
+                    }).ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    MessageLogger.Error($"Background NuGet preparation failed for profile '{profile.ProfileName}': {exception.Message}");
+                }
+            });
         }
 
 
@@ -582,44 +661,34 @@ namespace FODevManager.WinUI
 
         private void LoadModelListViewData(string profileName)
         {
-            var profile = _profileService.LoadProfile(profileName);
-            if (profile == null)
+            _ = RefreshProfileViewAsync(profileName);
+        }
+
+        private async Task RefreshProfileViewAsync(string profileName)
+        {
+            var requestId = Interlocked.Increment(ref _profileLoadRequestId);
+            var loadResult = await Task.Run(() => BuildProfileLoadResult(profileName));
+            if (requestId != _profileLoadRequestId)
+                return;
+
+            if (loadResult == null)
             {
                 MessageLogger.Error($"LoadModelListViewData: Could not load profile '{profileName}'.");
                 CombinedList.ItemsSource = new List<object>();
                 return;
             }
 
-            var modelViewModels = _profileService
-                .GetModelsInProfile(profileName)
-                .Select(model => model.ToViewModel(profile.ProfileName))
-                .ToList();
-
-            _groupingVm = new ModelsGroupingViewModel(profile, modelViewModels);
-
-            var firstRepoGroup = _groupingVm.GitGroups.FirstOrDefault();
-            if (firstRepoGroup != null)
-                firstRepoGroup.IsExpanded = true;
-
-            var combinedItems = new List<object>();
-            combinedItems.AddRange(_groupingVm.GitGroups);
-            combinedItems.AddRange(_groupingVm.NonGitModels);
-
-            CombinedList.ItemsSource = combinedItems;
+            ApplyLoadedProfile(loadResult);
         }
 
-        private void ProfilesDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void ProfilesDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
                 if (ActiveProfile?.ProfileName == profileName)
                     return;
 
-                var profile = LoadProfileByName(profileName);
-                if (profile != null)
-                {
-                    SetActiveProfile(profile);
-                }
+                await SetSelectedProfileAsync(profileName);
             }
         }
 

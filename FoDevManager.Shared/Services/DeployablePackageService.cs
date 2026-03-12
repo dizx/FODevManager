@@ -11,11 +11,17 @@ namespace FODevManager.Services
     {
         private readonly string _deployablePackagesRoot;
         private readonly string _deploymentBasePath;
+        private readonly string _azureArtifactsUsername;
+        private readonly string _azureArtifactsPat;
+        private readonly string _azureArtifactsApiKey;
 
         public DeployablePackageService(AppConfig config)
         {
             _deployablePackagesRoot = config.DeployablePackages;
             _deploymentBasePath = config.DeploymentBasePath;
+            _azureArtifactsUsername = config.AzureArtifactsUsername;
+            _azureArtifactsPat = config.AzureArtifactsPat;
+            _azureArtifactsApiKey = config.AzureArtifactsApiKey;
 
             if (!_deployablePackagesRoot.IsNullOrEmpty())
             {
@@ -357,13 +363,15 @@ namespace FODevManager.Services
             var processStartInfo = new ProcessStartInfo
             {
                 FileName = nugetExecutable,
-                Arguments = $"install \"{packageReference.Id}\" -Version \"{packageReference.Version}\" -OutputDirectory \"{downloadedRoot}\" -ConfigFile \"{context.NugetConfigPath}\" -NonInteractive",
+                Arguments = $"install \"{packageReference.Id}\" -Version \"{packageReference.Version}\" -OutputDirectory \"{downloadedRoot}\" -ConfigFile \"{context.NugetConfigPath}\"  -NonInteractive -DependencyVersion Ignore -PackageSaveMode nupkg",
                 WorkingDirectory = context.RepositoryRoot,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
+
+            ApplyAzureArtifactsCredentials(processStartInfo, context.NugetConfigPath);
 
             try
             {
@@ -575,6 +583,64 @@ namespace FODevManager.Services
             return true;
         }
 
+        private void ApplyAzureArtifactsCredentials(ProcessStartInfo processStartInfo, string nugetConfigPath)
+        {
+            var secret = ResolveAzureArtifactsSecret();
+            if (secret.IsNullOrEmpty())
+                return;
+
+            var feedEndpoints = LoadAzureArtifactsFeedEndpoints(nugetConfigPath);
+            if (feedEndpoints.Count == 0)
+                return;
+
+            var username = _azureArtifactsUsername.IsNullOrEmpty() ? "FODevManager" : _azureArtifactsUsername;
+            var endpointCredentials = string.Join(",",
+                feedEndpoints.Select(endpoint =>
+                    $"{{\"endpoint\":\"{EscapeJson(endpoint)}\",\"username\":\"{EscapeJson(username)}\",\"password\":\"{EscapeJson(secret)}\"}}"));
+
+            processStartInfo.Environment["VSS_NUGET_EXTERNAL_FEED_ENDPOINTS"] =
+                $"{{\"endpointCredentials\":[{endpointCredentials}]}}";
+        }
+
+        private string ResolveAzureArtifactsSecret()
+        {
+            if (!_azureArtifactsPat.IsNullOrEmpty())
+                return _azureArtifactsPat;
+
+            return _azureArtifactsApiKey ?? string.Empty;
+        }
+
+        private static List<string> LoadAzureArtifactsFeedEndpoints(string nugetConfigPath)
+        {
+            if (nugetConfigPath.IsNullOrEmpty() || !File.Exists(nugetConfigPath))
+                return new List<string>();
+
+            try
+            {
+                var document = XDocument.Load(nugetConfigPath);
+                return document
+                    .Descendants("packageSources")
+                    .Elements("add")
+                    .Select(element => element.Attribute("value")?.Value?.Trim())
+                    .Where(value => !value.IsNullOrEmpty())
+                    .Where(value =>
+                        value!.Contains("pkgs.dev.azure.com", StringComparison.OrdinalIgnoreCase) ||
+                        value.Contains("visualstudio.com", StringComparison.OrdinalIgnoreCase))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Cast<string>()
+                    .ToList();
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Warning($"Could not read Azure Artifacts feeds from '{nugetConfigPath}': {exception.Message}");
+                return new List<string>();
+            }
+        }
+
+        private static string EscapeJson(string value)
+            => value
+                .Replace("\\", "\\\\", StringComparison.Ordinal)
+                .Replace("\"", "\\\"", StringComparison.Ordinal);
         private static string? ResolveNuGetExecutable()
         {
             var pathValue = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
@@ -607,4 +673,8 @@ namespace FODevManager.Services
         private sealed record ResolvedModelDescriptor(PackageReference PackageReference, string ModelName, string ModelFolder);
     }
 }
+
+
+
+
 
