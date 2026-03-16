@@ -130,7 +130,14 @@ namespace FODevManager.WinUI
             var services = new ServiceCollection();
 
 
-            var config = new AppConfig(new ConfigurationBuilder().AddJsonFile("appsettings.json").Build());
+            var environmentName = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? "Production";
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .AddJsonFile($"appsettings.{environmentName}.json", optional: true, reloadOnChange: true)
+                .Build();
+
+            var config = new AppConfig(configuration);
 
             services.AddSingleton(config);
             services.AddSingleton<ProfileService>();
@@ -203,3 +210,4 @@ namespace FODevManager.WinUI
 
     }
 }
+

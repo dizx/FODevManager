@@ -2,7 +2,6 @@ using FODevManager.Messages;
 using FODevManager.Models;
 using FODevManager.Utils;
 using System.Diagnostics;
-using System.IO.Compression;
 using System.Xml.Linq;
 
 namespace FODevManager.Services
@@ -108,9 +107,7 @@ namespace FODevManager.Services
             }
 
             UpsertPackageReference(isvConfigPath, packageId, packageVersion);
-            var updated = EnsureCompiledNugetModels(profile, repository);
-            ApplyPackageUrl(repository, packageId, packageUrl.Trim());
-            return updated;
+            return EnsureCompiledNugetModels(profile, repository);
         }
 
         public bool RemovePackage(ProfileModel profile, RepositoryModel repository, string packageId)
@@ -162,9 +159,7 @@ namespace FODevManager.Services
             }
 
             UpsertPackageReference(isvConfigPath, newPackageId, newPackageVersion);
-            var updated = EnsureCompiledNugetModels(profile, repository);
-            ApplyPackageUrl(repository, newPackageId, packageUrl.Trim());
-            return updated;
+            return EnsureCompiledNugetModels(profile, repository);
         }
 
         private bool TryGetPackageContext(RepositoryModel repository, out PackageContext context)
@@ -261,7 +256,7 @@ namespace FODevManager.Services
 
             updated |= SetIfDifferent(model, nameof(model.ModelRootFolder), repository.RepoRootFolder, value => model.ModelRootFolder = value);
             updated |= SetIfDifferent(model, nameof(model.CompiledModelFolder), descriptor.ModelFolder, value => model.CompiledModelFolder = value);
-            updated |= SetIfDifferent(model, nameof(model.GitUrl), repository.GitUrl ?? string.Empty, value => model.GitUrl = value);
+            updated |= SetIfDifferent(model, nameof(model.GitUrl), string.Empty, value => model.GitUrl = value);
             updated |= SetIfDifferent(model, nameof(model.PackageId), descriptor.PackageReference.Id, value => model.PackageId = value);
             updated |= SetIfDifferent(model, nameof(model.PackageVersion), descriptor.PackageReference.Version, value => model.PackageVersion = value);
             updated |= SetIfDifferent(model, nameof(model.ProjectFilePath), string.Empty, value => model.ProjectFilePath = value);
@@ -303,6 +298,7 @@ namespace FODevManager.Services
                 return Enumerable.Empty<string>();
 
             return Directory.GetFiles(extractedRoot, "*.xref", SearchOption.AllDirectories)
+                .Where(path => !IsUnderDownloadFolder(extractedRoot, path))
                 .Select(Path.GetDirectoryName)
                 .Where(path => !path.IsNullOrEmpty())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -322,29 +318,34 @@ namespace FODevManager.Services
                 if (!EnsurePackageDownloaded(packageReference, context, downloadedRoot, out var installedPackageFolder))
                     return false;
 
-                var filesFolder = Path.Combine(installedPackageFolder, "files");
-                if (!Directory.Exists(filesFolder))
+                if (!HasCompiledPackageContent(installedPackageFolder))
                 {
-                    MessageLogger.Warning($"NuGet package '{packageReference.Id} {packageReference.Version}' did not contain a files folder.");
+                    MessageLogger.Warning($"NuGet package '{packageReference.Id} {packageReference.Version}' did not contain compiled model files.");
                     return false;
                 }
 
-                var packageZipFiles = Directory.GetFiles(filesFolder, "*.zip", SearchOption.TopDirectoryOnly);
-                if (packageZipFiles.Length == 0)
-                {
-                    MessageLogger.Warning($"NuGet package '{packageReference.Id} {packageReference.Version}' did not contain deployable model archives.");
-                    return false;
-                }
-
-                foreach (var zipFile in packageZipFiles)
-                {
-                    ZipFile.ExtractToDirectory(zipFile, extractedRoot, overwriteFiles: true);
-                }
-
+                FileHelper.CopyDirectory(installedPackageFolder, extractedRoot);
                 NormalizeExtractedPackageLayout(extractedRoot);
+
+                try
+                {
+                    Directory.Delete(downloadedRoot, recursive: true);
+                }
+                catch (Exception exception)
+                {
+                    MessageLogger.Warning($"Could not delete package staging folder '{downloadedRoot}': {exception.Message}");
+                }
             }
 
             return HasExtractedPackageContent(extractedRoot);
+        }
+
+        private static bool HasCompiledPackageContent(string packageFolder)
+        {
+            if (!Directory.Exists(packageFolder))
+                return false;
+
+            return Directory.GetFiles(packageFolder, "*.xref", SearchOption.AllDirectories).Any();
         }
 
         private bool EnsurePackageDownloaded(PackageReference packageReference, PackageContext context, string downloadedRoot, out string installedPackageFolder)
@@ -363,7 +364,7 @@ namespace FODevManager.Services
             var processStartInfo = new ProcessStartInfo
             {
                 FileName = nugetExecutable,
-                Arguments = $"install \"{packageReference.Id}\" -Version \"{packageReference.Version}\" -OutputDirectory \"{downloadedRoot}\" -ConfigFile \"{context.NugetConfigPath}\"  -NonInteractive -DependencyVersion Ignore -PackageSaveMode nupkg",
+                Arguments = $"install \"{packageReference.Id}\" -Version \"{packageReference.Version}\" -OutputDirectory \"{downloadedRoot}\" -ConfigFile \"{context.NugetConfigPath}\" -NonInteractive",
                 WorkingDirectory = context.RepositoryRoot,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -406,6 +407,7 @@ namespace FODevManager.Services
         private static void NormalizeExtractedPackageLayout(string extractedRoot)
         {
             var compiledModelDirectories = Directory.GetFiles(extractedRoot, "*.xref", SearchOption.AllDirectories)
+                .Where(path => !IsUnderDownloadFolder(extractedRoot, path))
                 .Select(Path.GetDirectoryName)
                 .Where(directory => !directory.IsNullOrEmpty())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -414,6 +416,9 @@ namespace FODevManager.Services
             foreach (var modelDirectory in compiledModelDirectories)
             {
                 var sourceDirectory = modelDirectory!;
+                if (sourceDirectory.SameAs(extractedRoot))
+                    continue;
+
                 var targetDirectory = Path.Combine(extractedRoot, Path.GetFileName(sourceDirectory));
                 if (sourceDirectory.SameAs(targetDirectory))
                     continue;
@@ -430,7 +435,14 @@ namespace FODevManager.Services
             if (!Directory.Exists(extractedRoot))
                 return false;
 
-            return Directory.GetFiles(extractedRoot, "*.xref", SearchOption.AllDirectories).Any();
+            return Directory.GetFiles(extractedRoot, "*.xref", SearchOption.AllDirectories)
+                .Any(path => !IsUnderDownloadFolder(extractedRoot, path));
+        }
+
+        private static bool IsUnderDownloadFolder(string extractedRoot, string path)
+        {
+            var downloadRoot = Path.Combine(extractedRoot, ".download") + Path.DirectorySeparatorChar;
+            return path.StartsWith(downloadRoot, StringComparison.OrdinalIgnoreCase);
         }
 
         private string GetExtractedPackageRoot(PackageReference packageReference)
@@ -529,14 +541,6 @@ namespace FODevManager.Services
 
             document.Save(isvConfigPath);
             return true;
-        }
-
-        private static void ApplyPackageUrl(RepositoryModel repository, string packageId, string packageUrl)
-        {
-            foreach (var model in repository.Models.Where(model => model.ModelType == ModelType.CompiledNuget && model.PackageId.SameAs(packageId)))
-            {
-                model.PackageUrl = packageUrl;
-            }
         }
 
         private static bool TryParseNugetPackageUrl(string packageUrl, out string packageId, out string packageVersion)

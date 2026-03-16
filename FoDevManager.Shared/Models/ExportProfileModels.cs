@@ -47,8 +47,6 @@ namespace FODevManager.Models
         public string PackageId { get; set; } = "";
 
         public string PackageVersion { get; set; } = "";
-
-        public string PackageUrl { get; set; } = "";
         
     }
 }

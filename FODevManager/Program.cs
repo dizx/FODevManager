@@ -47,6 +47,7 @@ class Program
             {
                 config.SetBasePath(AppContext.BaseDirectory);
                 config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+                config.AddJsonFile($"appsettings.{context.HostingEnvironment.EnvironmentName}.json", optional: true, reloadOnChange: true);
             })
             .ConfigureServices((context, services) =>
             {   
@@ -170,3 +171,4 @@ class Program
         }
     }
 }
+

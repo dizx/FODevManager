@@ -521,7 +521,6 @@ namespace FODevManager.Services
                 model.CompiledModelFolder = string.Empty;
                 model.PackageId = string.Empty;
                 model.PackageVersion = string.Empty;
-                model.PackageUrl = string.Empty;
             }
             else if (model.ModelType == ModelType.Compiled)
             {
@@ -1567,18 +1566,8 @@ namespace FODevManager.Services
 
             if (targetEnvironment.ModelType == ModelType.CompiledNuget)
             {
-                var repository = profile.FindRepositoryForModel(targetEnvironment);
-                if (repository == null)
-                {
-                    MessageLogger.Error($"UpdateModelProperties: model '{targetEnvironment.ModelName}' is not mapped to a repository.");
-                    return;
-                }
-
-                _deployablePackageService.UpdatePackageFromUrl(
-                    profile,
-                    repository,
-                    targetEnvironment.PackageId,
-                    updatedEnvironment.PackageUrl?.Trim() ?? string.Empty);
+                targetEnvironment.PackageId = updatedEnvironment.PackageId?.Trim() ?? string.Empty;
+                targetEnvironment.PackageVersion = updatedEnvironment.PackageVersion?.Trim() ?? string.Empty;
             }
 
             _fileService.SaveProfile(profile, updateExternal: true);
