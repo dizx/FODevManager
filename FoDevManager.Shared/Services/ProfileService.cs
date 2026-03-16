@@ -6,9 +6,11 @@ using FODevManager.Utils;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace FODevManager.Services
@@ -1009,11 +1011,11 @@ namespace FODevManager.Services
 
             if (profile.Repositories == null || profile.Repositories.Count == 0)
             {
-                MessageLogger.Warning("?? Tag release: profile has no repositories.");
+                MessageLogger.Warning("⚠️ Tag release: profile has no repositories.");
                 return false;
             }
 
-            var tagName = $"Release-{DateTime.UtcNow:yyyy-MM-dd}";
+            var releaseDateUtc = DateTime.UtcNow;
 
             var firstGitRepoPath = profile.Repositories?
                 .FirstOrDefault(r => r?.RepoRootFolder.IsNullOrEmpty() == false && GitHelper.IsGitRepository(r.RepoRootFolder))
@@ -1024,9 +1026,10 @@ namespace FODevManager.Services
                 : GitHelper.GetGitUserEmailOrFallback(firstGitRepoPath);
 
             var succeeded = 0;
+            var createdTags = 0;
             var failedRepos = new List<string>();
 
-            MessageLogger.Highlight($"??? Tag release: {profile.ProfileName} ? {tagName}");
+            MessageLogger.Highlight($"🏷️ Tag release: {profile.ProfileName} → {releaseDateUtc:yyyy-MM-dd}");
 
             foreach (var repository in profile.Repositories)
             {
@@ -1044,37 +1047,101 @@ namespace FODevManager.Services
 
                 if (!isOnMain && !isOnRelease)
                 {
-                    MessageLogger.Error($"? {repository.DisplayName}: not on main/release branch (current: '{activeBranch}').");
+                    MessageLogger.Error($"❌ {repository.DisplayName}: not on main/release branch (current: '{activeBranch}').");
                     failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
                     continue;
                 }
 
                 if (GitHelper.HasUncommittedChanges(repository.RepoRootFolder))
                 {
-                    MessageLogger.Error($"? {repository.DisplayName}: has uncommitted changes. Tagging aborted for this repo.");
+                    MessageLogger.Error($"❌ {repository.DisplayName}: has uncommitted changes. Tagging aborted for this repo.");
                     failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
                     continue;
                 }
 
-                var messageLines = new List<string>
+                var releaseTargets = GetReleaseTagTargets(repository, releaseDateUtc).ToList();
+                if (releaseTargets.Count == 0)
                 {
-                    $"Tag: {tagName}",
-                    $"Profile: {profile.ProfileName}",
-                    $"Created by: {createdBy}",
-                    $"Branch: {activeBranch}",
-                    $"Created at: {DateTime.Now:yyyy-MM-dd HH:mm:ss}"
-                };
+                    MessageLogger.Info($"ℹ️ {repository.DisplayName}: no source model changes detected since the last release tag.");
+                    continue;
+                }
 
-                MessageLogger.Info($"?? {repository.DisplayName}: create tag ? push");
-
-                var created = GitHelper.CreateTag(repository.RepoRootFolder, tagName, messageLines);
-                if (!created)
+                if (releaseTargets.Any(target => GitHelper.TagExists(repository.RepoRootFolder, target.TagName)))
                 {
+                    MessageLogger.Error($"❌ {repository.DisplayName}: one or more release tags already exist. Tagging aborted for this repo.");
                     failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
                     continue;
                 }
 
-                if (!GitHelper.PushTag(repository.RepoRootFolder, tagName, "origin"))
+                var originalDescriptorContents = releaseTargets.ToDictionary(
+                    target => target.DescriptorFilePath,
+                    target => File.ReadAllText(target.DescriptorFilePath),
+                    StringComparer.OrdinalIgnoreCase);
+
+                foreach (var releaseTarget in releaseTargets)
+                {
+                    if (!TryIncrementDescriptorRevision(releaseTarget.DescriptorFilePath, out var updatedVersion))
+                    {
+                        RestoreDescriptorFiles(originalDescriptorContents);
+                        MessageLogger.Error($"❌ {repository.DisplayName}: failed to update descriptor for model '{releaseTarget.Model.ModelName}'.");
+                        failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
+                        releaseTargets.Clear();
+                        break;
+                    }
+
+                    releaseTarget.NewVersion = updatedVersion;
+                    releaseTarget.TagName = BuildReleaseTagName(releaseDateUtc, releaseTarget.Model.ModelName, updatedVersion);
+                }
+
+                if (releaseTargets.Count == 0)
+                    continue;
+
+                var descriptorFilesToCommit = releaseTargets
+                    .Select(target => target.DescriptorFileRelativePath)
+                    .ToList();
+
+                var commitMessage = "Bump release versions: " + string.Join(", ",
+                    releaseTargets.Select(target => $"{target.Model.ModelName} {target.NewVersion}"));
+
+                if (!GitHelper.CommitFiles(repository.RepoRootFolder, descriptorFilesToCommit, commitMessage))
+                {
+                    RestoreDescriptorFiles(originalDescriptorContents);
+                    failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
+                    continue;
+                }
+
+                var repoFailed = false;
+                foreach (var releaseTarget in releaseTargets)
+                {
+                    var messageLines = new List<string>
+                    {
+                        $"Tag: {releaseTarget.TagName}",
+                        $"Profile: {profile.ProfileName}",
+                        $"Model: {releaseTarget.Model.ModelName}",
+                        $"Version: {releaseTarget.NewVersion}",
+                        $"Created by: {createdBy}",
+                        $"Branch: {activeBranch}",
+                        $"Created at: {DateTime.Now:yyyy-MM-dd HH:mm:ss}"
+                    };
+
+                    MessageLogger.Info($"🏷️ {repository.DisplayName}: create tag + push → {releaseTarget.TagName}");
+
+                    if (!GitHelper.CreateTag(repository.RepoRootFolder, releaseTarget.TagName, messageLines))
+                    {
+                        repoFailed = true;
+                        break;
+                    }
+
+                    if (!GitHelper.PushTag(repository.RepoRootFolder, releaseTarget.TagName, "origin"))
+                    {
+                        repoFailed = true;
+                        break;
+                    }
+
+                    createdTags++;
+                }
+
+                if (repoFailed)
                 {
                     failedRepos.Add(repository.RepoId ?? repository.RepoRootFolder);
                     continue;
@@ -1085,13 +1152,210 @@ namespace FODevManager.Services
 
             if (failedRepos.Count > 0)
             {
-                MessageLogger.Warning($"?? Tag release finished with errors. OK: {succeeded}, Failed: {failedRepos.Count}");
+                MessageLogger.Warning($"⚠️ Tag release finished with errors. Repos OK: {succeeded}, Failed: {failedRepos.Count}, Tags created: {createdTags}");
                 MessageLogger.Warning($"Failed repos: {string.Join(", ", failedRepos)}");
                 return false;
             }
 
-            MessageLogger.Highlight($"? Tag release finished. Repos tagged: {succeeded}");
+            MessageLogger.Highlight($"✅ Tag release finished. Repos tagged: {succeeded}, Tags created: {createdTags}");
             return true;
+        }
+
+        private static IEnumerable<ReleaseTagTarget> GetReleaseTagTargets(RepositoryModel repository, DateTime releaseDateUtc)
+        {
+            var repoRootFolder = repository.RepoRootFolder ?? string.Empty;
+            if (repoRootFolder.IsNullOrEmpty())
+                yield break;
+
+            var repoTags = GitHelper.GetTags(repoRootFolder);
+            var latestLegacyReleaseTag = repoTags.FirstOrDefault(IsLegacyReleaseTagName);
+
+            foreach (var model in repository.Models ?? new List<ProfileEnvironmentModel>())
+            {
+                if (model == null || model.ModelType != ModelType.Source)
+                    continue;
+
+                if (model.MetadataFolder.IsNullOrEmpty() || !Directory.Exists(model.MetadataFolder))
+                    continue;
+
+                var descriptorFilePath = GetDescriptorFilePath(model);
+                if (!File.Exists(descriptorFilePath))
+                {
+                    MessageLogger.Warning($"Descriptor file not found for model '{model.ModelName}': {descriptorFilePath}");
+                    continue;
+                }
+
+                var metadataRelativePath = TryGetGitRelativePath(repoRootFolder, model.MetadataFolder);
+                var descriptorRelativePath = TryGetGitRelativePath(repoRootFolder, descriptorFilePath);
+                if (metadataRelativePath.IsNullOrEmpty() || descriptorRelativePath.IsNullOrEmpty())
+                {
+                    MessageLogger.Warning($"Model '{model.ModelName}' is outside repository root '{repository.DisplayName}'. Skipping release tag.");
+                    continue;
+                }
+
+                var latestModelReleaseTag = FindLatestModelReleaseTag(repoTags, model.ModelName);
+                var comparisonTag = latestModelReleaseTag ?? latestLegacyReleaseTag;
+                if (!GitHelper.HasChangesInPathSinceTag(repoRootFolder, metadataRelativePath, comparisonTag))
+                    continue;
+
+                if (!TryReadDescriptorVersion(descriptorFilePath, out var currentVersion))
+                {
+                    MessageLogger.Warning($"Unable to read version from descriptor for model '{model.ModelName}'. Skipping release tag.");
+                    continue;
+                }
+
+                var nextVersion = currentVersion.WithIncrementedRevision();
+
+                yield return new ReleaseTagTarget
+                {
+                    Model = model,
+                    DescriptorFilePath = descriptorFilePath,
+                    DescriptorFileRelativePath = descriptorRelativePath,
+                    NewVersion = nextVersion,
+                    TagName = BuildReleaseTagName(releaseDateUtc, model.ModelName, nextVersion)
+                };
+            }
+        }
+
+        private static string GetDescriptorFilePath(ProfileEnvironmentModel model)
+        {
+            return Path.Combine(model.MetadataFolder ?? string.Empty, "Descriptor", $"{model.ModelName}.xml");
+        }
+
+        private static string? FindLatestModelReleaseTag(IReadOnlyCollection<string> tags, string modelName)
+        {
+            var modelSegment = Regex.Escape(NormalizeTagSegment(modelName));
+            var pattern = new Regex(
+                $"^Release-\\d{{4}}-\\d{{2}}-\\d{{2}}-{modelSegment}-\\d+\\.\\d+\\.\\d+$",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+            return tags.FirstOrDefault(tag => pattern.IsMatch(tag));
+        }
+
+        private static bool IsLegacyReleaseTagName(string tagName)
+        {
+            if (tagName.IsNullOrEmpty())
+                return false;
+
+            return Regex.IsMatch(tagName, "^Release-\\d{4}-\\d{2}-\\d{2}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        }
+
+        private static string BuildReleaseTagName(DateTime releaseDateUtc, string modelName, ModelVersion version)
+        {
+            return $"Release-{releaseDateUtc:yyyy-MM-dd}-{NormalizeTagSegment(modelName)}-{version}";
+        }
+
+        private static string NormalizeTagSegment(string value)
+        {
+            var normalized = Regex.Replace((value ?? string.Empty).Trim(), "[^A-Za-z0-9._-]+", "-");
+            normalized = normalized.Trim('-');
+            return normalized.IsNullOrEmpty() ? "model" : normalized;
+        }
+
+        private static string? TryGetGitRelativePath(string repoRootFolder, string fullPath)
+        {
+            if (repoRootFolder.IsNullOrEmpty() || fullPath.IsNullOrEmpty())
+                return null;
+
+            var relativePath = Path.GetRelativePath(repoRootFolder, fullPath);
+            if (relativePath.StartsWith("..", StringComparison.Ordinal))
+                return null;
+
+            return relativePath.Replace(Path.DirectorySeparatorChar, '/');
+        }
+
+        private static bool TryReadDescriptorVersion(string descriptorFilePath, out ModelVersion version)
+        {
+            version = default;
+
+            try
+            {
+                var document = XDocument.Load(descriptorFilePath);
+                var majorValue = document.Descendants("VersionMajor").FirstOrDefault()?.Value;
+                var minorValue = document.Descendants("VersionMinor").FirstOrDefault()?.Value;
+                var revisionValue = document.Descendants("VersionRevision").FirstOrDefault()?.Value;
+
+                if (!int.TryParse(majorValue, out var major)
+                    || !int.TryParse(minorValue, out var minor)
+                    || !int.TryParse(revisionValue, out var revision))
+                {
+                    return false;
+                }
+
+                version = new ModelVersion(major, minor, revision);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Warning($"Failed to read descriptor version from '{descriptorFilePath}': {exception.Message}");
+                return false;
+            }
+        }
+
+        private static bool TryIncrementDescriptorRevision(string descriptorFilePath, out ModelVersion newVersion)
+        {
+            newVersion = default;
+
+            try
+            {
+                var document = XDocument.Load(descriptorFilePath);
+                var majorElement = document.Descendants("VersionMajor").FirstOrDefault();
+                var minorElement = document.Descendants("VersionMinor").FirstOrDefault();
+                var revisionElement = document.Descendants("VersionRevision").FirstOrDefault();
+
+                if (majorElement == null || minorElement == null || revisionElement == null)
+                    return false;
+
+                if (!int.TryParse(majorElement.Value, out var major)
+                    || !int.TryParse(minorElement.Value, out var minor)
+                    || !int.TryParse(revisionElement.Value, out var revision))
+                {
+                    return false;
+                }
+
+                revision++;
+                revisionElement.Value = revision.ToString();
+                document.Save(descriptorFilePath);
+
+                newVersion = new ModelVersion(major, minor, revision);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"Failed to update descriptor version '{descriptorFilePath}': {exception.Message}");
+                return false;
+            }
+        }
+
+        private static void RestoreDescriptorFiles(IReadOnlyDictionary<string, string> originalDescriptorContents)
+        {
+            foreach (var descriptorFile in originalDescriptorContents)
+            {
+                try
+                {
+                    File.WriteAllText(descriptorFile.Key, descriptorFile.Value);
+                }
+                catch (Exception exception)
+                {
+                    MessageLogger.Warning($"Failed to restore descriptor file '{descriptorFile.Key}': {exception.Message}");
+                }
+            }
+        }
+
+        private sealed class ReleaseTagTarget
+        {
+            public required ProfileEnvironmentModel Model { get; init; }
+            public required string DescriptorFilePath { get; init; }
+            public required string DescriptorFileRelativePath { get; init; }
+            public required string TagName { get; set; }
+            public required ModelVersion NewVersion { get; set; }
+        }
+
+        private readonly record struct ModelVersion(int Major, int Minor, int Revision)
+        {
+            public ModelVersion WithIncrementedRevision() => new(Major, Minor, Revision + 1);
+
+            public override string ToString() => $"{Major}.{Minor}.{Revision}";
         }
 
         public void UndeployAllModels()

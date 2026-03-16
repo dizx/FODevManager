@@ -539,6 +539,89 @@ namespace FODevManager.Utils
             }
         }
 
+        public static IReadOnlyList<string> GetTags(string repoPath, string? pattern = null)
+        {
+            if (!IsGitRepository(repoPath))
+                return Array.Empty<string>();
+
+            var safePattern = pattern?.Trim() ?? string.Empty;
+            var arguments = safePattern.IsNullOrEmpty()
+                ? "tag --list --sort=-creatordate"
+                : $"tag --list {EscapeGitArg(safePattern)} --sort=-creatordate";
+
+            try
+            {
+                string result;
+                if (!RunGitCommand(repoPath, arguments, out result, logOnSuccess: false, logOnFailure: false))
+                    return Array.Empty<string>();
+
+                return result
+                    .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(line => line.Trim())
+                    .Where(line => !line.IsNullOrEmpty())
+                    .ToList();
+            }
+            catch
+            {
+                return Array.Empty<string>();
+            }
+        }
+
+        public static bool HasCommittedChangesInPath(string repoPath, string relativePath)
+        {
+            if (!IsGitRepository(repoPath) || relativePath.IsNullOrEmpty())
+                return false;
+
+            try
+            {
+                string result;
+                if (!RunGitCommand(
+                        repoPath,
+                        $"log -n 1 --format=%H -- {EscapeGitArg(relativePath)}",
+                        out result,
+                        logOnSuccess: false,
+                        logOnFailure: false))
+                {
+                    return false;
+                }
+
+                return !result.Trim().IsNullOrEmpty();
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static bool HasChangesInPathSinceTag(string repoPath, string relativePath, string? tagName)
+        {
+            if (!IsGitRepository(repoPath) || relativePath.IsNullOrEmpty())
+                return false;
+
+            if (tagName.IsNullOrEmpty())
+                return HasCommittedChangesInPath(repoPath, relativePath);
+
+            try
+            {
+                string result;
+                if (!RunGitCommand(
+                        repoPath,
+                        $"diff --name-only {EscapeGitArg(tagName)}..HEAD -- {EscapeGitArg(relativePath)}",
+                        out result,
+                        logOnSuccess: false,
+                        logOnFailure: false))
+                {
+                    return false;
+                }
+
+                return !result.Trim().IsNullOrEmpty();
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static bool CreateTag(string repoPath, string tagName, IReadOnlyCollection<string> messageLines)
         {
             if (!IsGitRepository(repoPath))
@@ -586,6 +669,70 @@ namespace FODevManager.Utils
             catch (Exception exception)
             {
                 MessageLogger.Error($"❌ Error creating annotated tag '{tagName}': {exception.Message}");
+                return false;
+            }
+        }
+
+        public static bool CommitFiles(string repoPath, IReadOnlyCollection<string> filePaths, string message)
+        {
+            if (!IsGitRepository(repoPath))
+            {
+                MessageLogger.Warning("Commit Files: Not a Git repository.");
+                return false;
+            }
+
+            var files = (filePaths ?? Array.Empty<string>())
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (files.Count == 0)
+            {
+                MessageLogger.Warning("Commit Files: no files specified.");
+                return false;
+            }
+
+            if (message.IsNullOrEmpty())
+            {
+                MessageLogger.Error("Commit Files: message is empty.");
+                return false;
+            }
+
+            try
+            {
+                var fileArguments = string.Join(" ", files.Select(EscapeGitArg));
+                string result;
+
+                if (!RunGitCommand(repoPath, $"add -- {fileArguments}", out result))
+                {
+                    MessageLogger.Error("Failed to stage files for commit.");
+                    return false;
+                }
+
+                if (RunGitCommand(
+                        repoPath,
+                        "diff --cached --quiet --exit-code",
+                        out result,
+                        logOnSuccess: false,
+                        logOnFailure: false))
+                {
+                    MessageLogger.Info("No staged changes to commit.");
+                    return true;
+                }
+
+                if (RunGitCommand(repoPath, $"commit -m {EscapeGitArg(message)}", out result))
+                {
+                    MessageLogger.Highlight($"Created commit: {message}");
+                    return true;
+                }
+
+                MessageLogger.Error($"Failed to commit files: {message}");
+                return false;
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"Error committing files: {exception.Message}");
                 return false;
             }
         }
