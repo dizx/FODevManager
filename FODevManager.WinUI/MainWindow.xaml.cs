@@ -58,6 +58,10 @@ namespace FODevManager.WinUI
         private BackgroundQueue? _backgroundQueue;
         private UiDispatcher? _uiDispatcher;
         private int _isGitCheckRunning;
+        private Microsoft.UI.Dispatching.DispatcherQueueTimer? _profileSyncBridgeTimer;
+        private string _lastProfileSyncMessageId = string.Empty;
+        private bool _suppressProfileSyncPublish;
+        private DateTime _profileSyncBridgeStartedUtc;
 
         private UiDispatcher Ui => _uiDispatcher ?? throw new InvalidOperationException("BusyOps.Initialize must be called before using BusyOps.");
 
@@ -93,9 +97,14 @@ namespace FODevManager.WinUI
 
             if (!_gitFunctionsEnabled)
             {
-                GitActionsButton.IsEnabled = false;
                 GitActionsButton.Visibility = Visibility.Collapsed;
-                UIMessageHelper.LogToUI("ℹ️ EasyGit mode is enabled. FO Dev Manager Git actions are disabled.");
+                EasyGitButton.Visibility = Visibility.Visible;
+                UIMessageHelper.LogToUI("ℹ️ EasyGit mode is enabled. FO Dev Manager Git actions are replaced with EasyGit.");
+            }
+            else
+            {
+                GitActionsButton.Visibility = Visibility.Visible;
+                EasyGitButton.Visibility = Visibility.Collapsed;
             }
 
 
@@ -114,6 +123,7 @@ namespace FODevManager.WinUI
             LogStartupInfo();
 
             LoadProfiles();
+            StartProfileSyncBridgeMonitoring();
 
             UIMessageHelper.LogToUI($"READY...");
 
@@ -279,7 +289,8 @@ namespace FODevManager.WinUI
             UpdateProfileFields(profile);
 
             StartProfileSyncMonitoring(profile);
-            
+            PublishProfileSelection(profile.ProfileName);
+             
             LogActiveEnvironmentInfo(profile);
 
         }
@@ -487,6 +498,7 @@ namespace FODevManager.WinUI
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
             _uiHeartbeatTimer?.Stop();
+            _profileSyncBridgeTimer?.Stop();
             StopProfileSyncMonitoring();
             _uiHeartbeatCts?.Cancel();
             _uiHeartbeatCts?.Dispose();
@@ -629,6 +641,61 @@ namespace FODevManager.WinUI
                     SetActiveProfile(profile);
                 }
             }
+        }
+
+        private void StartProfileSyncBridgeMonitoring()
+        {
+            _profileSyncBridgeStartedUtc = DateTime.UtcNow;
+            _profileSyncBridgeTimer ??= Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread().CreateTimer();
+            _profileSyncBridgeTimer.Interval = TimeSpan.FromSeconds(1);
+            _profileSyncBridgeTimer.Tick -= ProfileSyncBridgeTimer_Tick;
+            _profileSyncBridgeTimer.Tick += ProfileSyncBridgeTimer_Tick;
+            _profileSyncBridgeTimer.Start();
+        }
+
+        private void ProfileSyncBridgeTimer_Tick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args)
+        {
+            if (!ProfileSyncBridge.TryRead(out var state))
+                return;
+
+            if (state.MessageId.SameAs(_lastProfileSyncMessageId))
+                return;
+
+            if (state.UpdatedUtc < _profileSyncBridgeStartedUtc)
+                return;
+
+            _lastProfileSyncMessageId = state.MessageId;
+
+            if (state.SourceApp.SameAs(ProfileSyncBridge.SourceFoDev))
+                return;
+
+            var profileName = (state.ProfileName ?? string.Empty).Trim();
+            if (profileName.IsNullOrEmpty() || ActiveProfile?.ProfileName.SameAs(profileName) == true)
+                return;
+
+            var profile = LoadProfileByName(profileName);
+            if (profile == null)
+                return;
+
+            _suppressProfileSyncPublish = true;
+            try
+            {
+                SetSelectedProfile(profile);
+                UIMessageHelper.LogToUI($"🔄 Profile synced from EasyGit: {profileName}", MessageType.LogOnly);
+            }
+            finally
+            {
+                _suppressProfileSyncPublish = false;
+            }
+        }
+
+        private void PublishProfileSelection(string profileName)
+        {
+            if (_suppressProfileSyncPublish || profileName.IsNullOrEmpty())
+                return;
+
+            if (ProfileSyncBridge.Publish(ProfileSyncBridge.SourceFoDev, profileName, out var messageId))
+                _lastProfileSyncMessageId = messageId;
         }
 
         private void UpdateProfileFields(ProfileModel profile)
@@ -855,6 +922,70 @@ namespace FODevManager.WinUI
                 {
                     UpdateStatus("❗ Solution file not found or path not set.");
                 }
+            }
+        }
+
+        private void EasyGitButton_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedProfile = ActiveProfile?.ProfileName;
+            if (!selectedProfile.IsNullOrEmpty())
+                PublishProfileSelection(selectedProfile);
+
+            if (TryOpenEasyGit(out var launchError))
+            {
+                MessageLogger.Highlight("Opened EasyGit.");
+                return;
+            }
+
+            MessageLogger.Error($"Could not open EasyGit: {launchError}");
+        }
+
+        private bool TryOpenEasyGit(out string error)
+        {
+            error = string.Empty;
+
+            var candidates = new List<string>();
+            if (!_appConfig.EasyGitExecutablePath.IsNullOrEmpty())
+                candidates.Add(_appConfig.EasyGitExecutablePath);
+
+            candidates.Add(Path.Combine(AppContext.BaseDirectory, "EasyGit.WinUI.exe"));
+
+            foreach (var candidatePath in candidates.Where(path => !string.IsNullOrWhiteSpace(path)))
+            {
+                try
+                {
+                    var expandedPath = Environment.ExpandEnvironmentVariables(candidatePath.Trim());
+                    if (!File.Exists(expandedPath))
+                        continue;
+
+                    Process.Start(new ProcessStartInfo(expandedPath)
+                    {
+                        UseShellExecute = true,
+                        WorkingDirectory = Path.GetDirectoryName(expandedPath)
+                    });
+
+                    return true;
+                }
+                catch (Exception exception)
+                {
+                    error = exception.Message;
+                }
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo("EasyGit.WinUI.exe")
+                {
+                    UseShellExecute = true,
+                    WorkingDirectory = AppContext.BaseDirectory
+                });
+                return true;
+            }
+            catch (Exception exception)
+            {
+                if (error.IsNullOrEmpty())
+                    error = exception.Message;
+                return false;
             }
         }
 

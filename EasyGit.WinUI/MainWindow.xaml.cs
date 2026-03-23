@@ -33,9 +33,13 @@ namespace EasyGit.WinUI
         private int _isAutoSyncRunning;
 
         private DispatcherQueueTimer? _syncTimer;
+        private DispatcherQueueTimer? _profileSyncBridgeTimer;
         private StatusMessageSubscriber? _statusSubscriber;
         private CancellationTokenSource? _profileLoadCancellationTokenSource;
         private string _selectedProfileName = string.Empty;
+        private string _lastProfileSyncMessageId = string.Empty;
+        private bool _suppressProfileSyncPublish;
+        private DateTime _profileSyncBridgeStartedUtc;
 
         public MainWindow(FileService fileService, AppConfig config, IEasyGitWorkflowService workflowService)
         {
@@ -56,13 +60,15 @@ namespace EasyGit.WinUI
 
             Closed += MainWindow_Closed;
             RepositoriesList.ItemsSource = _rows;
-            LoadProfiles();
+            LoadProfiles(ResolveStartupProfile());
+            StartProfileSyncBridgeMonitoring();
             StartAutoSync();
         }
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
             _syncTimer?.Stop();
+            _profileSyncBridgeTimer?.Stop();
             _profileLoadCancellationTokenSource?.Cancel();
             _profileLoadCancellationTokenSource?.Dispose();
             _statusSubscriber?.Dispose();
@@ -98,10 +104,33 @@ namespace EasyGit.WinUI
 
             var selected = preferredProfile;
             if (selected.IsNullOrEmpty())
+                selected = profiles.FirstOrDefault(profile => profile.IsActive)?.ProfileName
+                    ?? names.FirstOrDefault()
+                    ?? string.Empty;
+
+            if (!selected.IsNullOrEmpty() && !names.Any(name => name.SameAs(selected)))
                 selected = names.FirstOrDefault() ?? string.Empty;
 
             if (!selected.IsNullOrEmpty())
                 ProfilesDropdown.SelectedItem = selected;
+        }
+
+        private string ResolveStartupProfile()
+        {
+            if (ProfileSyncBridge.TryRead(out var state)
+                && !state.ProfileName.IsNullOrEmpty()
+                && !state.MessageId.IsNullOrEmpty()
+                && state.UpdatedUtc >= DateTime.UtcNow.AddMinutes(-5))
+            {
+                _lastProfileSyncMessageId = state.MessageId;
+                return state.ProfileName;
+            }
+
+            var activeProfile = _fileService
+                .GetAllProfiles()
+                .FirstOrDefault(profile => profile.IsActive)?.ProfileName;
+
+            return activeProfile ?? string.Empty;
         }
 
         private async void ProfilesDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -111,6 +140,7 @@ namespace EasyGit.WinUI
 
             var previousProfile = _selectedProfileName;
             _selectedProfileName = profileName;
+            PublishProfileSelection();
 
             _profileLoadCancellationTokenSource?.Cancel();
             _profileLoadCancellationTokenSource?.Dispose();
@@ -140,6 +170,63 @@ namespace EasyGit.WinUI
             {
                 // A new profile selection replaced this load.
             }
+        }
+
+        private void StartProfileSyncBridgeMonitoring()
+        {
+            _profileSyncBridgeStartedUtc = DateTime.UtcNow;
+            _profileSyncBridgeTimer = DispatcherQueue.CreateTimer();
+            _profileSyncBridgeTimer.Interval = TimeSpan.FromSeconds(1);
+            _profileSyncBridgeTimer.Tick += ProfileSyncBridgeTimer_Tick;
+            _profileSyncBridgeTimer.Start();
+        }
+
+        private void ProfileSyncBridgeTimer_Tick(DispatcherQueueTimer sender, object args)
+        {
+            if (!ProfileSyncBridge.TryRead(out var state))
+                return;
+
+            if (state.MessageId.SameAs(_lastProfileSyncMessageId))
+                return;
+
+            if (state.UpdatedUtc < _profileSyncBridgeStartedUtc)
+                return;
+
+            _lastProfileSyncMessageId = state.MessageId;
+
+            if (state.SourceApp.SameAs(ProfileSyncBridge.SourceEasyGit))
+                return;
+
+            var syncedProfileName = (state.ProfileName ?? string.Empty).Trim();
+            if (syncedProfileName.IsNullOrEmpty() || _selectedProfileName.SameAs(syncedProfileName))
+                return;
+
+            var profileNames = _fileService.GetAllProfiles()
+                .Select(profile => profile.ProfileName)
+                .ToList();
+
+            if (!profileNames.Any(profile => profile.SameAs(syncedProfileName)))
+                return;
+
+            _suppressProfileSyncPublish = true;
+            try
+            {
+                ProfilesDropdown.SelectedItem = syncedProfileName;
+                SetStatus($"Profile synced from FODev: {syncedProfileName}", MessageType.LogOnly);
+            }
+            finally
+            {
+                _suppressProfileSyncPublish = false;
+            }
+        }
+
+        private void PublishProfileSelection()
+        {
+            if (_suppressProfileSyncPublish || _selectedProfileName.IsNullOrEmpty())
+                return;
+
+            if (ProfileSyncBridge.Publish(ProfileSyncBridge.SourceEasyGit, _selectedProfileName, out var messageId))
+                _lastProfileSyncMessageId = messageId;
         }
 
         private async void Refresh_Click(object sender, RoutedEventArgs e)

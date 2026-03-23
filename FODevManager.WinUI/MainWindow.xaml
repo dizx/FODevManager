@@ -130,6 +130,13 @@
                         </Button.Flyout>
                     </Button>
 
+                    <Button x:Name="EasyGitButton" Click="EasyGitButton_Click" Visibility="Collapsed" ToolTipService.ToolTip="Open EasyGit with the selected profile">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8A7;" FontSize="14" />
+                            <TextBlock Text="EasyGit" />
+                        </StackPanel>
+                    </Button>
+
                     <Button Click="DeleteProfile_Click" ToolTipService.ToolTip="Delete the selected profile (removes the profile file)">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE74D;" FontSize="14" />

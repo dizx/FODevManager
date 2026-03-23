@@ -39,6 +39,8 @@ namespace FODevManager.Utils
 
         public string AzureDevOpsPat { get; set; } = string.Empty;
 
+        public string EasyGitExecutablePath { get; set; } = string.Empty;
+
         public AppConfig()
         {
 
@@ -74,6 +76,7 @@ namespace FODevManager.Utils
             AzureOpenAiApiKey = Environment.ExpandEnvironmentVariables(configuration["AzureOpenAiApiKey"] ?? string.Empty);
             AzureDevOpsOrganizationUrl = Environment.ExpandEnvironmentVariables(configuration["AzureDevOpsOrganizationUrl"] ?? string.Empty);
             AzureDevOpsPat = Environment.ExpandEnvironmentVariables(configuration["AzureDevOpsPat"] ?? string.Empty);
+            EasyGitExecutablePath = Environment.ExpandEnvironmentVariables(configuration["EasyGitExecutablePath"] ?? string.Empty);
 
         }
     }
