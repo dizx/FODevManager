@@ -61,6 +61,7 @@ namespace FODevManager.Services
             };
 
             _fileService.SaveProfile(profile, skipExistCheck: true);
+            SetActiveProfile(profileName);
             
             MessageLogger.Info($"✅ Profile '{profileName}' created with solution file: {solutionFilePath}");
         }
