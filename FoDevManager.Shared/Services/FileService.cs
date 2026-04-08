@@ -138,7 +138,7 @@ namespace FODevManager.Services
 
             if (!File.Exists(profilePath))
             {
-                MessageLogger.Warning($"Profile '{profileName}' does not exist.");
+                MessageLogger.Warning($"⚠️ Profile '{profileName}' does not exist.");
                 return;
             }
 

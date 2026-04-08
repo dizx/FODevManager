@@ -51,7 +51,7 @@ namespace FODevManager.Services
 
             if (_deployablePackagesRoot.IsNullOrEmpty())
             {
-                MessageLogger.Error("DeployablePackages is not configured. Cannot prepare compiled NuGet models.");
+                MessageLogger.Error("❌ DeployablePackages is not configured. Cannot prepare compiled NuGet models.");
                 return false;
             }
 
@@ -67,7 +67,7 @@ namespace FODevManager.Services
 
             if (extractedPackages.Count == 0)
             {
-                MessageLogger.Warning($"No deployable packages could be prepared for repository '{repository.DisplayName}'.");
+                MessageLogger.Warning($"⚠️ No deployable packages could be prepared for repository '{repository.DisplayName}'.");
                 return false;
             }
 
@@ -82,7 +82,7 @@ namespace FODevManager.Services
             var repository = profile.FindRepositoryForModel(model);
             if (repository == null)
             {
-                MessageLogger.Warning($"Compiled NuGet model '{model.ModelName}' is not mapped to a repository. Skipping package preparation.");
+                MessageLogger.Warning($"⚠️ Compiled NuGet model '{model.ModelName}' is not mapped to a repository. Skipping package preparation.");
                 return false;
             }
 
@@ -96,13 +96,13 @@ namespace FODevManager.Services
 
             if (!TryParseNugetPackageUrl(packageUrl, out var packageId, out var packageVersion))
             {
-                MessageLogger.Error($"Unsupported package URL '{packageUrl}'.");
+                MessageLogger.Error($"❌ Unsupported package URL '{packageUrl}'.");
                 return false;
             }
 
             if (!TryGetIsvConfigPath(repository, createIfMissing: true, out var isvConfigPath))
             {
-                MessageLogger.Error($"Could not locate Build\\isv.config for repository '{repository.DisplayName}'.");
+                MessageLogger.Error($"❌ Could not locate Build\\isv.config for repository '{repository.DisplayName}'.");
                 return false;
             }
 
@@ -143,13 +143,13 @@ namespace FODevManager.Services
 
             if (!TryParseNugetPackageUrl(packageUrl, out var newPackageId, out var newPackageVersion))
             {
-                MessageLogger.Error($"Unsupported package URL '{packageUrl}'.");
+                MessageLogger.Error($"❌ Unsupported package URL '{packageUrl}'.");
                 return false;
             }
 
             if (!TryGetIsvConfigPath(repository, createIfMissing: true, out var isvConfigPath))
             {
-                MessageLogger.Error($"Could not locate Build\\isv.config for repository '{repository.DisplayName}'.");
+                MessageLogger.Error($"❌ Could not locate Build\\isv.config for repository '{repository.DisplayName}'.");
                 return false;
             }
 
@@ -320,7 +320,7 @@ namespace FODevManager.Services
 
                 if (!HasCompiledPackageContent(installedPackageFolder))
                 {
-                    MessageLogger.Warning($"NuGet package '{packageReference.Id} {packageReference.Version}' did not contain compiled model files.");
+                    MessageLogger.Warning($"⚠️ NuGet package '{packageReference.Id} {packageReference.Version}' did not contain compiled model files.");
                     return false;
                 }
 
@@ -333,7 +333,7 @@ namespace FODevManager.Services
                 }
                 catch (Exception exception)
                 {
-                    MessageLogger.Warning($"Could not delete package staging folder '{downloadedRoot}': {exception.Message}");
+                    MessageLogger.Warning($"⚠️ Could not delete package staging folder '{downloadedRoot}': {exception.Message}");
                 }
             }
 
@@ -357,7 +357,7 @@ namespace FODevManager.Services
             var nugetExecutable = ResolveNuGetExecutable();
             if (nugetExecutable.IsNullOrEmpty())
             {
-                MessageLogger.Error("Could not locate nuget.exe on PATH. Cannot download deployable packages.");
+                MessageLogger.Error("❌ Could not locate nuget.exe on PATH. Cannot download deployable packages.");
                 return false;
             }
 
@@ -379,7 +379,7 @@ namespace FODevManager.Services
                 using var process = new Process { StartInfo = processStartInfo };
                 if (!process.Start())
                 {
-                    MessageLogger.Error($"Failed to start nuget for package '{packageReference.Id}'.");
+                    MessageLogger.Error($"❌ Failed to start nuget for package '{packageReference.Id}'.");
                     return false;
                 }
 
@@ -390,16 +390,16 @@ namespace FODevManager.Services
                 if (process.ExitCode != 0)
                 {
                     var output = string.Join(Environment.NewLine, new[] { stdout, stderr }.Where(text => !text.IsNullOrEmpty()));
-                    MessageLogger.Error($"NuGet install failed for '{packageReference.Id} {packageReference.Version}'. {output}".Trim());
+                    MessageLogger.Error($"❌ NuGet install failed for '{packageReference.Id} {packageReference.Version}'. {output}".Trim());
                     return false;
                 }
 
-                MessageLogger.Info($"Downloaded deployable package '{packageReference.Id} {packageReference.Version}'.");
+                MessageLogger.Info($"📦 Downloaded deployable package '{packageReference.Id} {packageReference.Version}'.");
                 return Directory.Exists(installedPackageFolder);
             }
             catch (Exception exception)
             {
-                MessageLogger.Error($"Failed to download package '{packageReference.Id} {packageReference.Version}': {exception.Message}");
+                MessageLogger.Error($"❌ Failed to download package '{packageReference.Id} {packageReference.Version}': {exception.Message}");
                 return false;
             }
         }
@@ -636,7 +636,7 @@ namespace FODevManager.Services
             }
             catch (Exception exception)
             {
-                MessageLogger.Warning($"Could not read Azure Artifacts feeds from '{nugetConfigPath}': {exception.Message}");
+                MessageLogger.Warning($"⚠️ Could not read Azure Artifacts feeds from '{nugetConfigPath}': {exception.Message}");
                 return new List<string>();
             }
         }
