@@ -256,7 +256,6 @@ namespace FODevManager.Services
 
             updated |= SetIfDifferent(model, nameof(model.ModelRootFolder), repository.RepoRootFolder, value => model.ModelRootFolder = value);
             updated |= SetIfDifferent(model, nameof(model.CompiledModelFolder), descriptor.ModelFolder, value => model.CompiledModelFolder = value);
-            updated |= SetIfDifferent(model, nameof(model.GitUrl), string.Empty, value => model.GitUrl = value);
             updated |= SetIfDifferent(model, nameof(model.PackageId), descriptor.PackageReference.Id, value => model.PackageId = value);
             updated |= SetIfDifferent(model, nameof(model.PackageVersion), descriptor.PackageReference.Version, value => model.PackageVersion = value);
             updated |= SetIfDifferent(model, nameof(model.ProjectFilePath), string.Empty, value => model.ProjectFilePath = value);
@@ -277,7 +276,6 @@ namespace FODevManager.Services
             {
                 nameof(model.ModelRootFolder) => model.ModelRootFolder ?? string.Empty,
                 nameof(model.CompiledModelFolder) => model.CompiledModelFolder ?? string.Empty,
-                nameof(model.GitUrl) => model.GitUrl ?? string.Empty,
                 nameof(model.PackageId) => model.PackageId ?? string.Empty,
                 nameof(model.PackageVersion) => model.PackageVersion ?? string.Empty,
                 nameof(model.ProjectFilePath) => model.ProjectFilePath ?? string.Empty,

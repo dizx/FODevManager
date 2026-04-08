@@ -476,10 +476,10 @@ namespace FODevManager.Services
                     IsDeployed = false
                 };
 
-                if (GitHelper.IsGitRepository(modelRoot, out var gitRemoteUrl))
+                if (TryGetGitRepositoryContext(modelRoot, out var repositoryRootFolder, out var gitRemoteUrl))
                 {
                     
-                    var repository = FindOrCreateRepository(profile, modelRoot, gitRemoteUrl);
+                    var repository = FindOrCreateRepository(profile, repositoryRootFolder, gitRemoteUrl);
                     repository.Models.Add(newModel);
 
                 }
@@ -543,10 +543,8 @@ namespace FODevManager.Services
                     };
 
                     // If the projectRootPath is a git repo, store it in RepositoryModel
-                    if (GitHelper.IsGitRepository(projectRootPath, out var gitRemoteUrl))
+                    if (TryGetGitRepositoryContext(projectRootPath, out var repositoryRootFolder, out var gitRemoteUrl))
                     {
-                        var repositoryRootFolder = projectRootPath;
-
                         var repository = FindOrCreateRepository(profile, repositoryRootFolder, gitRemoteUrl);
                         repository.Models.Add(newEnvironment);
                         
@@ -678,14 +676,48 @@ namespace FODevManager.Services
 
         private void AddEnvironmentToProfile(ProfileModel profile, ProfileEnvironmentModel model)
         {
-            if (GitHelper.IsGitRepository(model.ModelRootFolder, out var gitRemoteUrl))
+            if (TryGetGitRepositoryContext(model.ModelRootFolder, out var repositoryRootFolder, out var gitRemoteUrl))
             {
-                var repository = FindOrCreateRepository(profile, model.ModelRootFolder, gitRemoteUrl);
+                var repository = FindOrCreateRepository(profile, repositoryRootFolder, gitRemoteUrl);
                 repository.Models.Add(model);
                 return;
             }
 
             profile.StandaloneModels.Add(model);
+        }
+
+        private static bool TryGetGitRepositoryContext(string path, out string repositoryRootFolder, out string gitRemoteUrl)
+        {
+            repositoryRootFolder = string.Empty;
+            gitRemoteUrl = string.Empty;
+
+            if (path.IsNullOrEmpty())
+                return false;
+
+            string? currentPath = Path.HasExtension(path)
+                ? Path.GetDirectoryName(path)
+                : path;
+
+            while (!currentPath.IsNullOrEmpty())
+            {
+                if (GitHelper.IsGitRepository(currentPath, out var detectedRemoteUrl))
+                {
+                    repositoryRootFolder = currentPath;
+                    gitRemoteUrl = detectedRemoteUrl ?? string.Empty;
+                    return true;
+                }
+
+                var gitMarkerPath = Path.Combine(currentPath, ".git");
+                if (Directory.Exists(gitMarkerPath) || File.Exists(gitMarkerPath))
+                {
+                    repositoryRootFolder = currentPath;
+                    return true;
+                }
+
+                currentPath = Directory.GetParent(currentPath)?.FullName;
+            }
+
+            return false;
         }
 
         private string DetectModelNameFromMetadata(string modelRootPath)
@@ -708,7 +740,11 @@ namespace FODevManager.Services
 
         private RepositoryModel FindOrCreateRepository(ProfileModel profile, string repoRootFolder, string gitRemoteUrl)
         {
-            var repository = profile.FindRepositoryByGitUrl(gitRemoteUrl);
+            var repository = !gitRemoteUrl.IsNullOrEmpty()
+                ? profile.FindRepositoryByGitUrl(gitRemoteUrl)
+                : null;
+
+            repository ??= profile.FindRepositoryByRoot(repoRootFolder);
 
             if (repository == null)
             {
@@ -723,6 +759,13 @@ namespace FODevManager.Services
 
                 profile.Repositories.Add(repository);
             }
+
+            if (repository.RepoRootFolder.IsNullOrEmpty())
+                repository.RepoRootFolder = repoRootFolder;
+
+            if (!gitRemoteUrl.IsNullOrEmpty() && repository.GitUrl.IsNullOrEmpty())
+                repository.GitUrl = gitRemoteUrl;
+
             repository.LastKnownBranch = GitHelper.GetActiveBranch(repoRootFolder) ?? string.Empty;
 
             return repository;

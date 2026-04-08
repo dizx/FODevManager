@@ -1122,8 +1122,6 @@ namespace FODevManager.WinUI
                 {
                     await AddModelToProfile(profileName, path);
                 }
-
-                LoadModelListViewData(profileName);
                 ModelPathTextBox.Text = string.Empty;
             }
         }

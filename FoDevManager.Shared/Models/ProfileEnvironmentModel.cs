@@ -14,8 +14,6 @@ namespace FODevManager.Models
 
         public string CompiledModelFolder { get; set; } = "";
 
-        public string GitUrl { get; set; } = "";
-
         public string PackageId { get; set; } = "";
 
         public string PackageVersion { get; set; } = "";

@@ -707,7 +707,8 @@ namespace FODevManager.Services
                 foreach (var folder in sourceFolders)
                 {
                     var detectedName = Path.GetFileName(folder);
-                    _modelDeploymentService.AddModelToProfileIfNotExists(profileName, detectedName, environmentPath, ModelType.Source);
+                    var sourceRoot = ResolveSourceModelRoot(folder, environmentPath);
+                    _modelDeploymentService.AddModelToProfileIfNotExists(profileName, detectedName, sourceRoot, ModelType.Source);
                     AddProjectToVsSolution(profileName, detectedName);
                     anyAdded = true;
                 }
@@ -723,15 +724,36 @@ namespace FODevManager.Services
             if (!anyAdded && parent.SameAs("Metadata"))
             {
                 var sourceName = Path.GetFileName(environmentPath);
-                _modelDeploymentService.AddModelToProfileIfNotExists(profileName, sourceName, Path.GetDirectoryName(Path.GetDirectoryName(environmentPath))!, ModelType.Source);
+                var sourceRoot = ResolveSourceModelRoot(environmentPath, Path.GetDirectoryName(Path.GetDirectoryName(environmentPath))!);
+                _modelDeploymentService.AddModelToProfileIfNotExists(profileName, sourceName, sourceRoot, ModelType.Source);
                 AddProjectToVsSolution(profileName, sourceName);
                 return;
             }
 
             if (!anyAdded)
             {
-                _modelDeploymentService.AddModelToProfileIfNotExists(profileName, modelName, environmentPath, ModelType.Source);
+                var sourceRoot = ResolveSourceModelRoot(environmentPath, environmentPath);
+                _modelDeploymentService.AddModelToProfileIfNotExists(profileName, modelName, sourceRoot, ModelType.Source);
                 AddProjectToVsSolution(profileName, modelName);
+            }
+        }
+
+        private static string ResolveSourceModelRoot(string preferredPath, string fallbackPath)
+        {
+            try
+            {
+                return FileHelper.GetModelRootFolder(preferredPath);
+            }
+            catch
+            {
+                try
+                {
+                    return FileHelper.GetModelRootFolder(fallbackPath);
+                }
+                catch
+                {
+                    return fallbackPath;
+                }
             }
         }
 
@@ -817,13 +839,30 @@ namespace FODevManager.Services
         private static bool HasCompiledModelsInLibs(string envPath, out List<string> compiledFolders)
         {
             compiledFolders = new List<string>();
-            var libs = Path.Combine(envPath, "Libs");
-            if (!Directory.Exists(libs))
+            if (envPath.IsNullOrEmpty())
                 return false;
 
-            foreach (var dir in Directory.EnumerateDirectories(libs))
-                if (IsCompiledModelFolder(dir, out _))
-                    compiledFolders.Add(dir);
+            var trimmed = envPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var folderName = Path.GetFileName(trimmed);
+
+            // Support both "Libs" and "Lib" folder names.
+            var libsCandidates = (folderName.SameAs("Libs") || folderName.SameAs("Lib"))
+                ? new[] { trimmed }
+                : new[]
+                {
+                    Path.Combine(trimmed, "Libs"),
+                    Path.Combine(trimmed, "Lib")
+                };
+
+            foreach (var libsRoot in libsCandidates.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!Directory.Exists(libsRoot))
+                    continue;
+
+                foreach (var dir in Directory.EnumerateDirectories(libsRoot))
+                    if (IsCompiledModelFolder(dir, out _))
+                        compiledFolders.Add(dir);
+            }
 
             return compiledFolders.Count > 0;
         }
@@ -1455,7 +1494,7 @@ namespace FODevManager.Services
             foreach (var model in profile.AllModels)
             {
                 string status = model.IsDeployed ? "? Deployed" : "? Not Deployed";
-                string gitStatus = model.GitUrl.IsNullOrEmpty() ? string.Empty : "? Git Repo";
+                string gitStatus = profile.FindRepositoryForModel(model) != null ? "? Git Repo" : string.Empty;
                 MessageLogger.Info($"   - {model.ModelName}\t\t - {status} - {gitStatus}");
             }
         }
@@ -1637,8 +1676,7 @@ namespace FODevManager.Services
 
             if (updated)
             {
-                _fileService.SaveProfile(profile);
-                MessageLogger.Info($"?? Deployment status updated for profile '{profileName}'");
+                _fileService.SaveProfile(profile);                
             }
         }
 
@@ -1676,11 +1714,8 @@ namespace FODevManager.Services
                     continue;
                 }
 
-                // Prefer stored GitUrl if present, otherwise use detected origin
-                var gitUrl = environmentModel.GitUrl.IsNullOrEmpty() ? (detectedGitUrl ?? string.Empty) : environmentModel.GitUrl;
-                environmentModel.GitUrl = gitUrl;
-
-                var repoKey = !environmentModel.GitUrl.IsNullOrEmpty() ? environmentModel.GitUrl : repoRootFolder;
+                var gitUrl = detectedGitUrl ?? string.Empty;
+                var repoKey = !gitUrl.IsNullOrEmpty() ? gitUrl : repoRootFolder;
 
                 var normalizedRepoKey = RepositoryModel.NormalizeKey(repoKey);
 
@@ -1690,7 +1725,7 @@ namespace FODevManager.Services
                     repository = new RepositoryModel
                     {
                         RepoRootFolder = repoRootFolder,
-                        GitUrl = environmentModel.GitUrl.IsNullOrEmpty() ? null : environmentModel.GitUrl
+                        GitUrl = gitUrl.IsNullOrEmpty() ? null : gitUrl
                     };
 
                     repository.EnsureRepoId();
@@ -1707,8 +1742,7 @@ namespace FODevManager.Services
                 .ToList();
 
             profile.StandaloneModels = standaloneModels;
-
-            MessageLogger.Info($"?? Repositories built: {profile.Repositories.Count}. Standalone models: {profile.StandaloneModels.Count}");
+            
             return true;
         }
 
@@ -1788,7 +1822,7 @@ namespace FODevManager.Services
             existingRepository.TaskComment = updatedRepository.TaskComment ?? string.Empty;
 
             _fileService.SaveProfile(profile, updateExternal: true);
-            MessageLogger.Info($"? Repository properties saved: {existingRepository.DisplayName}");
+            
         }
 
         public void UpdateModelProperties(string profileName, ProfileEnvironmentModel updatedEnvironment)
