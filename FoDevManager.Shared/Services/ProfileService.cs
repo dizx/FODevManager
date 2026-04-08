@@ -61,8 +61,9 @@ namespace FODevManager.Services
             };
 
             _fileService.SaveProfile(profile, skipExistCheck: true);
+            SetActiveProfile(profileName);
             
-            MessageLogger.Info($"? Profile '{profileName}' created with solution file: {solutionFilePath}");
+            MessageLogger.Info($"✅ Profile '{profileName}' created with solution file: {solutionFilePath}");
         }
 
         public bool SwitchProfile(string newProfileName)
@@ -72,13 +73,13 @@ namespace FODevManager.Services
             
             if (currentProfileName == newProfileName)
             {
-                MessageLogger.Info($"?? Profile '{newProfileName}' is already active.");
+                MessageLogger.Info($"ℹ️ Profile '{newProfileName}' is already active.");
                 return false;
             }
 
             if (currentProfileName.IsNullOrEmpty())
             {
-                MessageLogger.Info("?? No active profile found. Proceeding to switch.");
+                MessageLogger.Info("ℹ️ No active profile found. Proceeding to switch.");
             }
 
             if (!currentProfileName.IsNullOrEmpty())
@@ -97,17 +98,17 @@ namespace FODevManager.Services
 
                         if (GitHelper.HasUncommittedChanges(repo.RepoRootFolder))
                         {
-                            MessageLogger.Error($"? Uncommitted Git changes found in repo '{repo.DisplayName}'. Switch aborted.");
+                            MessageLogger.Error($"❌ Uncommitted Git changes found in repo '{repo.DisplayName}'. Switch aborted.");
                             return false;
                         }
                     }
                 }
 
-                MessageLogger.Info($"?? Undeploying models from '{currentProfileName}'...");
+                MessageLogger.Info($"📦 Undeploying models from '{currentProfileName}'...");
                 _modelDeploymentService.UnDeployAllModels(currentProfileName);
             }
 
-            MessageLogger.Info($"?? Switching to profile '{newProfileName}'...");
+            MessageLogger.Info($"🔄 Switching to profile '{newProfileName}'...");
 
             var newProfile = _fileService.LoadProfile(newProfileName);
             
@@ -123,7 +124,7 @@ namespace FODevManager.Services
             _modelDeploymentService.DeployAllUndeployedModels(newProfileName);
             ApplyDatabase(newProfileName);
             SetActiveProfile(newProfileName);
-            MessageLogger.Highlight($"? Successfully switched to profile '{newProfileName}'.");
+            MessageLogger.Highlight($"✅ Successfully switched to profile '{newProfileName}'.");
 
             return true;
         }
@@ -300,7 +301,7 @@ namespace FODevManager.Services
                 return false;
             }
 
-            MessageLogger.Highlight($"? Profile export: Exported external profile to '{exportedProfilePath}'.");
+            MessageLogger.Highlight($"✅ Profile export: Exported external profile to '{exportedProfilePath}'.");
             return true;
         }
 
@@ -456,7 +457,7 @@ namespace FODevManager.Services
                 return null!;
             }
 
-            MessageLogger.Highlight($"?? Importing profile from: {profileJsonPath}");
+            MessageLogger.Highlight($"📥 Importing profile from: {profileJsonPath}");
             return ImportProfile(profileJsonPath);
         }
 
@@ -577,7 +578,7 @@ namespace FODevManager.Services
             var newDbName = (dbName ?? string.Empty).Trim();
             if (newDbName.IsNullOrEmpty())
             {
-                MessageLogger.Warning("?? Database name cannot be empty.");
+                MessageLogger.Warning("⚠️ Database name cannot be empty.");
                 return;
             }
 
@@ -587,7 +588,7 @@ namespace FODevManager.Services
             // If unchanged, do nothing (prevents repeated saves/exports)
             if ((profile.DatabaseName ?? "AXDB").SameAs(normalizedNew))
             {
-                MessageLogger.Info($"?? Database name unchanged ('{normalizedNew}').");
+                MessageLogger.Info($"ℹ️ Database name unchanged ('{normalizedNew}').");
                 return;
             }
 
@@ -607,7 +608,7 @@ namespace FODevManager.Services
                 ApplyDatabase(profileName);
             }
 
-            MessageLogger.Info($"? Database name '{dbName}' set for profile '{profileName}'.");
+            MessageLogger.Info($"✅ Database name '{dbName}' set for profile '{profileName}'.");
         }
 
         public void SetActiveProfile(string profileName)
@@ -620,7 +621,7 @@ namespace FODevManager.Services
                 _fileService.SaveProfile(profile);
             }
 
-            MessageLogger.Highlight($"?? Profile '{profileName}' marked as active.");
+            MessageLogger.Highlight($"✅ Profile '{profileName}' marked as active.");
         }
 
         public string? GetActiveProfileName()
@@ -651,7 +652,7 @@ namespace FODevManager.Services
 
             if (currentDb.SameAs(profile.DatabaseName))
             {
-                MessageLogger.Info($"?? Database is already set to '{currentDb}'. No change needed.");
+                MessageLogger.Info($"ℹ️ Database is already set to '{currentDb}'. No change needed.");
                 return;
             }
 
@@ -662,7 +663,7 @@ namespace FODevManager.Services
             }
             catch (Exception ex)
             {
-                MessageLogger.Error($"? Error applying database '{profile.DatabaseName}': {ex.Message}");
+                MessageLogger.Error($"❌ Error applying database '{profile.DatabaseName}': {ex.Message}");
             }
             finally
             {
@@ -902,13 +903,13 @@ namespace FODevManager.Services
             bool success = _modelDeploymentService.ConvertInstalledModelToProjectModel(targetFolderName, profile);
             if (!success)
             {
-                MessageLogger.Error($"? Failed to convert installed model at '{environmentPath}'.");
+                MessageLogger.Error($"❌ Failed to convert installed model at '{environmentPath}'.");
                 return;
             }
 
             AddProjectToVsSolution(profile, modelName);
 
-            MessageLogger.Highlight($"? Converted model '{modelName}' registered into solution.");
+            MessageLogger.Highlight($"✅ Converted model '{modelName}' registered into solution.");
         }
 
         private void AddProjectToVsSolution(string profileName, string modelName) => AddProjectToVsSolution(_fileService.LoadProfile(profileName), modelName);  
@@ -918,12 +919,12 @@ namespace FODevManager.Services
             var model = profile.FindModel(modelName);
             if (model == null)
             {
-                MessageLogger.Error($"? Error: Model '{modelName}' not found in profile after creation.");
+                MessageLogger.Error($"❌ Error: Model '{modelName}' not found in profile after creation.");
                 return;
             }
             _solutionService.AddProjectToSolution(profile, model);
 
-            MessageLogger.Info($"? Model '{modelName}' added to profile '{profile.ProfileName}' and included in solution.");
+            MessageLogger.Info($"✅ Model '{modelName}' added to profile '{profile.ProfileName}' and included in solution.");
 
         }
 
@@ -997,14 +998,14 @@ namespace FODevManager.Services
 
             if (profile.Repositories == null || profile.Repositories.Count == 0)
             {
-                MessageLogger.Info("?? Git reset: No repositories found in profile.");
+                MessageLogger.Info("ℹ️ Git reset: No repositories found in profile.");
                 return true;
             }
 
             var succeeded = 0;
             var failedRepos = new List<string>();
 
-            MessageLogger.Highlight($"?? Git reset profile: {profile.ProfileName}");
+            MessageLogger.Highlight($"🔄 Git reset profile: {profile.ProfileName}");
 
             foreach (var repository in profile.Repositories)
             {
@@ -1016,7 +1017,7 @@ namespace FODevManager.Services
 
                 var mainBranchName = repository.MainBranchName.IsNullOrEmpty() ? "main" : repository.MainBranchName;
 
-                MessageLogger.Info($"?? {repository.DisplayName}: stash ? checkout {mainBranchName} ? fetch ? pull");
+                MessageLogger.Info($"🔄 {repository.DisplayName}: stash → checkout {mainBranchName} → fetch → pull");
 
                 var ok = GitHelper.ResetToMainAndUpdate(repository.RepoRootFolder, mainBranchName);
                 if (ok)
@@ -1034,12 +1035,12 @@ namespace FODevManager.Services
 
             if (failedRepos.Count > 0)
             {
-                MessageLogger.Warning($"?? Git reset finished with errors. OK: {succeeded}, Failed: {failedRepos.Count}");
+                MessageLogger.Warning($"⚠️ Git reset finished with errors. OK: {succeeded}, Failed: {failedRepos.Count}");
                 MessageLogger.Warning($"Failed repos: {string.Join(", ", failedRepos)}");
                 return false;
             }
 
-            MessageLogger.Highlight($"? Git reset finished. Repos updated: {succeeded}");
+            MessageLogger.Highlight($"✅ Git reset finished. Repos updated: {succeeded}");
             return true;
         }
 
@@ -1676,7 +1677,8 @@ namespace FODevManager.Services
 
             if (updated)
             {
-                _fileService.SaveProfile(profile);                
+                _fileService.SaveProfile(profile);
+                MessageLogger.Info($"✅ Deployment status updated for profile '{profileName}'");
             }
         }
 
@@ -1742,7 +1744,8 @@ namespace FODevManager.Services
                 .ToList();
 
             profile.StandaloneModels = standaloneModels;
-            
+
+            MessageLogger.Info($"✅ Repositories built: {profile.Repositories.Count}. Standalone models: {profile.StandaloneModels.Count}");
             return true;
         }
 
@@ -1822,7 +1825,7 @@ namespace FODevManager.Services
             existingRepository.TaskComment = updatedRepository.TaskComment ?? string.Empty;
 
             _fileService.SaveProfile(profile, updateExternal: true);
-            
+            MessageLogger.Info($"✅ Repository properties saved: {existingRepository.DisplayName}");
         }
 
         public void UpdateModelProperties(string profileName, ProfileEnvironmentModel updatedEnvironment)
