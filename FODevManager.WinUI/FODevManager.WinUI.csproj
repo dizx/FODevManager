@@ -111,5 +111,9 @@
       SourceFiles="@(WinUIXamlPublishResource)"
       DestinationFolder="$(PublishDir)"
       SkipUnchangedFiles="true" />
+
+    <Error
+      Condition="!Exists('$(PublishDir)MainWindow.xbf') Or !Exists('$(PublishDir)$(AssemblyName).pri')"
+      Text="WinUI publish output is missing app XAML resources. Expected MainWindow.xbf and $(AssemblyName).pri in $(PublishDir)." />
   </Target>
 </Project>
