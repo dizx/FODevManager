@@ -1183,7 +1183,7 @@ namespace FODevManager.WinUI
 
         public static void LogStartupInfo()
         {
-            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.1";
+            var version = GetDisplayVersion();
             var buildDate = GetBuildDate().ToString("yyyy-MM-dd HH:mm");
 
 
@@ -1194,7 +1194,7 @@ namespace FODevManager.WinUI
 
         private async void ShowAboutDialog_Click(object sender, RoutedEventArgs e)
         {
-            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.1";
+            var version = GetDisplayVersion();
             var buildDate = GetBuildDate().ToString("yyyy-MM-dd HH:mm");
 
             var contentPanel = new StackPanel
@@ -1240,6 +1240,19 @@ namespace FODevManager.WinUI
             };
 
             await dialog.ShowAsync();
+        }
+
+        private static string GetDisplayVersion()
+        {
+            var informationalVersion = Assembly
+                .GetExecutingAssembly()
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+                .InformationalVersion;
+
+            if (!informationalVersion.IsNullOrEmpty())
+                return informationalVersion.Split('+')[0];
+
+            return Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.1.0-beta";
         }
 
         private static async Task<bool> RunOperationAsync(Action action, string operationName, bool shutdownServer = true)
