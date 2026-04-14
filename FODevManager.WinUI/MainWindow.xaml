@@ -148,10 +148,37 @@
                 </Button>
 
                 <!-- 🔷 Row 1: Database Name & Is Active -->
-                <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="10" Margin="0,10,0,10" IsDoubleTapEnabled="True" DoubleTapped="DatabaseNameTextBox_DoubleTapped">
+                <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="10" Margin="0,10,0,10">
                     <TextBlock Text="Database:" VerticalAlignment="Center" />
-                    <TextBox x:Name="DatabaseNameTextBox" Width="200" IsReadOnly="True"  KeyDown="DatabaseNameTextBox_KeyDown" />
-                    <CheckBox x:Name="IsActiveCheckBox" Content="Is Active" IsEnabled="False" VerticalAlignment="Center" />
+                    <TextBox x:Name="DatabaseNameTextBox"
+                             Width="200"
+                             PlaceholderText="Database name"
+                             IsReadOnly="True"
+                             KeyDown="DatabaseNameTextBox_KeyDown"
+                             ToolTipService.ToolTip="Profile database name. Click Edit to change it." />
+                    <Button x:Name="DatabaseNameEditButton"
+                            Content="Edit"
+                            Click="DatabaseNameEditButton_Click"
+                            ToolTipService.ToolTip="Edit the database name for the selected profile" />
+                    <Button x:Name="DatabaseNameApplyButton"
+                            Content="Apply"
+                            Click="DatabaseNameApplyButton_Click"
+                            Visibility="Collapsed"
+                            ToolTipService.ToolTip="Apply the database change" />
+                    <Button x:Name="DatabaseNameCancelButton"
+                            Content="Cancel"
+                            Click="DatabaseNameCancelButton_Click"
+                            Visibility="Collapsed"
+                            ToolTipService.ToolTip="Cancel editing the database name" />
+                    <TextBlock x:Name="DatabaseNameHintText"
+                               Text="Local override only. Press Enter or Apply to save, Esc or Cancel to discard."
+                               VerticalAlignment="Center"
+                               Opacity="0.75"
+                               Visibility="Collapsed" />
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <TextBlock Text="Profile Is Active" VerticalAlignment="Center" />
+                        <CheckBox x:Name="IsActiveCheckBox" IsEnabled="False" VerticalAlignment="Center" />
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- 🔷 Row 2: Repo and Models List -->

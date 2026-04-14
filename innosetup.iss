@@ -30,7 +30,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "C:\dev\FODevManager\FODevManager.WinUI\bin\win-x64\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "C:\dev\source\FODevManager\FODevManager.WinUI\bin\win-x64\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Code]
@@ -38,6 +38,8 @@ var
   SourceDir: string;
   ConfigPage: TInputQueryWizardPage;
   ShouldConfigure: Boolean;
+  HadExistingConfig: Boolean;
+  ExistingConfigBackupPath: string;
 
 function LoadTextFile(const FileName: string): string;
 var
@@ -49,9 +51,117 @@ begin
     Result := '';
 end;
 
+function EscapeJsonString(const Value: string): string;
+begin
+  Result := Value;
+  StringChangeEx(Result, '\', '\\', True);
+  StringChangeEx(Result, '"', '\"', True);
+end;
+
+function ReplaceJsonStringValue(const Json, Key, NewValue: string): string;
+var
+  KeyToken: string;
+  ValueStart: Integer;
+  ValueEnd: Integer;
+begin
+  Result := Json;
+  KeyToken := '"' + Key + '": "';
+  ValueStart := Pos(KeyToken, Result);
+
+  if ValueStart = 0 then
+    RaiseException('Could not find JSON key "' + Key + '" in appsettings.json.');
+
+  ValueStart := ValueStart + Length(KeyToken);
+  ValueEnd := ValueStart;
+
+  while (ValueEnd <= Length(Result)) and (Result[ValueEnd] <> '"') do
+    ValueEnd := ValueEnd + 1;
+
+  if ValueEnd > Length(Result) then
+    RaiseException('Could not parse JSON value for key "' + Key + '" in appsettings.json.');
+
+  Delete(Result, ValueStart, ValueEnd - ValueStart);
+  Insert(EscapeJsonString(NewValue), Result, ValueStart);
+end;
+
+procedure BackupExistingConfig();
+var
+  ConfigPath: string;
+begin
+  ConfigPath := ExpandConstant('{app}\appsettings.json');
+  HadExistingConfig := FileExists(ConfigPath);
+  ExistingConfigBackupPath := '';
+
+  if not HadExistingConfig then
+    exit;
+
+  ExistingConfigBackupPath := ExpandConstant('{tmp}\FODevManager.appsettings.backup.json');
+
+  if FileExists(ExistingConfigBackupPath) then
+    DeleteFile(ExistingConfigBackupPath);
+
+  if not FileCopy(ConfigPath, ExistingConfigBackupPath, False) then
+    RaiseException('Failed to back up appsettings.json before cleaning the install directory.');
+end;
+
+procedure CleanInstallDirectory();
+var
+  AppDir: string;
+  FindRec: TFindRec;
+  ItemPath: string;
+begin
+  AppDir := ExpandConstant('{app}');
+
+  if not DirExists(AppDir) then
+    exit;
+
+  if FindFirst(AppDir + '\*', FindRec) then
+  begin
+    try
+      repeat
+        if (FindRec.Name = '.') or (FindRec.Name = '..') then
+          continue;
+
+        ItemPath := AppDir + '\' + FindRec.Name;
+
+        if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+        begin
+          if not DelTree(ItemPath, True, True, True) then
+            RaiseException('Failed to remove existing directory: ' + ItemPath);
+        end
+        else
+        begin
+          if not DeleteFile(ItemPath) then
+            RaiseException('Failed to remove existing file: ' + ItemPath);
+        end;
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
+procedure RestoreExistingConfig();
+var
+  ConfigPath: string;
+begin
+  if not HadExistingConfig then
+    exit;
+
+  if ExistingConfigBackupPath = '' then
+    exit;
+
+  if not FileExists(ExistingConfigBackupPath) then
+    RaiseException('Expected backed up appsettings.json was not found after install.');
+
+  ConfigPath := ExpandConstant('{app}\appsettings.json');
+
+  if not FileCopy(ExistingConfigBackupPath, ConfigPath, False) then
+    RaiseException('Failed to restore appsettings.json after cleaning the install directory.');
+end;
+
 procedure InitializeWizard();
 begin
-  // Always create the config page
   ConfigPage := CreateInputQueryPage(
     wpSelectDir, 'Configuration', 'First-Time Setup',
     'Enter the source directory for your repositories.'
@@ -72,34 +182,45 @@ begin
     ShouldConfigure := not FileExists(ConfigFilePath);
 
     if not ShouldConfigure then
-    begin
-      Result := True; // skip this page
-    end;
-  end;
-end;
-
-procedure CurPageChanged(CurPageID: Integer);
-begin
-  if Assigned(ConfigPage) and (CurPageID = ConfigPage.ID) then
-  begin
-    SourceDir := ConfigPage.Values[0];
+      Result := True;
   end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  JsonPath, JsonContent: string;
+  JsonPath: string;
+  JsonContent: string;
 begin
-  if (CurStep = ssPostInstall) and ShouldConfigure then
+  if CurStep = ssInstall then
   begin
-    JsonPath := ExpandConstant('{app}\appsettings.json');
-    JsonContent := LoadTextFile(ExpandConstant('{app}\appsettings.template.json'));
-    StringChangeEx(JsonContent, '{{SourceDir}}', SourceDir, True);
-    SaveStringToFile(JsonPath, JsonContent, False);
-    MsgBox('✅ appsettings.json created successfully.', mbInformation, MB_OK);
+    BackupExistingConfig();
+    CleanInstallDirectory();
+  end;
+
+  if CurStep = ssPostInstall then
+  begin
+    if HadExistingConfig then
+    begin
+      RestoreExistingConfig();
+    end
+    else if ShouldConfigure then
+    begin
+      if Assigned(ConfigPage) then
+        SourceDir := ConfigPage.Values[0];
+
+      JsonPath := ExpandConstant('{app}\appsettings.json');
+      JsonContent := LoadTextFile(JsonPath);
+
+      if JsonContent = '' then
+        RaiseException('Installed appsettings.json was empty or missing.');
+
+      JsonContent := ReplaceJsonStringValue(JsonContent, 'DefaultSourceDirectory', SourceDir);
+
+      SaveStringToFile(JsonPath, JsonContent, False);
+      MsgBox('appsettings.json created successfully.', mbInformation, MB_OK);
+    end;
   end;
 end;
-
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -107,4 +228,3 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
-

@@ -695,6 +695,7 @@ namespace FODevManager.WinUI
         private void UpdateProfileFields(ProfileModel profile)
         {
             DatabaseNameTextBox.Text = profile.DatabaseName ?? string.Empty;
+            SetDatabaseEditingState(false);
             IsActiveCheckBox.IsChecked = profile.IsActive;
 
         }
@@ -1444,14 +1445,111 @@ namespace FODevManager.WinUI
             return profile;
         }
 
-        private void DatabaseNameTextBox_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
+        private void SetDatabaseEditingState(bool isEditing)
         {
-            DatabaseNameTextBox.IsReadOnly = false;
+            DatabaseNameTextBox.IsReadOnly = !isEditing;
+            DatabaseNameEditButton.Visibility = isEditing ? Visibility.Collapsed : Visibility.Visible;
+            DatabaseNameApplyButton.Visibility = isEditing ? Visibility.Visible : Visibility.Collapsed;
+            DatabaseNameCancelButton.Visibility = isEditing ? Visibility.Visible : Visibility.Collapsed;
+            DatabaseNameHintText.Visibility = isEditing ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void BeginDatabaseNameEdit()
+        {
+            if (ActiveProfile == null)
+            {
+                MessageLogger.Warning("Select a profile before editing the database name.");
+                return;
+            }
+
+            SetDatabaseEditingState(true);
+            DatabaseNameTextBox.Focus(FocusState.Programmatic);
+            DatabaseNameTextBox.SelectAll();
+        }
+
+        private void CancelDatabaseNameEdit()
+        {
+            DatabaseNameTextBox.Text = ActiveProfile?.DatabaseName ?? string.Empty;
+            SetDatabaseEditingState(false);
+        }
+
+        private async Task ApplyDatabaseNameChangeAsync()
+        {
+            if (ActiveProfile == null)
+                return;
+
+            var newDbString = (DatabaseNameTextBox.Text ?? string.Empty).Trim();
+            if (newDbString.SameAs(ActiveProfile.DatabaseName))
+            {
+                MessageLogger.Info("Database name unchanged.");
+                SetDatabaseEditingState(false);
+                return;
+            }
+
+            if (newDbString.IsNullOrEmpty())
+            {
+                MessageLogger.Warning("Database name cannot be empty.");
+                DatabaseNameTextBox.Text = ActiveProfile.DatabaseName;
+                return;
+            }
+
+            var dialog = new ContentDialog
+            {
+                Title = "Apply database change?",
+                Content = $"Change database for profile '{ActiveProfile.ProfileName}' to:\n\n“{newDbString}”\n\nApply now?",
+                PrimaryButtonText = "Yes",
+                CloseButtonText = "No",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result != ContentDialogResult.Primary)
+            {
+                CancelDatabaseNameEdit();
+                MessageLogger.Info("Database change cancelled.");
+                return;
+            }
+
+            await RunOperationAsync(() =>
+            {
+                _profileService.SetDatabaseName(ActiveProfile.ProfileName, newDbString);
+            }, "Apply database name");
+
+            ActiveProfile.DatabaseName = newDbString;
+            SetDatabaseEditingState(false);
+        }
+
+        private void DatabaseNameEditButton_Click(object sender, RoutedEventArgs e)
+        {
+            BeginDatabaseNameEdit();
+        }
+
+        private void DatabaseNameCancelButton_Click(object sender, RoutedEventArgs e)
+        {
+            CancelDatabaseNameEdit();
+            MessageLogger.Info("Database change cancelled.");
+        }
+
+        private async void DatabaseNameApplyButton_Click(object sender, RoutedEventArgs e)
+        {
+            await ApplyDatabaseNameChangeAsync();
         }
 
         private async void DatabaseNameTextBox_KeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
         {
-            if (e.Key != VirtualKey.Enter) return;
+            if (e.Key == VirtualKey.Escape)
+            {
+                CancelDatabaseNameEdit();
+                MessageLogger.Info("Database change cancelled.");
+                return;
+            }
+
+            if (e.Key != VirtualKey.Enter)
+                return;
+
+            await ApplyDatabaseNameChangeAsync();
+            return;
 
             if (ActiveProfile == null) return;
 
@@ -1632,6 +1730,7 @@ namespace FODevManager.WinUI
 
                     ProfilesDropdown.SelectedItem = null;
                     DatabaseNameTextBox.Text = string.Empty;
+                    SetDatabaseEditingState(false);
                     IsActiveCheckBox.IsChecked = false;
 
                     LoadProfiles();

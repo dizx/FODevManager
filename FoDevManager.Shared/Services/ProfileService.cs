@@ -328,6 +328,7 @@ namespace FODevManager.Services
 
                 sourceProfile.ProfileFilePath = importPath;
                 sourceProfile.IsActive = false;
+                PreserveLocalDatabaseOverride(sourceProfile);
 
                 var profileDestPath = Path.Combine(_profileStoragePath, sourceProfile.ProfileName + ".json");
                 if (File.Exists(profileDestPath))
@@ -396,6 +397,36 @@ namespace FODevManager.Services
                 MessageLogger.Error($"Failed to import profile: {ex.Message}");
                 return null!;
             }
+        }
+
+        private void PreserveLocalDatabaseOverride(ProfileModel importedProfile)
+        {
+            if (importedProfile == null)
+                throw new ArgumentNullException(nameof(importedProfile));
+
+            if (importedProfile.ProfileName.IsNullOrEmpty() || !_fileService.ExistProfile(importedProfile.ProfileName))
+                return;
+
+            var existingProfile = _fileService.LoadProfile(importedProfile.ProfileName);
+            var existingDatabaseName = NormalizeDatabaseName(existingProfile.DatabaseName);
+            var importedDatabaseName = NormalizeDatabaseName(importedProfile.DatabaseName);
+
+            if (existingDatabaseName.SameAs(importedDatabaseName))
+                return;
+
+            // A non-default local database name is treated as an explicit machine-local override.
+            if (existingDatabaseName.SameAs("AXDB"))
+                return;
+
+            importedProfile.DatabaseName = existingProfile.DatabaseName;
+            MessageLogger.Info(
+                $"Preserving local database '{existingProfile.DatabaseName}' for profile '{importedProfile.ProfileName}' instead of imported value '{importedDatabaseName}'.");
+        }
+
+        private static string NormalizeDatabaseName(string? databaseName)
+        {
+            var normalized = (databaseName ?? string.Empty).Trim();
+            return normalized.IsNullOrEmpty() ? "AXDB" : normalized;
         }
 
         

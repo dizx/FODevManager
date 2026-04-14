@@ -1,7 +1,9 @@
 using FODevManager.Services;
+using FODevManager.Models;
 using FODevManager.Utils;
 using System;
 using System.IO;
+using System.Text.Json;
 
 namespace FODevManager.Tests
 {
@@ -40,6 +42,45 @@ namespace FODevManager.Tests
             Assert.That(service.GetActiveProfileName(), Is.EqualTo("NewProfile"));
         }
 
+        [Test]
+        public void ImportProfile_Should_Preserve_Local_NonDefault_DatabaseName()
+        {
+            var service = CreateProfileService();
+
+            service.CreateProfile("SyncProfile");
+            service.SetDatabaseName("SyncProfile", "LocalDb");
+
+            var importPath = CreateExportProfile(
+                "SyncProfile",
+                "RepoDb",
+                Path.Combine(_baseDir, "Import", "SyncProfile.json"));
+
+            var importedProfile = service.ImportProfile(importPath);
+            var savedProfile = service.LoadProfile("SyncProfile");
+
+            Assert.That(importedProfile.DatabaseName, Is.EqualTo("LocalDb"));
+            Assert.That(savedProfile.DatabaseName, Is.EqualTo("LocalDb"));
+        }
+
+        [Test]
+        public void ImportProfile_Should_Use_Imported_DatabaseName_When_Local_Profile_Is_Default()
+        {
+            var service = CreateProfileService();
+
+            service.CreateProfile("SyncProfile");
+
+            var importPath = CreateExportProfile(
+                "SyncProfile",
+                "RepoDb",
+                Path.Combine(_baseDir, "Import", "SyncProfile.json"));
+
+            var importedProfile = service.ImportProfile(importPath);
+            var savedProfile = service.LoadProfile("SyncProfile");
+
+            Assert.That(importedProfile.DatabaseName, Is.EqualTo("RepoDb"));
+            Assert.That(savedProfile.DatabaseName, Is.EqualTo("RepoDb"));
+        }
+
         private ProfileService CreateProfileService()
         {
             var config = new AppConfig
@@ -66,6 +107,22 @@ namespace FODevManager.Tests
                 modelDeploymentService,
                 deployablePackageService,
                 profilesContainer);
+        }
+
+        private string CreateExportProfile(string profileName, string databaseName, string path)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+            var exportProfile = new ProfileModel
+            {
+                ProfileName = profileName,
+                DatabaseName = databaseName,
+                SolutionFilePath = $"{profileName}.sln"
+            };
+
+            var json = JsonSerializer.Serialize(exportProfile);
+            File.WriteAllText(path, json);
+            return path;
         }
     }
 }
