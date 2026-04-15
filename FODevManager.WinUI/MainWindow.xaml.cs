@@ -1795,6 +1795,8 @@ namespace FODevManager.WinUI
         private async Task ShowRepositoryPropertiesAsync(RepoGroupViewModel repoGroupViewModel)
         {
             RepositoryModel repositoryModel = repoGroupViewModel.Repository;
+            var maxDialogBodyWidth = Math.Max(440, Math.Min(620, this.Bounds.Width - 220));
+            var availableDialogBodyHeight = Math.Max(560, this.Bounds.Height - 80);
 
             var displayNameTextBox = new TextBox { Text = repositoryModel.DisplayName ?? string.Empty };
             var preferredBranchTextBox = new TextBox { Text = repositoryModel.PreferredBranch ?? string.Empty };
@@ -1814,36 +1816,149 @@ namespace FODevManager.WinUI
             var taskTextBox = new TextBox { Text = repositoryModel.Task ?? string.Empty };
             var taskCommentTextBox = new TextBox { Text = repositoryModel.TaskComment ?? string.Empty };
 
+            static TextBlock CreateFieldLabel(string text) => new()
+            {
+                Text = text,
+                Opacity = 0.72,
+                FontSize = 12
+            };
+
+            static Border CreateValueContainer(UIElement content) => new()
+            {
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(10, 7, 10, 7),
+                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(45, 255, 255, 255)),
+                BorderBrush = new SolidColorBrush(Colors.LightGray),
+                BorderThickness = new Thickness(1),
+                Child = content
+            };
+
+            static StackPanel CreateEditableField(string label, Control input) => new()
+            {
+                Spacing = 4,
+                Children =
+                {
+                    CreateFieldLabel(label),
+                    CreateValueContainer(input)
+                }
+            };
+
+            static StackPanel CreateReadOnlyField(string label, string value) => new()
+            {
+                Spacing = 4,
+                Children =
+                {
+                    CreateFieldLabel(label),
+                    CreateValueContainer(new TextBlock
+                    {
+                        Text = value.IsNullOrEmpty() ? "(empty)" : value,
+                        TextWrapping = TextWrapping.Wrap,
+                        FontWeight = FontWeights.SemiBold
+                    })
+                }
+            };
+
+            static Border CreateSectionWithContent(string title, string description, params UIElement[] content)
+            {
+                var sectionBody = new StackPanel
+                {
+                    Spacing = 10
+                };
+
+                sectionBody.Children.Add(new TextBlock
+                {
+                    Text = title,
+                    FontSize = 15,
+                    FontWeight = FontWeights.SemiBold
+                });
+
+                sectionBody.Children.Add(new TextBlock
+                {
+                    Text = description,
+                    Opacity = 0.72,
+                    TextWrapping = TextWrapping.Wrap
+                });
+
+                foreach (var element in content)
+                {
+                    sectionBody.Children.Add(element);
+                }
+
+                return new Border
+                {
+                    CornerRadius = new CornerRadius(10),
+                    Padding = new Thickness(14),
+                    Background = new SolidColorBrush(Windows.UI.Color.FromArgb(20, 255, 255, 255)),
+                    BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(28, 255, 255, 255)),
+                    BorderThickness = new Thickness(1),
+                    Child = sectionBody
+                };
+            }
+
+            var behaviorPanel = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    CreateValueContainer(autoCheckoutToggle),
+                    CreateValueContainer(autoStashToggle)
+                }
+            };
+
             var contentPanel = new StackPanel
             {
-                MinWidth = 400,
-                Spacing = 10,
+                MaxWidth = maxDialogBodyWidth,
+                Spacing = 12,
                 Children =
+                {
+                    new TextBlock
+                    {
+                        Text = repositoryModel.RepoId,
+                        FontSize = 18,
+                        FontWeight = FontWeights.SemiBold
+                    },
+                    CreateSectionWithContent(
+                        "Repository Details",
+                        "Reference information for this repository.",
+                        CreateReadOnlyField("Repository", repositoryModel.RepoId),
+                        CreateReadOnlyField("Root", repositoryModel.RepoRootFolder)),
+                    CreateSectionWithContent(
+                        "General",
+                        "Repository naming and branch preferences.",
+                        CreateEditableField("Display name", displayNameTextBox),
+                        CreateEditableField("Preferred branch", preferredBranchTextBox)),
+                    CreateSectionWithContent(
+                        "Git Behavior",
+                        "Control what should happen when the profile loads or the branch is dirty.",
+                        behaviorPanel),
+                    CreateSectionWithContent(
+                        "Task information",
+                        "Current task information for this repository.",
+                        CreateEditableField("Task", taskTextBox),
+                        CreateEditableField("Task comment", taskCommentTextBox))
+                }
+            };
+
+            var dialogContent = new Grid
             {
-                new TextBlock { Text = $"Repo: {repositoryModel.RepoId}" },
-                new TextBlock { Text = $"Root: {repositoryModel.RepoRootFolder}" },
-
-                new TextBlock { Text = "Display name" },
-                displayNameTextBox,
-
-                new TextBlock { Text = "Preferred branch" },
-                preferredBranchTextBox,
-
-                autoCheckoutToggle,
-                autoStashToggle,
-
-                new TextBlock { Text = "Task" },
-                taskTextBox,
-
-                new TextBlock { Text = "Task comment" },
-                taskCommentTextBox
-            }
+                MaxWidth = maxDialogBodyWidth,
+                Padding = new Thickness(4, 0, 18, 0),
+                Children =
+                {
+                    new ScrollViewer
+                    {
+                        Content = contentPanel,
+                        MaxHeight = availableDialogBodyHeight,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+                    }
+                }
             };
 
             var dialog = new ContentDialog
             {
                 Title = "Repository properties",
-                Content = contentPanel,
+                Content = dialogContent,
                 PrimaryButtonText = "Save",
                 CloseButtonText = "Cancel",
                 XamlRoot = this.Content.XamlRoot
