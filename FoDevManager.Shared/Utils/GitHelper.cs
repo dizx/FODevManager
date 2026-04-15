@@ -343,17 +343,27 @@ namespace FODevManager.Utils
 
         public static bool MergeMainIntoCurrentBranch(string repositoryRootFolder, string mainBranchName = "main")
         {
+            var safeMainBranchName = mainBranchName.IsNullOrEmpty() ? "main" : mainBranchName.Trim();
             var currentBranch = GetActiveBranch(repositoryRootFolder);
 
             if (currentBranch.IsNullOrEmpty())
                 throw new Exception("Unable to determine current branch.");
 
-            if (currentBranch.SameAs(mainBranchName))
-                throw new Exception("Already on main branch.");
+            if (!AsyncHelpers.RunSync(() => FetchAllAsync(repositoryRootFolder)))
+            {
+                MessageLogger.Warning($"⚠️ Failed to fetch before updating '{safeMainBranchName}'.");
+                return false;
+            }
+
+            if (currentBranch.SameAs(safeMainBranchName))
+            {
+                MessageLogger.Info($"ℹ️ Already on '{safeMainBranchName}'. Updating local branch from origin.");
+                return Pull(repositoryRootFolder, "origin", safeMainBranchName);
+            }
 
             return RunGitCommand(
                 repositoryRootFolder,
-                $"merge origin/{mainBranchName}",
+                $"merge origin/{safeMainBranchName}",
                 out _,
                 logOnSuccess: true,
                 logOnFailure: true);
