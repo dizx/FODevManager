@@ -25,9 +25,10 @@ namespace FODevManager.Services
         private readonly VisualStudioSolutionService _solutionService;
         private readonly ModelDeploymentService _modelDeploymentService;
         private readonly DeployablePackageService _deployablePackageService;
+        private readonly ModelVersionService _modelVersionService;
         private readonly ProfilesContainer _profilesContainer;
 
-        public ProfileService(AppConfig config, FileService fileService, VisualStudioSolutionService solutionService, ModelDeploymentService modelDeploymentService, DeployablePackageService deployablePackageService, ProfilesContainer profilesContainer)
+        public ProfileService(AppConfig config, FileService fileService, VisualStudioSolutionService solutionService, ModelDeploymentService modelDeploymentService, DeployablePackageService deployablePackageService, ModelVersionService modelVersionService, ProfilesContainer profilesContainer)
         {
             _defaultSourceDirectory = config.DefaultSourceDirectory;
             _deploymentBasePath = config.DeploymentBasePath;
@@ -37,6 +38,7 @@ namespace FODevManager.Services
             _solutionService = solutionService;
             _modelDeploymentService = modelDeploymentService;
             _deployablePackageService = deployablePackageService;
+            _modelVersionService = modelVersionService;
             _profilesContainer = profilesContainer;
             FileHelper.EnsureDirectoryExists(_defaultSourceDirectory);
             
@@ -1422,13 +1424,6 @@ namespace FODevManager.Services
             public required ModelVersion NewVersion { get; set; }
         }
 
-        private readonly record struct ModelVersion(int Major, int Minor, int Revision)
-        {
-            public ModelVersion WithIncrementedRevision() => new(Major, Minor, Revision + 1);
-
-            public override string ToString() => $"{Major}.{Minor}.{Revision}";
-        }
-
         public void UndeployAllModels()
         {
             _profilesContainer.Refresh();
@@ -1859,7 +1854,7 @@ namespace FODevManager.Services
             MessageLogger.Info($"✅ Repository properties saved: {existingRepository.DisplayName}");
         }
 
-        public void UpdateModelProperties(string profileName, ProfileEnvironmentModel updatedEnvironment)
+        public void UpdateModelProperties(string profileName, ProfileEnvironmentModel updatedEnvironment, ModelVersion? sourceVersion = null)
         {
             if (profileName.IsNullOrEmpty())
             {
@@ -1894,6 +1889,12 @@ namespace FODevManager.Services
             else
             {
                 targetEnvironment.IsMainFOModel = false;
+            }
+
+            if (targetEnvironment.ModelType == ModelType.Source && sourceVersion.HasValue)
+            {
+                if (!_modelVersionService.TryUpdateSourceVersion(targetEnvironment, sourceVersion.Value))
+                    return;
             }
 
             if (targetEnvironment.ModelType == ModelType.CompiledNuget)

@@ -253,9 +253,9 @@
                                                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
                                                     <Border x:Name="BorderIsMain" Grid.Column="0" Width="3" CornerRadius="2" Background="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Stretch" Margin="0,2,8,2" x:Load="{x:Bind Model.IsMainFOModel, Mode=OneWay}" />
                                                     <!-- Source -->
-                                                    <TextBlock x:Name="ModelNameSource" Text="{x:Bind ModelName}"  x:Load="{x:Bind IsSource, Mode=OneWay}" />
+                                                    <TextBlock x:Name="ModelNameSource" Text="{x:Bind DisplayNameWithVersion}" Opacity="0.88" x:Load="{x:Bind IsSource, Mode=OneWay}" />
                                                     <!-- Compiled -->
-                                                    <TextBlock x:Name="ModelNameCompiled" Text="{x:Bind ModelName}" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" FontWeight="SemiBold" x:Load="{x:Bind IsCompiled, Mode=OneWay}" />
+                                                    <TextBlock x:Name="ModelNameCompiled" Text="{x:Bind DisplayNameWithVersion}" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Opacity="0.8" FontWeight="SemiBold" x:Load="{x:Bind IsCompiled, Mode=OneWay}" />
                                                 </StackPanel>
 
 
@@ -292,7 +292,7 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <TextBlock Grid.Column="0" Text="{x:Bind ModelName}" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="0" Text="{x:Bind DisplayNameWithVersion}" Opacity="0.88" VerticalAlignment="Center"/>
 
                                 <TextBlock Grid.Column="1"
                                     Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}"

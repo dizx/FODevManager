@@ -44,6 +44,7 @@ namespace FODevManager.WinUI
         private readonly ProfileService _profileService;
         private readonly FileService _fileService;
         private readonly ModelDeploymentService _deploymentService;
+        private readonly ModelVersionService _modelVersionService;
         private readonly AppConfig _appConfig;
         private MicaController? _micaController;
         private SystemBackdropConfiguration? _backdropConfig;
@@ -64,7 +65,7 @@ namespace FODevManager.WinUI
 
         private UiDispatcher Ui => _uiDispatcher ?? throw new InvalidOperationException("BusyOps.Initialize must be called before using BusyOps.");
 
-        public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService, AppConfig appConfig)
+        public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService, ModelVersionService modelVersionService, AppConfig appConfig)
         {
             this.InitializeComponent();
             this.Activated += MainWindow_Activated;
@@ -91,6 +92,7 @@ namespace FODevManager.WinUI
             _profileService = profileService;
             _fileService = fileService;
             _deploymentService = deploymentService;
+            _modelVersionService = modelVersionService;
             _appConfig = appConfig;
 
 
@@ -295,6 +297,12 @@ namespace FODevManager.WinUI
             var modelViewModels = profile.AllModels
                 .Select(model => model.ToViewModel(profile.ProfileName))
                 .ToList();
+
+            foreach (var viewModel in modelViewModels)
+            {
+                if (_modelVersionService.TryGetVersionText(viewModel.Model, out var versionText))
+                    viewModel.VersionText = versionText;
+            }
 
             var groupingVm = new ModelsGroupingViewModel(profile, modelViewModels);
             var firstRepoGroup = groupingVm.GitGroups.FirstOrDefault();
@@ -1165,7 +1173,6 @@ namespace FODevManager.WinUI
         {
             var settingsPage = new SettingsPage
             {
-                MinWidth = 800,
                 MinHeight = 500
             };
             var dialog = new ContentDialog
@@ -1176,8 +1183,8 @@ namespace FODevManager.WinUI
                 XamlRoot = this.Content.XamlRoot
             };
 
-            dialog.MaxWidth = 1200;
-            dialog.MinWidth = 800;
+            dialog.MaxWidth = 900;
+            dialog.MinWidth = 640;
 
             await dialog.ShowAsync();
         }
@@ -1221,7 +1228,7 @@ namespace FODevManager.WinUI
 
             contentPanel.Children.Add(new TextBlock
             {
-                Text = "© 2025 ECIT Peritus AS. All rights reserved.",
+                Text = "© 2026 ECIT Peritus AS. All rights reserved.",
                 FontStyle = FontStyle.Italic
             });
 
@@ -1860,6 +1867,9 @@ namespace FODevManager.WinUI
         private async Task ShowModelPropertiesAsync(ProfileEnvironmentViewModel environmentViewModel)
         {
             ProfileEnvironmentModel environmentModel = environmentViewModel.Model;
+            var canEditVersion = environmentModel.ModelType == ModelType.Source;
+
+            _modelVersionService.TryGetVersion(environmentModel, out var currentVersion);
 
             var mainFoToggle = new ToggleSwitch
             {
@@ -1867,22 +1877,117 @@ namespace FODevManager.WinUI
                 Header = "Main FO model (solution root)"
             };
 
-            var contentPanel = new StackPanel
+            var versionMajorTextBox = new TextBox
             {
-                MinWidth = 400,
-                Spacing = 10,
+                Text = currentVersion.Major.ToString(CultureInfo.InvariantCulture),
+                Width = 80
+            };
+
+            var versionMinorTextBox = new TextBox
+            {
+                Text = currentVersion.Minor.ToString(CultureInfo.InvariantCulture),
+                Width = 80
+            };
+
+            var versionRevisionTextBox = new TextBox
+            {
+                Text = currentVersion.Revision.ToString(CultureInfo.InvariantCulture),
+                Width = 80
+            };
+
+            var readOnlyVersionText = new TextBlock
+            {
+                Text = environmentViewModel.HasVersion ? environmentViewModel.VersionText : "Unavailable",
+                FontWeight = FontWeights.SemiBold
+            };
+
+            static TextBlock CreateFieldLabel(string text) => new()
+            {
+                Text = text,
+                Opacity = 0.72,
+                FontSize = 12
+            };
+
+            static Border CreateValueContainer(UIElement content) => new()
+            {
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(10, 8, 10, 8),
+                Background = new SolidColorBrush(Colors.Transparent),
+                BorderBrush = new SolidColorBrush(Colors.LightGray),
+                BorderThickness = new Thickness(1),
+                Child = content
+            };
+
+            static StackPanel CreateReadOnlyField(string label, string value) => new()
+            {
+                Spacing = 4,
                 Children =
                 {
-                    new TextBlock { Text = $"Model: {environmentModel.ModelName}" },
-                    mainFoToggle,
+                    CreateFieldLabel(label),
+                    CreateValueContainer(new TextBlock
+                    {
+                        Text = value.IsNullOrEmpty() ? "(empty)" : value,
+                        TextWrapping = TextWrapping.Wrap,
+                        FontWeight = FontWeights.SemiBold
+                    })
+                }
+            };
 
-                    new TextBlock { Text = $"Type: {environmentModel.ModelType}" },
-                    new TextBlock { Text = $"Root: {environmentModel.ModelRootFolder}" },
-                    new TextBlock { Text = $"Project: {environmentModel.ProjectFilePath}" },
-                    new TextBlock { Text = $"Metadata: {environmentModel.MetadataFolder}" },
-                    new TextBlock { Text = $"Compiled: {environmentModel.CompiledModelFolder}" }
+            UIElement versionEditorOrValue = canEditVersion
+                ? CreateValueContainer(new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children =
+                    {
+                        versionMajorTextBox,
+                        new TextBlock { Text = ".", VerticalAlignment = VerticalAlignment.Center, Opacity = 0.72 },
+                        versionMinorTextBox,
+                        new TextBlock { Text = ".", VerticalAlignment = VerticalAlignment.Center, Opacity = 0.72 },
+                        versionRevisionTextBox
+                    }
+                })
+                : CreateValueContainer(readOnlyVersionText);
 
-
+            var contentPanel = new StackPanel
+            {
+                MinWidth = 460,
+                Spacing = 14,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = environmentModel.ModelName,
+                        FontSize = 20,
+                        FontWeight = FontWeights.SemiBold
+                    },
+                    new TextBlock
+                    {
+                        Text = canEditVersion
+                            ? "Source model version can be edited here."
+                            : "Compiled model version is read-only.",
+                        Opacity = 0.72
+                    },
+                    new StackPanel
+                    {
+                        Spacing = 8,
+                        Children =
+                        {
+                            CreateFieldLabel("Version"),
+                            versionEditorOrValue
+                        }
+                    },
+                    CreateValueContainer(mainFoToggle),
+                    new TextBlock
+                    {
+                        Text = "Model Details",
+                        FontWeight = FontWeights.SemiBold
+                    },
+                    CreateReadOnlyField("Type", environmentModel.ModelType.ToString()),
+                    CreateReadOnlyField("Root", environmentModel.ModelRootFolder),
+                    CreateReadOnlyField("Project", environmentModel.ProjectFilePath),
+                    CreateReadOnlyField("Metadata", environmentModel.MetadataFolder),
+                    CreateReadOnlyField("Compiled", environmentModel.CompiledModelFolder)
                 }
             };
 
@@ -1900,9 +2005,30 @@ namespace FODevManager.WinUI
             if (dialogResult != ContentDialogResult.Primary)
                 return;
 
+            ModelVersion? sourceVersion = null;
+            if (canEditVersion)
+            {
+                if (!int.TryParse(versionMajorTextBox.Text?.Trim(), out var major) || major < 0
+                    || !int.TryParse(versionMinorTextBox.Text?.Trim(), out var minor) || minor < 0
+                    || !int.TryParse(versionRevisionTextBox.Text?.Trim(), out var revision) || revision < 0)
+                {
+                    await new ContentDialog
+                    {
+                        Title = "Invalid version",
+                        Content = "Version must use non-negative integers in the format major.minor.revision.",
+                        CloseButtonText = "OK",
+                        XamlRoot = this.Content.XamlRoot
+                    }.ShowAsync();
+
+                    return;
+                }
+
+                sourceVersion = new ModelVersion(major, minor, revision);
+            }
+
             environmentModel.IsMainFOModel = mainFoToggle.IsOn;
 
-            _profileService.UpdateModelProperties(environmentViewModel.ProfileName, environmentModel);
+            _profileService.UpdateModelProperties(environmentViewModel.ProfileName, environmentModel, sourceVersion);
 
             UIRefresh(environmentViewModel.ProfileName);
         }

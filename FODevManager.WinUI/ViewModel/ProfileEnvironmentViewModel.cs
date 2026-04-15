@@ -11,6 +11,24 @@ namespace FODevManager.WinUI.ViewModel
         public string ProfileName { get; set; }
 
         public string ModelName { get; set; } = string.Empty;
+        private string _versionText = string.Empty;
+        public string VersionText
+        {
+            get => _versionText;
+            set
+            {
+                if (string.Equals(_versionText, value, StringComparison.Ordinal))
+                    return;
+
+                _versionText = value ?? string.Empty;
+                OnPropertyChanged(nameof(VersionText));
+                OnPropertyChanged(nameof(HasVersion));
+                OnPropertyChanged(nameof(DisplayNameWithVersion));
+            }
+        }
+
+        public bool HasVersion => !string.IsNullOrWhiteSpace(VersionText);
+        public string DisplayNameWithVersion => HasVersion ? $"{ModelName} {VersionText}" : ModelName;
         public string ModelRootFolder { get; set; } = string.Empty;
         public string ProjectFilePath { get; set; } = string.Empty;
         public string MetadataFolder { get; set; } = string.Empty;

@@ -25,6 +25,12 @@ namespace FODevManager.WinUI
             DataContext = _vm; // Page supports DataContext in WinUI 3
         }
 
+        private void OnPageLoaded(object sender, RoutedEventArgs e)
+        {
+            AzureArtifactsPatBox.Password = _vm.AzureArtifactsPat ?? string.Empty;
+            AzureArtifactsApiKeyBox.Password = _vm.AzureArtifactsApiKey ?? string.Empty;
+        }
+
         private async void OnBrowseClick(object sender, RoutedEventArgs e)
         {
             var picker = new FolderPicker();
@@ -50,6 +56,16 @@ namespace FODevManager.WinUI
         private void OnSaveClick(object sender, RoutedEventArgs e)
         {
             _vm.Save();
+        }
+
+        private void AzureArtifactsPatBox_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            _vm.AzureArtifactsPat = AzureArtifactsPatBox.Password ?? string.Empty;
+        }
+
+        private void AzureArtifactsApiKeyBox_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            _vm.AzureArtifactsApiKey = AzureArtifactsApiKeyBox.Password ?? string.Empty;
         }
     }
 }

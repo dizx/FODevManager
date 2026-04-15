@@ -195,6 +195,10 @@ namespace FODevManager.Services
             }
 
             context = new PackageContext(repositoryRoot, isvConfigPath, nugetConfigPath, packages);
+
+            if (!ValidatePackageSettings(repository, context))
+                return false;
+
             return true;
         }
 
@@ -602,6 +606,28 @@ namespace FODevManager.Services
 
             processStartInfo.Environment["VSS_NUGET_EXTERNAL_FEED_ENDPOINTS"] =
                 $"{{\"endpointCredentials\":[{endpointCredentials}]}}";
+        }
+
+        private bool ValidatePackageSettings(RepositoryModel repository, PackageContext context)
+        {
+            var azureFeedEndpoints = LoadAzureArtifactsFeedEndpoints(context.NugetConfigPath);
+            if (azureFeedEndpoints.Count == 0)
+                return true;
+
+            var secret = ResolveAzureArtifactsSecret();
+            if (!secret.IsNullOrEmpty())
+                return true;
+
+            var displayName = repository.DisplayName.IsNullOrEmpty()
+                ? repository.RepoId
+                : repository.DisplayName;
+
+            MessageLogger.Error(
+                $"❌ Cannot prepare NuGet packages for repository '{displayName}' because private Azure Artifacts feeds are configured but no credentials are saved in Settings.");
+            MessageLogger.Info("Open Settings and provide an Azure Artifacts PAT or API key before retrying package download.");
+            MessageLogger.LogOnly($"Azure Artifacts feeds: {string.Join(", ", azureFeedEndpoints)}");
+
+            return false;
         }
 
         private string ResolveAzureArtifactsSecret()

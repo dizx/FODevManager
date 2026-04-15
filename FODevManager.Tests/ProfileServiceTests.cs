@@ -97,6 +97,7 @@ namespace FODevManager.Tests
             var fileService = new FileService(config);
             var solutionService = new VisualStudioSolutionService(config);
             var deployablePackageService = new DeployablePackageService(config);
+            var modelVersionService = new ModelVersionService();
             var modelDeploymentService = new ModelDeploymentService(config, fileService, deployablePackageService);
             var profilesContainer = new ProfilesContainer(fileService);
 
@@ -106,6 +107,7 @@ namespace FODevManager.Tests
                 solutionService,
                 modelDeploymentService,
                 deployablePackageService,
+                modelVersionService,
                 profilesContainer);
         }
 

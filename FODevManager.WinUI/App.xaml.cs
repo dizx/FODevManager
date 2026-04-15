@@ -145,6 +145,7 @@ namespace FODevManager.WinUI
             services.AddSingleton<FileService>();
             services.AddSingleton<ModelDeploymentService>();
             services.AddSingleton<DeployablePackageService>();
+            services.AddSingleton<ModelVersionService>();
             services.AddSingleton<VisualStudioSolutionService>();
             services.AddSingleton<AppConfigWriter>();
             return services.BuildServiceProvider();
@@ -165,13 +166,14 @@ namespace FODevManager.WinUI
             var profileService = Services.GetRequiredService<ProfileService>();
             var fileService = Services.GetRequiredService<FileService>();
             var deploymentService = Services.GetRequiredService<ModelDeploymentService>();
+            var modelVersionService = Services.GetRequiredService<ModelVersionService>();
             var appConfig = Services.GetRequiredService<AppConfig>();
 
             InitializeW3CState();
 
             try
             {
-                var mainWindow = new MainWindow(profileService, fileService, deploymentService, appConfig);
+                var mainWindow = new MainWindow(profileService, fileService, deploymentService, modelVersionService, appConfig);
                 MainWindow = mainWindow;
                 mainWindow.Activate();
             }
