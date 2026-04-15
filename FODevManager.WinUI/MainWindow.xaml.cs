@@ -1868,31 +1868,35 @@ namespace FODevManager.WinUI
         {
             ProfileEnvironmentModel environmentModel = environmentViewModel.Model;
             var canEditVersion = environmentModel.ModelType == ModelType.Source;
+            var canChooseMainFoModel = environmentModel.ModelType == ModelType.Source;
+            var maxDialogBodyWidth = Math.Max(440, Math.Min(620, this.Bounds.Width - 220));
+            var availableDialogBodyHeight = Math.Max(560, this.Bounds.Height - 80);
 
             _modelVersionService.TryGetVersion(environmentModel, out var currentVersion);
 
             var mainFoToggle = new ToggleSwitch
             {
                 IsOn = environmentModel.IsMainFOModel,
-                Header = "Main FO model (solution root)"
+                Header = "Main FO model (solution root)",
+                IsEnabled = canChooseMainFoModel
             };
 
             var versionMajorTextBox = new TextBox
             {
                 Text = currentVersion.Major.ToString(CultureInfo.InvariantCulture),
-                Width = 80
+                Width = 72
             };
 
             var versionMinorTextBox = new TextBox
             {
                 Text = currentVersion.Minor.ToString(CultureInfo.InvariantCulture),
-                Width = 80
+                Width = 72
             };
 
             var versionRevisionTextBox = new TextBox
             {
                 Text = currentVersion.Revision.ToString(CultureInfo.InvariantCulture),
-                Width = 80
+                Width = 72
             };
 
             var readOnlyVersionText = new TextBlock
@@ -1911,8 +1915,8 @@ namespace FODevManager.WinUI
             static Border CreateValueContainer(UIElement content) => new()
             {
                 CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(10, 8, 10, 8),
-                Background = new SolidColorBrush(Colors.Transparent),
+                Padding = new Thickness(10, 7, 10, 7),
+                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(45, 255, 255, 255)),
                 BorderBrush = new SolidColorBrush(Colors.LightGray),
                 BorderThickness = new Thickness(1),
                 Child = content
@@ -1933,11 +1937,48 @@ namespace FODevManager.WinUI
                 }
             };
 
+            static Border CreateSectionWithContent(string title, string description, params UIElement[] content)
+            {
+                var sectionBody = new StackPanel
+                {
+                    Spacing = 10
+                };
+
+                sectionBody.Children.Add(new TextBlock
+                {
+                        Text = title,
+                        FontSize = 15,
+                        FontWeight = FontWeights.SemiBold
+                    });
+
+                sectionBody.Children.Add(new TextBlock
+                {
+                    Text = description,
+                    Opacity = 0.72,
+                    TextWrapping = TextWrapping.Wrap
+                });
+
+                foreach (var element in content)
+                {
+                    sectionBody.Children.Add(element);
+                }
+
+                return new Border
+                {
+                    CornerRadius = new CornerRadius(10),
+                    Padding = new Thickness(14),
+                    Background = new SolidColorBrush(Windows.UI.Color.FromArgb(20, 255, 255, 255)),
+                    BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(28, 255, 255, 255)),
+                    BorderThickness = new Thickness(1),
+                    Child = sectionBody
+                };
+            }
+
             UIElement versionEditorOrValue = canEditVersion
                 ? CreateValueContainer(new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
-                    Spacing = 8,
+                    Spacing = 6,
                     Children =
                     {
                         versionMajorTextBox,
@@ -1949,52 +1990,80 @@ namespace FODevManager.WinUI
                 })
                 : CreateValueContainer(readOnlyVersionText);
 
+            var versionSection = CreateSectionWithContent(
+                "Version",
+                canEditVersion
+                    ? "Source model version can be edited here."
+                    : "Compiled model details are read-only.",
+                versionEditorOrValue);
+
+            var modelDetailsSectionContent = new List<UIElement>
+            {
+                CreateReadOnlyField("Type", environmentModel.ModelType.ToString()),
+                CreateReadOnlyField("Root", environmentModel.ModelRootFolder)
+            };
+
+            if (environmentModel.ModelType == ModelType.Source)
+            {
+                modelDetailsSectionContent.Add(CreateReadOnlyField("Project", environmentModel.ProjectFilePath));
+                modelDetailsSectionContent.Add(CreateReadOnlyField("Metadata", environmentModel.MetadataFolder));
+            }
+            else
+            {
+                modelDetailsSectionContent.Add(CreateReadOnlyField("Compiled", environmentModel.CompiledModelFolder));
+            }
+
             var contentPanel = new StackPanel
             {
-                MinWidth = 460,
-                Spacing = 14,
+                MaxWidth = maxDialogBodyWidth,
+                Spacing = 12,
                 Children =
                 {
                     new TextBlock
                     {
                         Text = environmentModel.ModelName,
-                        FontSize = 20,
+                        FontSize = 18,
                         FontWeight = FontWeights.SemiBold
                     },
-                    new TextBlock
+                    versionSection
+                }
+            };
+
+            if (canChooseMainFoModel)
+            {
+                contentPanel.Children.Add(
+                    CreateSectionWithContent(
+                        "Solution role",
+                        "Control whether this source model should be treated as the main solution root.",
+                        CreateValueContainer(mainFoToggle)));
+            }
+
+            contentPanel.Children.Add(
+                CreateSectionWithContent(
+                    "Model Details",
+                    "Reference information for this model.",
+                    modelDetailsSectionContent.ToArray()));
+
+            UIElement dialogContent = new Grid
+            {
+                MaxWidth = maxDialogBodyWidth,
+                Padding = new Thickness(4, 0, 18, 0),
+                Children =
+                {
+                    new ScrollViewer
                     {
-                        Text = canEditVersion
-                            ? "Source model version can be edited here."
-                            : "Compiled model version is read-only.",
-                        Opacity = 0.72
-                    },
-                    new StackPanel
-                    {
-                        Spacing = 8,
-                        Children =
-                        {
-                            CreateFieldLabel("Version"),
-                            versionEditorOrValue
-                        }
-                    },
-                    CreateValueContainer(mainFoToggle),
-                    new TextBlock
-                    {
-                        Text = "Model Details",
-                        FontWeight = FontWeights.SemiBold
-                    },
-                    CreateReadOnlyField("Type", environmentModel.ModelType.ToString()),
-                    CreateReadOnlyField("Root", environmentModel.ModelRootFolder),
-                    CreateReadOnlyField("Project", environmentModel.ProjectFilePath),
-                    CreateReadOnlyField("Metadata", environmentModel.MetadataFolder),
-                    CreateReadOnlyField("Compiled", environmentModel.CompiledModelFolder)
+                        Content = contentPanel,
+                        MaxHeight = availableDialogBodyHeight,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+                    }
                 }
             };
 
             var dialog = new ContentDialog
             {
                 Title = "Model properties",
-                Content = contentPanel,
+                Content = dialogContent,
                 PrimaryButtonText = "Save",
                 CloseButtonText = "Cancel",
                 XamlRoot = this.Content.XamlRoot
@@ -2026,7 +2095,7 @@ namespace FODevManager.WinUI
                 sourceVersion = new ModelVersion(major, minor, revision);
             }
 
-            environmentModel.IsMainFOModel = mainFoToggle.IsOn;
+            environmentModel.IsMainFOModel = canChooseMainFoModel && mainFoToggle.IsOn;
 
             _profileService.UpdateModelProperties(environmentViewModel.ProfileName, environmentModel, sourceVersion);
 

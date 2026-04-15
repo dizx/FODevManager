@@ -1060,13 +1060,13 @@ namespace FODevManager.Utils
             }
         }
 
-        private static bool RunGitCommand(string workingDirectory, string arguments, bool logOnSuccess = false, bool logOnFailure = true, bool allowCredentialPrompt = false)
+        private static bool RunGitCommand(string workingDirectory, string arguments, bool logOnSuccess = false, bool logOnFailure = true, bool allowCredentialPrompt = true)
         {
             var result = string.Empty;
             return RunGitCommand(workingDirectory, arguments, out result, logOnSuccess, logOnFailure, allowCredentialPrompt);
         }
 
-        private static bool RunGitCommand(string workingDirectory, string arguments, out string combinedOutput, bool logOnSuccess = false, bool logOnFailure = true, bool allowCredentialPrompt = false)
+        private static bool RunGitCommand(string workingDirectory, string arguments, out string combinedOutput, bool logOnSuccess = false, bool logOnFailure = true, bool allowCredentialPrompt = true)
         {
             var (ok, output) = RunGitCommandAsync(
                     workingDirectory,
@@ -1084,7 +1084,7 @@ namespace FODevManager.Utils
         }
 
         private static async Task<(bool Ok, string Output)> RunGitCommandAsync(string workingDirectory, string arguments, TimeSpan timeout, 
-            CancellationToken cancellationToken, bool logOnSuccess = false, bool logOnFailure = true, bool allowCredentialPrompt = false)
+            CancellationToken cancellationToken, bool logOnSuccess = false, bool logOnFailure = true, bool allowCredentialPrompt = true)
         {
             if (workingDirectory.IsNullOrEmpty())
                 return (false, "Working directory is null or empty.");

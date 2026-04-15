@@ -1,11 +1,14 @@
 using FODevManager.Models;
 using System;
 using System.ComponentModel;
+using System.Text.RegularExpressions;
 
 namespace FODevManager.WinUI.ViewModel
 {
     public sealed class ProfileEnvironmentViewModel : INotifyPropertyChanged
     {
+        private static readonly Regex TrailingVersionPattern = new(@"(?:[-\s]+)?\d+\.\d+\.\d+(?:\.\d+)?$", RegexOptions.Compiled);
+
         public ProfileEnvironmentModel Model { get; set; }
 
         public string ProfileName { get; set; }
@@ -28,7 +31,26 @@ namespace FODevManager.WinUI.ViewModel
         }
 
         public bool HasVersion => !string.IsNullOrWhiteSpace(VersionText);
-        public string DisplayNameWithVersion => HasVersion ? $"{ModelName} {VersionText}" : ModelName;
+        public string DisplayName => BuildDisplayName();
+        public string DisplayNameWithVersion
+        {
+            get
+            {
+                if (!HasVersion)
+                    return DisplayName;
+
+                var normalizedModelName = DisplayName;
+                var normalizedVersion = VersionText.Trim();
+
+                if (normalizedModelName.EndsWith(normalizedVersion, StringComparison.OrdinalIgnoreCase))
+                    return normalizedModelName;
+
+                if (TrailingVersionPattern.IsMatch(normalizedModelName))
+                    return normalizedModelName;
+
+                return $"{normalizedModelName} {normalizedVersion}".Trim();
+            }
+        }
         public string ModelRootFolder { get; set; } = string.Empty;
         public string ProjectFilePath { get; set; } = string.Empty;
         public string MetadataFolder { get; set; } = string.Empty;
@@ -66,6 +88,18 @@ namespace FODevManager.WinUI.ViewModel
         public bool IsSource => ModelType == ModelType.Source;
 
         public event PropertyChangedEventHandler? PropertyChanged;
+
+        private string BuildDisplayName()
+        {
+            var normalizedModelName = (ModelName ?? string.Empty).Trim();
+            if (normalizedModelName.Length == 0)
+                return string.Empty;
+
+            if (ModelType != ModelType.CompiledNuget)
+                return normalizedModelName;
+
+            return TrailingVersionPattern.Replace(normalizedModelName, string.Empty).TrimEnd('-', ' ');
+        }
 
         private void OnPropertyChanged(string propertyName)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
