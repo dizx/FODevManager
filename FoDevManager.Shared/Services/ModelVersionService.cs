@@ -83,6 +83,10 @@ namespace FODevManager.Services
                     root.Add(new XElement("VersionBuild", "0"));
 
                 document.Save(descriptorFilePath);
+
+                if (!TryUpdateMatchingNuspecVersion(model, version))
+                    return false;
+
                 return true;
             }
             catch (Exception exception)
@@ -226,6 +230,101 @@ namespace FODevManager.Services
             }
 
             existing.Value = value;
+        }
+
+        private static bool TryUpdateMatchingNuspecVersion(ProfileEnvironmentModel model, ModelVersion version)
+        {
+            var nuspecPath = ResolveMatchingNuspecPath(model);
+            if (nuspecPath.IsNullOrEmpty())
+                return true;
+
+            try
+            {
+                var document = XDocument.Load(nuspecPath);
+                var metadataElement = document.Root?.Name.LocalName == "package"
+                    ? document.Root.Elements().FirstOrDefault(element => element.Name.LocalName == "metadata")
+                    : document.Descendants().FirstOrDefault(element => element.Name.LocalName == "metadata");
+
+                if (metadataElement == null)
+                {
+                    MessageLogger.Warning($"Found nuspec for model '{model.ModelName}', but it has no metadata node: {nuspecPath}");
+                    return false;
+                }
+
+                var versionElement = metadataElement.Elements().FirstOrDefault(element => element.Name.LocalName == "version");
+                if (versionElement == null)
+                {
+                    metadataElement.Add(new XElement(metadataElement.GetDefaultNamespace() + "version", version.ToString()));
+                }
+                else
+                {
+                    versionElement.Value = version.ToString();
+                }
+
+                document.Save(nuspecPath);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"Failed to update nuspec version for model '{model.ModelName}': {exception.Message}");
+                return false;
+            }
+        }
+
+        private static string ResolveMatchingNuspecPath(ProfileEnvironmentModel model)
+        {
+            var searchRoot = ResolveNuspecSearchRoot(model);
+            if (searchRoot.IsNullOrEmpty() || !Directory.Exists(searchRoot))
+                return string.Empty;
+
+            var candidateNames = new[] { model.ModelName, model.PackageId }
+                .Where(value => !value.IsNullOrEmpty())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(value => $"{value}.nuspec")
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (candidateNames.Count == 0)
+                return string.Empty;
+
+            var matchingFiles = Directory
+                .EnumerateFiles(searchRoot, "*.nuspec", SearchOption.AllDirectories)
+                .Where(path => candidateNames.Contains(Path.GetFileName(path)))
+                .OrderBy(path => GetNuspecPriority(path, model))
+                .ThenBy(path => path.Length)
+                .ToList();
+
+            return matchingFiles.FirstOrDefault() ?? string.Empty;
+        }
+
+        private static string ResolveNuspecSearchRoot(ProfileEnvironmentModel model)
+        {
+            if (!model.ModelRootFolder.IsNullOrEmpty() && Directory.Exists(model.ModelRootFolder))
+                return model.ModelRootFolder;
+
+            if (!model.ProjectFilePath.IsNullOrEmpty())
+            {
+                var projectDirectory = Path.GetDirectoryName(model.ProjectFilePath);
+                if (!projectDirectory.IsNullOrEmpty() && Directory.Exists(projectDirectory))
+                    return projectDirectory;
+            }
+
+            if (!model.MetadataFolder.IsNullOrEmpty() && Directory.Exists(model.MetadataFolder))
+                return model.MetadataFolder;
+
+            return string.Empty;
+        }
+
+        private static int GetNuspecPriority(string nuspecPath, ProfileEnvironmentModel model)
+        {
+            var fileName = Path.GetFileNameWithoutExtension(nuspecPath);
+
+            if (!model.ModelName.IsNullOrEmpty() && fileName.Equals(model.ModelName, StringComparison.OrdinalIgnoreCase))
+                return 0;
+
+            if (!model.PackageId.IsNullOrEmpty() && fileName.Equals(model.PackageId, StringComparison.OrdinalIgnoreCase))
+                return 1;
+
+            return 2;
         }
     }
 

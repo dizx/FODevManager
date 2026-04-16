@@ -121,5 +121,105 @@ namespace FODevManager.Tests
             Assert.That(ok, Is.True);
             Assert.That(versionText, Does.Match(@"\d+\.\d+\.\d+"));
         }
+
+        [Test]
+        public void TryUpdateSourceVersion_Should_Update_Matching_Nuspec_When_Present()
+        {
+            var modelName = "PackagedModel";
+            var modelRoot = Path.Combine(_baseDir, "RepoRoot");
+            var metadataFolder = Path.Combine(modelRoot, "Metadata", modelName);
+            var descriptorFolder = Path.Combine(metadataFolder, "Descriptor");
+            var nuspecFolder = Path.Combine(modelRoot, "Packaging");
+            Directory.CreateDirectory(descriptorFolder);
+            Directory.CreateDirectory(nuspecFolder);
+
+            var descriptorPath = Path.Combine(descriptorFolder, $"{modelName}.xml");
+            var nuspecPath = Path.Combine(nuspecFolder, $"{modelName}.nuspec");
+
+            File.WriteAllText(
+                descriptorPath,
+                """
+                <AxModelInfo>
+                  <VersionBuild>0</VersionBuild>
+                  <VersionMajor>1</VersionMajor>
+                  <VersionMinor>0</VersionMinor>
+                  <VersionRevision>0</VersionRevision>
+                </AxModelInfo>
+                """);
+
+            File.WriteAllText(
+                nuspecPath,
+                """
+                <package>
+                  <metadata>
+                    <id>PackagedModel</id>
+                    <version>1.0.0</version>
+                  </metadata>
+                </package>
+                """);
+
+            var model = new ProfileEnvironmentModel
+            {
+                ModelName = modelName,
+                ModelRootFolder = modelRoot,
+                MetadataFolder = metadataFolder,
+                ModelType = ModelType.Source
+            };
+
+            var ok = _service.TryUpdateSourceVersion(model, new ModelVersion(3, 5, 7));
+
+            Assert.That(ok, Is.True);
+            Assert.That(File.ReadAllText(descriptorPath), Does.Contain("<VersionMajor>3</VersionMajor>"));
+            Assert.That(File.ReadAllText(nuspecPath), Does.Contain("<version>3.5.7</version>"));
+        }
+
+        [Test]
+        public void TryUpdateSourceVersion_Should_Not_Update_Unrelated_Nuspec()
+        {
+            var modelName = "FocusedModel";
+            var modelRoot = Path.Combine(_baseDir, "RepoRoot");
+            var metadataFolder = Path.Combine(modelRoot, "Metadata", modelName);
+            var descriptorFolder = Path.Combine(metadataFolder, "Descriptor");
+            Directory.CreateDirectory(descriptorFolder);
+
+            var descriptorPath = Path.Combine(descriptorFolder, $"{modelName}.xml");
+            var unrelatedNuspecPath = Path.Combine(modelRoot, "AnotherPackage.nuspec");
+
+            File.WriteAllText(
+                descriptorPath,
+                """
+                <AxModelInfo>
+                  <VersionBuild>0</VersionBuild>
+                  <VersionMajor>1</VersionMajor>
+                  <VersionMinor>0</VersionMinor>
+                  <VersionRevision>0</VersionRevision>
+                </AxModelInfo>
+                """);
+
+            File.WriteAllText(
+                unrelatedNuspecPath,
+                """
+                <package>
+                  <metadata>
+                    <id>AnotherPackage</id>
+                    <version>9.9.9</version>
+                  </metadata>
+                </package>
+                """);
+
+            var model = new ProfileEnvironmentModel
+            {
+                ModelName = modelName,
+                ModelRootFolder = modelRoot,
+                MetadataFolder = metadataFolder,
+                ModelType = ModelType.Source
+            };
+
+            var ok = _service.TryUpdateSourceVersion(model, new ModelVersion(2, 1, 4));
+
+            Assert.That(ok, Is.True);
+            Assert.That(File.ReadAllText(descriptorPath), Does.Contain("<VersionRevision>4</VersionRevision>"));
+            Assert.That(File.ReadAllText(unrelatedNuspecPath), Does.Contain("<version>9.9.9</version>"));
+        }
     }
 }
