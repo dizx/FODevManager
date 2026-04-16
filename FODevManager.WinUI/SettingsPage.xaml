@@ -108,6 +108,31 @@
                 </StackPanel>
             </Border>
 
+            <Border Style="{StaticResource SectionCardStyle}">
+                <StackPanel Spacing="16">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Package publishing" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="Control what happens after a deployable package is created." Style="{StaticResource FieldHintStyle}" />
+                    </StackPanel>
+
+                    <Border CornerRadius="10" Padding="14" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Push after package build" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBlock Text="When enabled, NugetUtil will push the generated package immediately after fopack completes." Style="{StaticResource FieldHintStyle}" />
+                            <ToggleSwitch
+                                Header="Push deployable package right away"
+                                IsOn="{Binding PushDeployablePackageOnBuild, Mode=TwoWay}" />
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="NuGet source name" Style="{StaticResource FieldLabelStyle}" />
+                        <TextBlock Text="Optional. Passed to NugetUtil as -source. Leave empty if the default configured source should be used." Style="{StaticResource FieldHintStyle}" />
+                        <TextBox Text="{Binding PushDeployablePackageSource, Mode=TwoWay}" PlaceholderText="For example: MyFeed" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="Save settings" Click="OnSaveClick" Style="{StaticResource AccentButtonStyle}" />
             </StackPanel>

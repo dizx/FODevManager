@@ -68,24 +68,69 @@ namespace FODevManager.Services
             return CreateSolutionFile(profile.ProfileName, solutionDir, solutionFilePath);
         }
 
-        public string CreateTemporarySingleModelSolution(ProfileModel profile, ProfileEnvironmentModel model, string tempRootFolder)
+        public string CreateSingleModelBuildSolution(ProfileModel profile, ProfileEnvironmentModel model)
         {
             if (profile == null) throw new ArgumentNullException(nameof(profile));
             if (model == null) throw new ArgumentNullException(nameof(model));
-            if (tempRootFolder.IsNullOrEmpty()) throw new ArgumentException("Temporary solution folder is required.", nameof(tempRootFolder));
+            if (model.ProjectFilePath.IsNullOrEmpty())
+                throw new ArgumentException("Model project file path is required.", nameof(model));
 
-            Directory.CreateDirectory(tempRootFolder);
+            var projectFilePath = Path.GetFullPath(model.ProjectFilePath);
+            var solutionDirectory = Path.GetDirectoryName(projectFilePath);
+            if (solutionDirectory.IsNullOrEmpty())
+                throw new InvalidOperationException($"Could not resolve a solution directory for '{projectFilePath}'.");
 
-            var temporaryProfile = new ProfileModel
+            if (!File.Exists(projectFilePath))
+                throw new FileNotFoundException("Source project file not found.", projectFilePath);
+
+            var sourceSolutionFilePath = GetSolutionFilePath(profile);
+            if (!File.Exists(sourceSolutionFilePath))
+                throw new FileNotFoundException("Source solution file not found.", sourceSolutionFilePath);
+
+            Directory.CreateDirectory(solutionDirectory);
+            var solutionFilePath = Path.Combine(solutionDirectory, $"{model.ModelName}.packagebuild.sln");
+            var relativeProjectPath = Path.GetRelativePath(solutionDirectory, projectFilePath)
+                .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
+                .Replace('/', '\\');
+
+            var lines = File.ReadAllLines(sourceSolutionFilePath);
+            var builder = new StringBuilder();
+            var keepProjectBlock = false;
+            var projectFound = false;
+
+            foreach (var line in lines)
             {
-                ProfileName = $"{profile.ProfileName}-{model.ModelName}",
-                SolutionFilePath = Path.Combine(tempRootFolder, $"{model.ModelName}.packagebuild.sln")
-            };
+                var trimmedLine = line.TrimStart();
+                if (trimmedLine.StartsWith("Project(", StringComparison.Ordinal))
+                {
+                    var projectName = TryGetProjectNameFromLine(line);
+                    keepProjectBlock = !projectName.IsNullOrEmpty() && projectName!.Contains(model.ModelName, StringComparison.OrdinalIgnoreCase);
+                    if (keepProjectBlock)
+                    {
+                        projectFound = true;
+                        var parts = line.Split('"');
+                        if (parts.Length >= 6)
+                        {
+                            builder.AppendLine($"{parts[0]}\"{parts[1]}\"{parts[2]}\"{parts[3]}\"{parts[4]}\"{relativeProjectPath}\"{string.Join("\"", parts.Skip(6))}");
+                            continue;
+                        }
+                    }
+                }
 
-            CreateSolutionFile(temporaryProfile.ProfileName, tempRootFolder, temporaryProfile.SolutionFilePath);
-            AddProjectToSolution(temporaryProfile, model);
+                if (keepProjectBlock || !trimmedLine.StartsWith("Project(", StringComparison.Ordinal))
+                    builder.AppendLine(line);
 
-            return temporaryProfile.SolutionFilePath;
+                if (trimmedLine.Equals("EndProject", StringComparison.Ordinal))
+                    keepProjectBlock = false;
+            }
+
+            if (!projectFound)
+                throw new InvalidOperationException($"Model '{model.ModelName}' could not be found in solution '{sourceSolutionFilePath}'.");
+
+            File.WriteAllText(solutionFilePath, builder.ToString());
+
+            MessageLogger.Info($"✅ Single-model build solution ready: {solutionFilePath}");
+            return solutionFilePath;
         }
 
         private string CreateSolutionFile(string profileName, string solutionDir, string solutionFilePath)

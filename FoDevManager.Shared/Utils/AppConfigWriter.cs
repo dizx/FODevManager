@@ -73,6 +73,12 @@ namespace FODevManager.Shared.Utils
                         case nameof(AppConfig.AzureArtifactsApiKey):
                             _config.AzureArtifactsApiKey = Convert.ToString(value) ?? string.Empty;
                             break;
+                        case nameof(AppConfig.PushDeployablePackageOnBuild):
+                            _config.PushDeployablePackageOnBuild = Convert.ToBoolean(value);
+                            break;
+                        case nameof(AppConfig.PushDeployablePackageSource):
+                            _config.PushDeployablePackageSource = Convert.ToString(value) ?? string.Empty;
+                            break;
                         default:
                             // unknown key: JSON updated; no in-memory mapping
                             break;

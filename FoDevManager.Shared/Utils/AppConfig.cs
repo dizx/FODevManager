@@ -18,6 +18,8 @@ namespace FODevManager.Utils
         public string AzureArtifactsUsername { get; set; } = string.Empty;
         public string AzureArtifactsPat { get; set; } = string.Empty;
         public string AzureArtifactsApiKey { get; set; } = string.Empty;
+        public bool PushDeployablePackageOnBuild { get; set; } = false;
+        public string PushDeployablePackageSource { get; set; } = string.Empty;
 
         public int ModelIdBegin { get; set; }
 
@@ -40,11 +42,16 @@ namespace FODevManager.Utils
             AzureArtifactsUsername = Environment.ExpandEnvironmentVariables(configuration["AzureArtifactsUsername"] ?? string.Empty);
             AzureArtifactsPat = Environment.ExpandEnvironmentVariables(configuration["AzureArtifactsPat"] ?? string.Empty);
             AzureArtifactsApiKey = Environment.ExpandEnvironmentVariables(configuration["AzureArtifactsApiKey"] ?? string.Empty);
+            PushDeployablePackageSource = Environment.ExpandEnvironmentVariables(configuration["PushDeployablePackageSource"] ?? string.Empty);
             ModelIdBegin = int.Parse(Environment.ExpandEnvironmentVariables(configuration["ModelIdBegin"] ?? "896001001"));
             ModelIdEnd = int.Parse(Environment.ExpandEnvironmentVariables(configuration["ModelIdEnd"] ?? "896009999"));
 
             var toggle = Environment.ExpandEnvironmentVariables(configuration["CheckUncommittedBeforeSwitch"]);
             if (bool.TryParse(toggle, out var onOff)) CheckUncommittedBeforeSwitch = onOff;
+
+            var pushDeployablePackageOnBuild = Environment.ExpandEnvironmentVariables(configuration["PushDeployablePackageOnBuild"]);
+            if (bool.TryParse(pushDeployablePackageOnBuild, out var pushOnBuild))
+                PushDeployablePackageOnBuild = pushOnBuild;
 
         }
     }

@@ -44,6 +44,20 @@ namespace FODevManager.WinUI.ViewModel
             set => SetProperty(ref _azureArtifactsApiKey, value ?? string.Empty);
         }
 
+        private bool _pushDeployablePackageOnBuild;
+        public bool PushDeployablePackageOnBuild
+        {
+            get => _pushDeployablePackageOnBuild;
+            set => SetProperty(ref _pushDeployablePackageOnBuild, value);
+        }
+
+        private string _pushDeployablePackageSource = string.Empty;
+        public string PushDeployablePackageSource
+        {
+            get => _pushDeployablePackageSource;
+            set => SetProperty(ref _pushDeployablePackageSource, value ?? string.Empty);
+        }
+
         public SettingsViewModel(AppConfigWriter configWriter)
         {
             _configWriter = configWriter ?? throw new ArgumentNullException(nameof(configWriter));
@@ -55,6 +69,8 @@ namespace FODevManager.WinUI.ViewModel
             _azureArtifactsUsername = cfg.AzureArtifactsUsername;
             _azureArtifactsPat = cfg.AzureArtifactsPat;
             _azureArtifactsApiKey = cfg.AzureArtifactsApiKey;
+            _pushDeployablePackageOnBuild = cfg.PushDeployablePackageOnBuild;
+            _pushDeployablePackageSource = cfg.PushDeployablePackageSource;
         }
 
         public void Save()
@@ -67,6 +83,8 @@ namespace FODevManager.WinUI.ViewModel
                 _configWriter.UpdateSetting(nameof(AppConfig.AzureArtifactsUsername), AzureArtifactsUsername);
                 _configWriter.UpdateSetting(nameof(AppConfig.AzureArtifactsPat), AzureArtifactsPat);
                 _configWriter.UpdateSetting(nameof(AppConfig.AzureArtifactsApiKey), AzureArtifactsApiKey);
+                _configWriter.UpdateSetting(nameof(AppConfig.PushDeployablePackageOnBuild), PushDeployablePackageOnBuild);
+                _configWriter.UpdateSetting(nameof(AppConfig.PushDeployablePackageSource), PushDeployablePackageSource);
 
                 // keep in-memory AppConfig aligned, if writer exposes it via GetConfig()
                 var cfg = _configWriter.GetConfig();
@@ -75,6 +93,8 @@ namespace FODevManager.WinUI.ViewModel
                 cfg.AzureArtifactsUsername = AzureArtifactsUsername;
                 cfg.AzureArtifactsPat = AzureArtifactsPat;
                 cfg.AzureArtifactsApiKey = AzureArtifactsApiKey;
+                cfg.PushDeployablePackageOnBuild = PushDeployablePackageOnBuild;
+                cfg.PushDeployablePackageSource = PushDeployablePackageSource;
 
                 MessageLogger.Highlight("Settings saved.");
             }

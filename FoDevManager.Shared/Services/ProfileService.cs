@@ -1568,7 +1568,7 @@ namespace FODevManager.Services
                 return false;
             }
 
-            var solutionFilePath = _solutionService.GetSolutionFilePath(profile);
+            var solutionFilePath = _solutionService.CreateSingleModelBuildSolution(profile, model);
             return _deployablePackageService.BuildDeployableNugetPackage(profile, model, solutionFilePath);
         }
 

@@ -3,7 +3,6 @@ using FODevManager.Models;
 using FODevManager.Shared.Utils;
 using FODevManager.Utils;
 using System.Diagnostics;
-using System.IO.Compression;
 using System.Xml.Linq;
 
 namespace FODevManager.Services
@@ -25,19 +24,13 @@ namespace FODevManager.Services
             Application2BuildPackageId,
             ApplicationSuiteBuildPackageId
         ];
-        private static readonly string[] IncludedDeployablePayloadFolders =
-        [
-            "bin",
-            "AdditionalFiles",
-            "Reports",
-            "Resources"
-        ];
-
         private readonly string _deployablePackagesRoot;
         private readonly string _deploymentBasePath;
         private readonly string _azureArtifactsUsername;
         private readonly string _azureArtifactsPat;
         private readonly string _azureArtifactsApiKey;
+        private readonly bool _pushDeployablePackageOnBuild;
+        private readonly string _pushDeployablePackageSource;
 
         public DeployablePackageService(AppConfig config)
         {
@@ -46,6 +39,8 @@ namespace FODevManager.Services
             _azureArtifactsUsername = config.AzureArtifactsUsername;
             _azureArtifactsPat = config.AzureArtifactsPat;
             _azureArtifactsApiKey = config.AzureArtifactsApiKey;
+            _pushDeployablePackageOnBuild = config.PushDeployablePackageOnBuild;
+            _pushDeployablePackageSource = config.PushDeployablePackageSource;
 
             if (!_deployablePackagesRoot.IsNullOrEmpty())
             {
@@ -176,7 +171,6 @@ namespace FODevManager.Services
             var runRoot = Path.Combine(artifactsRoot, "BuildPackages", model.ModelName, timestamp);
             var buildOutputRoot = Path.Combine(runRoot, "BuildOutput");
             var nugetOutputRoot = Path.Combine(runRoot, "NuGet");
-            var deployablePackagePath = Path.Combine(runRoot, $"{model.ModelName}.deployable.zip");
 
             EnsureCleanDirectory(runRoot);
             Directory.CreateDirectory(buildOutputRoot);
@@ -193,27 +187,40 @@ namespace FODevManager.Services
                 return false;
             }
 
-            CreateDeployablePackageZip(payloadRoot, model.ModelName, deployablePackagePath);
-            MessageLogger.Info($"📦 Deployable package created: {deployablePackagePath}");
+            var sourceFileCount = Directory.GetFiles(payloadRoot, "*", SearchOption.AllDirectories).Length;
+            if (sourceFileCount == 0)
+            {
+                MessageLogger.Error($"❌ Compiled payload root '{payloadRoot}' contains no files.");
+                return false;
+            }
 
-            if (!RunNugetUtilFopack(deployablePackagePath, nugetOutputRoot))
+            var capturedPayloadRoot = IsPathWithinDirectory(payloadRoot, buildOutputRoot)
+                ? payloadRoot
+                : Path.Combine(buildOutputRoot, model.ModelName);
+
+            if (!AreSameDirectoryPath(payloadRoot, capturedPayloadRoot))
+            {
+                EnsureCleanDirectory(capturedPayloadRoot);
+                FileHelper.CopyDirectory(payloadRoot, capturedPayloadRoot);
+            }
+
+            var capturedFileCount = Directory.GetFiles(capturedPayloadRoot, "*", SearchOption.AllDirectories).Length;
+            if (capturedFileCount == 0)
+            {
+                MessageLogger.Error($"❌ Build output copy created '{capturedPayloadRoot}' but no files were copied from '{payloadRoot}'.");
+                return false;
+            }
+
+            MessageLogger.Info($"📦 Using compiled payload directory: {payloadRoot} ({sourceFileCount} files)");
+            MessageLogger.Info($"📁 Captured build output: {capturedPayloadRoot} ({capturedFileCount} files)");
+            MessageLogger.Highlight($"✅ Build output captured for model '{model.ModelName}'.");
+
+            if (!RunNugetUtilFopack(capturedPayloadRoot, nugetOutputRoot, out var packagePath, out var nuspecPath))
                 return false;
 
-            var generatedNupkg = Directory.GetFiles(nugetOutputRoot, "*.nupkg", SearchOption.TopDirectoryOnly)
-                .OrderByDescending(File.GetLastWriteTimeUtc)
-                .FirstOrDefault();
+            if (!CopyNuspecToModelRoot(model, nuspecPath))
+                return false;
 
-            var generatedNuspec = Directory.GetFiles(nugetOutputRoot, "*.nuspec", SearchOption.TopDirectoryOnly)
-                .OrderByDescending(File.GetLastWriteTimeUtc)
-                .FirstOrDefault();
-
-            if (!generatedNupkg.IsNullOrEmpty())
-                MessageLogger.Highlight($"✅ NuGet package created: {generatedNupkg}");
-
-            if (!generatedNuspec.IsNullOrEmpty())
-                MessageLogger.Info($"🧾 Nuspec saved: {generatedNuspec}");
-
-            MessageLogger.Highlight($"✅ Package build completed for model '{model.ModelName}'.");
             return true;
         }
 
@@ -988,8 +995,11 @@ namespace FODevManager.Services
             return true;
         }
 
-        private bool RunNugetUtilFopack(string deployablePackagePath, string nugetOutputRoot)
+        private bool RunNugetUtilFopack(string payloadRoot, string nugetOutputRoot, out string packagePath, out string nuspecPath)
         {
+            packagePath = string.Empty;
+            nuspecPath = string.Empty;
+
             var nugetUtilPath = ResolveNugetUtilExecutable();
             if (nugetUtilPath.IsNullOrEmpty())
             {
@@ -997,10 +1007,19 @@ namespace FODevManager.Services
                 return false;
             }
 
+            var arguments = $"fopack \"{payloadRoot}\" -output \"{nugetOutputRoot}\" -save-nuspec";
+            if (_pushDeployablePackageOnBuild)
+            {
+                arguments += " -push";
+
+                if (!_pushDeployablePackageSource.IsNullOrEmpty())
+                    arguments += $" -source \"{_pushDeployablePackageSource}\"";
+            }
+
             var processStartInfo = new ProcessStartInfo
             {
                 FileName = nugetUtilPath,
-                Arguments = $"fopack \"{deployablePackagePath}\" -output \"{nugetOutputRoot}\" -save-nuspec",
+                Arguments = arguments,
                 WorkingDirectory = nugetOutputRoot,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -1008,13 +1027,68 @@ namespace FODevManager.Services
                 CreateNoWindow = true
             };
 
+            var appNugetConfigPath = ResolveApplicationNugetConfigPath();
+            if (!appNugetConfigPath.IsNullOrEmpty())
+                ApplyAzureArtifactsCredentials(processStartInfo, appNugetConfigPath);
+
             if (!RunProcess(processStartInfo, out var output))
             {
-                MessageLogger.Error($"❌ NugetUtil failed for '{deployablePackagePath}'. {output}".Trim());
+                MessageLogger.Error($"❌ NugetUtil failed for '{payloadRoot}'. {output}".Trim());
                 return false;
             }
 
+            var packageFiles = Directory.Exists(nugetOutputRoot)
+                ? Directory.GetFiles(nugetOutputRoot, "*.nupkg", SearchOption.TopDirectoryOnly)
+                : [];
+            var nuspecFiles = Directory.Exists(nugetOutputRoot)
+                ? Directory.GetFiles(nugetOutputRoot, "*.nuspec", SearchOption.TopDirectoryOnly)
+                : [];
+
+            if (packageFiles.Length == 0)
+            {
+                MessageLogger.Error($"❌ NugetUtil completed, but no .nupkg was created under '{nugetOutputRoot}'.");
+                return false;
+            }
+
+            if (nuspecFiles.Length == 0)
+            {
+                MessageLogger.Error($"❌ NugetUtil completed, but no .nuspec was created under '{nugetOutputRoot}'.");
+                return false;
+            }
+
+            packagePath = packageFiles[0];
+            nuspecPath = nuspecFiles[0];
+
+            MessageLogger.Info($"📦 NuGet package: {packagePath}");
+            MessageLogger.Info($"📄 Nuspec: {nuspecPath}");
             MessageLogger.Info("✅ NugetUtil packaging completed.");
+            return true;
+        }
+
+        private static bool CopyNuspecToModelRoot(ProfileEnvironmentModel model, string nuspecPath)
+        {
+            if (model == null)
+                throw new ArgumentNullException(nameof(model));
+
+            if (nuspecPath.IsNullOrEmpty() || !File.Exists(nuspecPath))
+            {
+                MessageLogger.Error($"❌ Generated nuspec '{nuspecPath}' could not be found.");
+                return false;
+            }
+
+            if (!TryGetModelPackageRoot(model, out var modelPackageRoot))
+            {
+                MessageLogger.Error($"❌ Could not resolve a model root folder for '{model.ModelName}' to place the nuspec.");
+                return false;
+            }
+
+            Directory.CreateDirectory(modelPackageRoot);
+
+            var destinationNuspecPath = Path.Combine(modelPackageRoot, Path.GetFileName(nuspecPath));
+            if (!AreSameFilePath(nuspecPath, destinationNuspecPath))
+                File.Copy(nuspecPath, destinationNuspecPath, overwrite: true);
+
+            MessageLogger.Info($"📄 Nuspec copied to model root: {destinationNuspecPath}");
             return true;
         }
 
@@ -1170,7 +1244,7 @@ namespace FODevManager.Services
             Directory.CreateDirectory(path);
         }
 
-        private static bool TryResolveBuiltPayloadRoot(string buildOutputRoot, string modelName, out string payloadRoot)
+        private bool TryResolveBuiltPayloadRoot(string buildOutputRoot, string modelName, out string payloadRoot)
         {
             payloadRoot = string.Empty;
 
@@ -1195,7 +1269,16 @@ namespace FODevManager.Services
                 : null;
 
             if (xrefPath.IsNullOrEmpty())
+            {
+                var packagesLocalPayloadRoot = Path.Combine(_deploymentBasePath, modelName);
+                if (IsValidPayloadRoot(packagesLocalPayloadRoot, modelName))
+                {
+                    payloadRoot = packagesLocalPayloadRoot;
+                    return true;
+                }
+
                 return false;
+            }
 
             var candidateRoot = Path.GetDirectoryName(xrefPath!) ?? string.Empty;
             if (!IsValidPayloadRoot(candidateRoot, modelName))
@@ -1203,6 +1286,75 @@ namespace FODevManager.Services
 
             payloadRoot = candidateRoot;
             return true;
+        }
+
+        private static bool AreSameDirectoryPath(string leftPath, string rightPath)
+        {
+            if (leftPath.IsNullOrEmpty() || rightPath.IsNullOrEmpty())
+                return false;
+
+            var normalizedLeftPath = Path.GetFullPath(leftPath)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var normalizedRightPath = Path.GetFullPath(rightPath)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            return normalizedLeftPath.Equals(normalizedRightPath, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsPathWithinDirectory(string candidatePath, string directoryPath)
+        {
+            if (candidatePath.IsNullOrEmpty() || directoryPath.IsNullOrEmpty())
+                return false;
+
+            var normalizedCandidatePath = Path.GetFullPath(candidatePath)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var normalizedDirectoryPath = Path.GetFullPath(directoryPath)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            if (normalizedCandidatePath.Equals(normalizedDirectoryPath, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            var directoryPrefix = normalizedDirectoryPath + Path.DirectorySeparatorChar;
+            return normalizedCandidatePath.StartsWith(directoryPrefix, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool AreSameFilePath(string leftPath, string rightPath)
+        {
+            if (leftPath.IsNullOrEmpty() || rightPath.IsNullOrEmpty())
+                return false;
+
+            var normalizedLeftPath = Path.GetFullPath(leftPath);
+            var normalizedRightPath = Path.GetFullPath(rightPath);
+            return normalizedLeftPath.Equals(normalizedRightPath, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryGetModelPackageRoot(ProfileEnvironmentModel model, out string modelPackageRoot)
+        {
+            modelPackageRoot = string.Empty;
+
+            var projectRoot = model.ProjectFilePath.IsNullOrEmpty()
+                ? string.Empty
+                : Path.GetDirectoryName(Path.GetFullPath(model.ProjectFilePath)) ?? string.Empty;
+
+            if (!projectRoot.IsNullOrEmpty())
+            {
+                modelPackageRoot = projectRoot;
+                return true;
+            }
+
+            if (!model.ModelRootFolder.IsNullOrEmpty())
+            {
+                modelPackageRoot = Path.GetFullPath(model.ModelRootFolder);
+                return true;
+            }
+
+            if (!model.MetadataFolder.IsNullOrEmpty())
+            {
+                modelPackageRoot = Path.GetFullPath(model.MetadataFolder);
+                return true;
+            }
+
+            return false;
         }
 
         private static bool IsValidPayloadRoot(string payloadRoot, string modelName)
@@ -1214,54 +1366,6 @@ namespace FODevManager.Services
                 || File.Exists(Path.Combine(payloadRoot, "bin", $"Dynamics.AX.{modelName}.dll"));
         }
 
-        private static void CreateDeployablePackageZip(string payloadRoot, string modelName, string deployablePackagePath)
-        {
-            var tempPayloadZipPath = Path.Combine(Path.GetTempPath(), $"fodev-{modelName}-{Guid.NewGuid():N}.zip");
-
-            try
-            {
-                using (var innerArchive = ZipFile.Open(tempPayloadZipPath, ZipArchiveMode.Create))
-                {
-                    AddPayloadEntryIfExists(innerArchive, payloadRoot, $"{modelName}.xref", $"{modelName}.xref");
-
-                    foreach (var folderName in IncludedDeployablePayloadFolders)
-                    {
-                        AddDirectoryToArchive(innerArchive, Path.Combine(payloadRoot, folderName), folderName);
-                    }
-                }
-
-                using var outerArchive = ZipFile.Open(deployablePackagePath, ZipArchiveMode.Create);
-                outerArchive.CreateEntryFromFile(tempPayloadZipPath, $"AOSService/Packages/files/{modelName}.zip", CompressionLevel.Optimal);
-            }
-            finally
-            {
-                if (File.Exists(tempPayloadZipPath))
-                    File.Delete(tempPayloadZipPath);
-            }
-        }
-
-        private static void AddPayloadEntryIfExists(ZipArchive archive, string payloadRoot, string sourceName, string entryName)
-        {
-            var sourcePath = Path.Combine(payloadRoot, sourceName);
-            if (File.Exists(sourcePath))
-            {
-                archive.CreateEntryFromFile(sourcePath, entryName, CompressionLevel.Optimal);
-            }
-        }
-
-        private static void AddDirectoryToArchive(ZipArchive archive, string directoryPath, string archiveRoot)
-        {
-            if (!Directory.Exists(directoryPath))
-                return;
-
-            var files = Directory.GetFiles(directoryPath, "*", SearchOption.AllDirectories);
-            foreach (var filePath in files)
-            {
-                var relativePath = Path.GetRelativePath(directoryPath, filePath)
-                    .Replace(Path.DirectorySeparatorChar, '/');
-                archive.CreateEntryFromFile(filePath, $"{archiveRoot}/{relativePath}", CompressionLevel.Optimal);
-            }
-        }
 
         private static string? ResolveNuGetExecutable()
         {
