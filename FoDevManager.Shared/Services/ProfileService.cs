@@ -1552,6 +1552,26 @@ namespace FODevManager.Services
             return true;
         }
 
+        public bool BuildDeployableNugetPackage(string profileName, string modelName)
+        {
+            var profile = _fileService.LoadProfile(profileName);
+            if (profile == null)
+            {
+                MessageLogger.Error($"❌ Profile '{profileName}' was not found.");
+                return false;
+            }
+
+            var model = profile.FindModel(modelName);
+            if (model == null)
+            {
+                MessageLogger.Error($"❌ Model '{modelName}' was not found in profile '{profileName}'.");
+                return false;
+            }
+
+            var solutionFilePath = _solutionService.GetSolutionFilePath(profile);
+            return _deployablePackageService.BuildDeployableNugetPackage(profile, model, solutionFilePath);
+        }
+
         public void UpdateGitBranchesInProfile(ProfileModel profile)
         {
             foreach (var repo in profile.Repositories)

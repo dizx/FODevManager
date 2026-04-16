@@ -1422,6 +1422,15 @@ namespace FODevManager.WinUI
             return await RunOperationAsync(() => _deploymentService.UnDeployModel(profileName, modelName), "Undeploy model");
         }
 
+        private async Task<bool> BuildDeployablePackageForModel(string profileName, string modelName)
+        {
+            var (ok, success) = await BusyOps.TrySyncAsAsync(
+                () => _profileService.BuildDeployableNugetPackage(profileName, modelName),
+                "Build deployable package");
+
+            return ok && success;
+        }
+
         private async Task<bool> DeployAllModels(string profileName)
         {
             var (ok, success) = await BusyOps.TrySyncAsAsync(() => _deploymentService.DeployAllUndeployedModels(profileName), "Deploy all models");
@@ -1787,6 +1796,23 @@ namespace FODevManager.WinUI
             };
 
             flyout.Items.Add(propertiesMenuItem);
+
+            if (clickedItem is ProfileEnvironmentViewModel packageViewModel
+                && packageViewModel.Model.ModelType == ModelType.Source)
+            {
+                var buildPackageMenuItem = new MenuFlyoutItem
+                {
+                    Text = "Build Deployable Package…"
+                };
+
+                buildPackageMenuItem.Click += async (_, _) =>
+                {
+                    await BuildDeployablePackageForModel(packageViewModel.ProfileName, packageViewModel.ModelName)
+                        .ConfigureAwait(true);
+                };
+
+                flyout.Items.Add(buildPackageMenuItem);
+            }
 
             flyout.ShowAt(listView, eventArgs.GetPosition(listView));
             eventArgs.Handled = true;

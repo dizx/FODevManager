@@ -71,6 +71,9 @@
     <None Update="appsettings.Development.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="nuget.config">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <Page Update="BusyOverlay.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>

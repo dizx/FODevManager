@@ -1,13 +1,38 @@
 using FODevManager.Messages;
 using FODevManager.Models;
+using FODevManager.Shared.Utils;
 using FODevManager.Utils;
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Xml.Linq;
 
 namespace FODevManager.Services
 {
     public sealed class DeployablePackageService
     {
+        private const string CompilerPackageId = "Microsoft.Dynamics.AX.Platform.CompilerPackage";
+        private const string PlatformBuildPackageId = "Microsoft.Dynamics.AX.Platform.DevALM.BuildXpp";
+        private const string Application1BuildPackageId = "Microsoft.Dynamics.AX.Application1.DevALM.BuildXpp";
+        private const string Application2BuildPackageId = "Microsoft.Dynamics.AX.Application2.DevALM.BuildXpp";
+        private const string ApplicationSuiteBuildPackageId = "Microsoft.Dynamics.AX.ApplicationSuite.DevALM.BuildXpp";
+        private const string NugetUtilDefaultPath = @"C:\nuget\nugetutil.exe";
+        private const int NugetDownloadRetryCount = 5;
+        private static readonly string[] FoBuildPackageIds =
+        [
+            CompilerPackageId,
+            PlatformBuildPackageId,
+            Application1BuildPackageId,
+            Application2BuildPackageId,
+            ApplicationSuiteBuildPackageId
+        ];
+        private static readonly string[] IncludedDeployablePayloadFolders =
+        [
+            "bin",
+            "AdditionalFiles",
+            "Reports",
+            "Resources"
+        ];
+
         private readonly string _deployablePackagesRoot;
         private readonly string _deploymentBasePath;
         private readonly string _azureArtifactsUsername;
@@ -87,6 +112,109 @@ namespace FODevManager.Services
             }
 
             return EnsureCompiledNugetModels(profile, repository);
+        }
+
+        public bool BuildDeployableNugetPackage(ProfileModel profile, ProfileEnvironmentModel model, string solutionFilePath)
+        {
+            if (profile == null)
+                throw new ArgumentNullException(nameof(profile));
+
+            if (model == null)
+                throw new ArgumentNullException(nameof(model));
+
+            if (solutionFilePath.IsNullOrEmpty() || !File.Exists(solutionFilePath))
+            {
+                MessageLogger.Error($"❌ Solution file not found: {solutionFilePath}");
+                return false;
+            }
+
+            if (model.ModelType != ModelType.Source)
+            {
+                MessageLogger.Error($"❌ Only source models can be packaged. '{model.ModelName}' is {model.ModelType}.");
+                return false;
+            }
+
+            if (model.ModelName.IsNullOrEmpty())
+            {
+                MessageLogger.Error("❌ Model name is required to build a deployable package.");
+                return false;
+            }
+
+            if (model.ProjectFilePath.IsNullOrEmpty() || !File.Exists(model.ProjectFilePath))
+            {
+                MessageLogger.Error($"❌ Project file not found for model '{model.ModelName}': {model.ProjectFilePath}");
+                return false;
+            }
+
+            if (_deployablePackagesRoot.IsNullOrEmpty())
+            {
+                MessageLogger.Error("❌ DeployablePackages is not configured. Cannot build package artifacts.");
+                return false;
+            }
+
+            var appNugetConfigPath = ResolveApplicationNugetConfigPath();
+            if (appNugetConfigPath.IsNullOrEmpty())
+            {
+                MessageLogger.Error("❌ Could not locate FO Dev Manager nuget.config in the app directory.");
+                return false;
+            }
+
+            if (!ValidateBuildPackageSettings(appNugetConfigPath))
+                return false;
+
+            var buildPackagesRoot = Path.Combine(_deployablePackagesRoot, "BuildPackages");
+            FileHelper.EnsureDirectoryExists(buildPackagesRoot);
+
+            if (!TryEnsureFoBuildPackages(buildPackagesRoot, appNugetConfigPath, out var packageRoots))
+                return false;
+
+            if (!TryBuildMsBuildContext(packageRoots, out var buildContext))
+                return false;
+
+            var artifactsRoot = GetModelArtifactsRoot(profile, model);
+            var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            var runRoot = Path.Combine(artifactsRoot, "BuildPackages", model.ModelName, timestamp);
+            var buildOutputRoot = Path.Combine(runRoot, "BuildOutput");
+            var nugetOutputRoot = Path.Combine(runRoot, "NuGet");
+            var deployablePackagePath = Path.Combine(runRoot, $"{model.ModelName}.deployable.zip");
+
+            EnsureCleanDirectory(runRoot);
+            Directory.CreateDirectory(buildOutputRoot);
+            Directory.CreateDirectory(nugetOutputRoot);
+
+            MessageLogger.Highlight($"📦 Building deployable package for '{model.ModelName}'...");
+
+            if (!RunMsBuild(solutionFilePath, buildContext, buildOutputRoot))
+                return false;
+
+            if (!TryResolveBuiltPayloadRoot(buildOutputRoot, model.ModelName, out var payloadRoot))
+            {
+                MessageLogger.Error($"❌ Could not find compiled payload for model '{model.ModelName}' under '{buildOutputRoot}'.");
+                return false;
+            }
+
+            CreateDeployablePackageZip(payloadRoot, model.ModelName, deployablePackagePath);
+            MessageLogger.Info($"📦 Deployable package created: {deployablePackagePath}");
+
+            if (!RunNugetUtilFopack(deployablePackagePath, nugetOutputRoot))
+                return false;
+
+            var generatedNupkg = Directory.GetFiles(nugetOutputRoot, "*.nupkg", SearchOption.TopDirectoryOnly)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault();
+
+            var generatedNuspec = Directory.GetFiles(nugetOutputRoot, "*.nuspec", SearchOption.TopDirectoryOnly)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault();
+
+            if (!generatedNupkg.IsNullOrEmpty())
+                MessageLogger.Highlight($"✅ NuGet package created: {generatedNupkg}");
+
+            if (!generatedNuspec.IsNullOrEmpty())
+                MessageLogger.Info($"🧾 Nuspec saved: {generatedNuspec}");
+
+            MessageLogger.Highlight($"✅ Package build completed for model '{model.ModelName}'.");
+            return true;
         }
 
         public bool AddOrUpdatePackageFromUrl(ProfileModel profile, RepositoryModel repository, string packageUrl)
@@ -356,6 +484,8 @@ namespace FODevManager.Services
             if (Directory.Exists(installedPackageFolder) && Directory.EnumerateFileSystemEntries(installedPackageFolder).Any())
                 return true;
 
+            var targetInstalledPackageFolder = installedPackageFolder;
+
             var nugetExecutable = ResolveNuGetExecutable();
             if (nugetExecutable.IsNullOrEmpty())
             {
@@ -378,23 +508,21 @@ namespace FODevManager.Services
 
             try
             {
-                using var process = new Process { StartInfo = processStartInfo };
-                if (!process.Start())
-                {
-                    MessageLogger.Error($"❌ Failed to start nuget for package '{packageReference.Id}'.");
-                    return false;
-                }
+                RetryHelper.RetryOnException(
+                    operation: () =>
+                    {
+                        if (!RunProcess(processStartInfo, out var output))
+                            throw new InvalidOperationException($"NuGet install failed for '{packageReference.Id} {packageReference.Version}'. {output}".Trim());
 
-                var stdout = process.StandardOutput.ReadToEnd();
-                var stderr = process.StandardError.ReadToEnd();
-                process.WaitForExit();
-
-                if (process.ExitCode != 0)
-                {
-                    var output = string.Join(Environment.NewLine, new[] { stdout, stderr }.Where(text => !text.IsNullOrEmpty()));
-                    MessageLogger.Error($"❌ NuGet install failed for '{packageReference.Id} {packageReference.Version}'. {output}".Trim());
-                    return false;
-                }
+                        if (!Directory.Exists(targetInstalledPackageFolder))
+                            throw new InvalidOperationException($"NuGet install completed for '{packageReference.Id} {packageReference.Version}', but '{targetInstalledPackageFolder}' was not created.");
+                    },
+                    times: NugetDownloadRetryCount,
+                    onRetry: (attempt, exception, retryDelay) =>
+                    {
+                        MessageLogger.Warning(
+                            $"⚠️ NuGet download attempt {attempt} failed for '{packageReference.Id} {packageReference.Version}'. Retrying in {retryDelay.TotalSeconds:0}s. {exception.Message}");
+                    });
 
                 MessageLogger.Info($"📦 Downloaded deployable package '{packageReference.Id} {packageReference.Version}'.");
                 return Directory.Exists(installedPackageFolder);
@@ -589,6 +717,23 @@ namespace FODevManager.Services
             return true;
         }
 
+        private bool ValidateBuildPackageSettings(string nugetConfigPath)
+        {
+            var azureFeedEndpoints = LoadAzureArtifactsFeedEndpoints(nugetConfigPath);
+            if (azureFeedEndpoints.Count == 0)
+                return true;
+
+            var secret = ResolveAzureArtifactsSecret();
+            if (!secret.IsNullOrEmpty())
+                return true;
+
+            MessageLogger.Error("❌ Cannot download FO build packages because private Azure Artifacts feeds are configured but no credentials are saved in Settings.");
+            MessageLogger.Info("Open Settings and provide an Azure Artifacts PAT or API key before retrying package download.");
+            MessageLogger.LogOnly($"Azure Artifacts feeds: {string.Join(", ", azureFeedEndpoints)}");
+
+            return false;
+        }
+
         private void ApplyAzureArtifactsCredentials(ProcessStartInfo processStartInfo, string nugetConfigPath)
         {
             var secret = ResolveAzureArtifactsSecret();
@@ -669,6 +814,455 @@ namespace FODevManager.Services
             => value
                 .Replace("\\", "\\\\", StringComparison.Ordinal)
                 .Replace("\"", "\\\"", StringComparison.Ordinal);
+
+        private static string? ResolveApplicationNugetConfigPath()
+        {
+            var baseDirectory = AppContext.BaseDirectory;
+            var baseDirectoryCandidate = Path.Combine(baseDirectory, "nuget.config");
+            if (File.Exists(baseDirectoryCandidate))
+                return baseDirectoryCandidate;
+
+            var currentDirectoryCandidate = Path.Combine(Directory.GetCurrentDirectory(), "FODevManager.WinUI", "nuget.config");
+            if (File.Exists(currentDirectoryCandidate))
+                return currentDirectoryCandidate;
+
+            return null;
+        }
+
+        private bool TryEnsureFoBuildPackages(string buildPackagesRoot, string nugetConfigPath, out Dictionary<string, string> packageRoots)
+        {
+            packageRoots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var packageId in FoBuildPackageIds)
+            {
+                if (!TryEnsureFoBuildPackage(buildPackagesRoot, nugetConfigPath, packageId, out var packageRoot))
+                    return false;
+
+                packageRoots[packageId] = packageRoot;
+            }
+
+            return true;
+        }
+
+        private bool TryEnsureFoBuildPackage(string buildPackagesRoot, string nugetConfigPath, string packageId, out string packageRoot)
+        {
+            packageRoot = ResolveInstalledPackageRoot(buildPackagesRoot, packageId);
+            if (!packageRoot.IsNullOrEmpty())
+                return true;
+
+            string resolvedPackageRoot = string.Empty;
+
+            var nugetExecutable = ResolveNuGetExecutable();
+            if (nugetExecutable.IsNullOrEmpty())
+            {
+                MessageLogger.Error("❌ Could not locate nuget.exe on PATH. Cannot download FO build packages.");
+                return false;
+            }
+
+            MessageLogger.Info($"📥 Downloading build package '{packageId}'...");
+
+            var processStartInfo = new ProcessStartInfo
+            {
+                FileName = nugetExecutable,
+                Arguments = $"install \"{packageId}\" -OutputDirectory \"{buildPackagesRoot}\" -ConfigFile \"{nugetConfigPath}\" -NonInteractive",
+                WorkingDirectory = buildPackagesRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            ApplyAzureArtifactsCredentials(processStartInfo, nugetConfigPath);
+
+            try
+            {
+                RetryHelper.RetryOnException(
+                    operation: () =>
+                    {
+                        if (!RunProcess(processStartInfo, out var output))
+                            throw new InvalidOperationException($"NuGet install failed for '{packageId}'. {output}".Trim());
+
+                        resolvedPackageRoot = ResolveInstalledPackageRoot(buildPackagesRoot, packageId);
+                        if (resolvedPackageRoot.IsNullOrEmpty())
+                            throw new InvalidOperationException($"Package '{packageId}' was downloaded, but the installed folder could not be resolved.");
+                    },
+                    times: NugetDownloadRetryCount,
+                    onRetry: (attempt, exception, retryDelay) =>
+                    {
+                        MessageLogger.Warning(
+                            $"⚠️ Build package download attempt {attempt} failed for '{packageId}'. Retrying in {retryDelay.TotalSeconds:0}s. {exception.Message}");
+                    });
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"❌ Failed to download build package '{packageId}': {exception.Message}");
+                return false;
+            }
+
+            packageRoot = resolvedPackageRoot;
+            MessageLogger.Info($"📦 Build package ready: {packageRoot}");
+            return true;
+        }
+
+        private static string ResolveInstalledPackageRoot(string buildPackagesRoot, string packageId)
+        {
+            if (!Directory.Exists(buildPackagesRoot))
+                return string.Empty;
+
+            return Directory.GetDirectories(buildPackagesRoot, $"{packageId}.*", SearchOption.TopDirectoryOnly)
+                .OrderByDescending(path => path, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault() ?? string.Empty;
+        }
+
+        private bool TryBuildMsBuildContext(IReadOnlyDictionary<string, string> packageRoots, out MsBuildContext context)
+        {
+            context = null!;
+
+            if (!packageRoots.TryGetValue(CompilerPackageId, out var compilerPackageRoot) || compilerPackageRoot.IsNullOrEmpty())
+                return false;
+
+            var buildTasksDirectory = Path.Combine(compilerPackageRoot, "DevAlm");
+            if (!Directory.Exists(buildTasksDirectory))
+                return false;
+
+            var referenceFolders = new[]
+            {
+                Path.Combine(packageRoots[PlatformBuildPackageId], "ref", "net40"),
+                Path.Combine(packageRoots[Application1BuildPackageId], "ref", "net40"),
+                Path.Combine(packageRoots[Application2BuildPackageId], "ref", "net40"),
+                Path.Combine(packageRoots[ApplicationSuiteBuildPackageId], "ref", "net40"),
+                _deploymentBasePath
+            };
+
+            var missingReferenceFolder = referenceFolders.FirstOrDefault(path => !Directory.Exists(path));
+            if (!missingReferenceFolder.IsNullOrEmpty())
+                return false;
+
+            context = new MsBuildContext(
+                compilerPackageRoot,
+                buildTasksDirectory,
+                string.Join(";", referenceFolders));
+
+            return true;
+        }
+
+        private bool RunMsBuild(string solutionFilePath, MsBuildContext buildContext, string buildOutputRoot)
+        {
+            var msbuildExecutable = ResolveMsBuildExecutable();
+            if (msbuildExecutable.IsNullOrEmpty())
+            {
+                MessageLogger.Error("❌ Could not locate msbuild.exe. Ensure Visual Studio Build Tools are installed and msbuild is on PATH.");
+                return false;
+            }
+
+            var buildBinPath = Path.Combine(buildOutputRoot, "Bin");
+            Directory.CreateDirectory(buildBinPath);
+
+            var processStartInfo = new ProcessStartInfo
+            {
+                FileName = msbuildExecutable,
+                Arguments =
+                    $"\"{solutionFilePath}\" " +
+                    $"/p:BuildTasksDirectory=\"{buildContext.BuildTasksDirectory}\" " +
+                    $"/p:MetadataDirectory=\"{_deploymentBasePath}\" " +
+                    $"/p:FrameworkDirectory=\"{buildContext.CompilerPackageRoot}\" " +
+                    $"/p:ReferenceFolder=\"{buildContext.ReferenceFolder};{buildBinPath}\" " +
+                    $"/p:ReferencePath=\"{buildContext.CompilerPackageRoot}\" " +
+                    $"/p:OutputDirectory=\"{buildBinPath}\"",
+                WorkingDirectory = Path.GetDirectoryName(solutionFilePath) ?? Directory.GetCurrentDirectory(),
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            MessageLogger.Info($"🛠️ Running MSBuild for solution '{solutionFilePath}'...");
+
+            if (!RunProcess(processStartInfo, out var output))
+            {
+                MessageLogger.Error($"❌ MSBuild failed for '{solutionFilePath}'. {output}".Trim());
+                return false;
+            }
+
+            MessageLogger.Info($"✅ MSBuild completed for '{Path.GetFileName(solutionFilePath)}'.");
+            return true;
+        }
+
+        private bool RunNugetUtilFopack(string deployablePackagePath, string nugetOutputRoot)
+        {
+            var nugetUtilPath = ResolveNugetUtilExecutable();
+            if (nugetUtilPath.IsNullOrEmpty())
+            {
+                MessageLogger.Error($"❌ Could not locate NugetUtil. Expected '{NugetUtilDefaultPath}' or an executable on PATH.");
+                return false;
+            }
+
+            var processStartInfo = new ProcessStartInfo
+            {
+                FileName = nugetUtilPath,
+                Arguments = $"fopack \"{deployablePackagePath}\" -output \"{nugetOutputRoot}\" -save-nuspec",
+                WorkingDirectory = nugetOutputRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            if (!RunProcess(processStartInfo, out var output))
+            {
+                MessageLogger.Error($"❌ NugetUtil failed for '{deployablePackagePath}'. {output}".Trim());
+                return false;
+            }
+
+            MessageLogger.Info("✅ NugetUtil packaging completed.");
+            return true;
+        }
+
+        private static bool RunProcess(ProcessStartInfo processStartInfo, out string combinedOutput)
+        {
+            combinedOutput = string.Empty;
+
+            try
+            {
+                using var process = new Process { StartInfo = processStartInfo };
+                if (!process.Start())
+                    return false;
+
+                var stdout = process.StandardOutput.ReadToEnd();
+                var stderr = process.StandardError.ReadToEnd();
+                process.WaitForExit();
+
+                combinedOutput = string.Join(Environment.NewLine, new[] { stdout, stderr }
+                    .Where(text => !string.IsNullOrWhiteSpace(text)));
+
+                return process.ExitCode == 0;
+            }
+            catch (Exception exception)
+            {
+                combinedOutput = exception.Message;
+                return false;
+            }
+        }
+
+        private static string ResolveMsBuildExecutable()
+        {
+            var visualStudioCandidate = ResolveVisualStudioMsBuildExecutable();
+            if (!visualStudioCandidate.IsNullOrEmpty())
+                return visualStudioCandidate;
+
+            foreach (var candidate in EnumerateExecutablesFromPath("msbuild.exe"))
+            {
+                if (IsSupportedMsBuildExecutable(candidate))
+                    return candidate;
+            }
+
+            return string.Empty;
+        }
+
+        private static string ResolveVisualStudioMsBuildExecutable()
+        {
+            var vsWhereCandidate = ResolveVsWhereMsBuildExecutable();
+            if (!vsWhereCandidate.IsNullOrEmpty())
+                return vsWhereCandidate;
+
+            var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            foreach (var visualStudioVersion in new[] { "2022", "2019" })
+            {
+                var visualStudioRoot = Path.Combine(programFilesX86, "Microsoft Visual Studio", visualStudioVersion);
+                if (!Directory.Exists(visualStudioRoot))
+                    continue;
+
+                foreach (var editionPath in Directory.GetDirectories(visualStudioRoot)
+                    .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+                {
+                    var candidate = Path.Combine(editionPath, "MSBuild", "Current", "Bin", "MSBuild.exe");
+                    if (IsSupportedMsBuildExecutable(candidate))
+                        return candidate;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static string ResolveVsWhereMsBuildExecutable()
+        {
+            var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            var vsWherePath = Path.Combine(programFilesX86, "Microsoft Visual Studio", "Installer", "vswhere.exe");
+            if (!File.Exists(vsWherePath))
+                return string.Empty;
+
+            var processStartInfo = new ProcessStartInfo
+            {
+                FileName = vsWherePath,
+                Arguments = "-products * -requires Microsoft.Component.MSBuild -find MSBuild\\**\\Bin\\MSBuild.exe",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            if (!RunProcess(processStartInfo, out var output))
+                return string.Empty;
+
+            return output
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .FirstOrDefault(IsSupportedMsBuildExecutable) ?? string.Empty;
+        }
+
+        private static bool IsSupportedMsBuildExecutable(string? candidate)
+        {
+            if (candidate.IsNullOrEmpty() || !File.Exists(candidate))
+                return false;
+
+            var normalizedCandidate = candidate.Replace('/', '\\');
+
+            if (normalizedCandidate.Contains(@"\Microsoft Visual Studio\", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (normalizedCandidate.Contains(@"\dotnet\sdk\", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (normalizedCandidate.Contains(@"\Windows\Microsoft.NET\Framework\", StringComparison.OrdinalIgnoreCase)
+                || normalizedCandidate.Contains(@"\Windows\Microsoft.NET\Framework64\", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static string ResolveNugetUtilExecutable()
+        {
+            if (File.Exists(NugetUtilDefaultPath))
+                return NugetUtilDefaultPath;
+
+            return EnumerateExecutablesFromPath("nugetutil.exe").FirstOrDefault(File.Exists) ?? string.Empty;
+        }
+
+        private static IEnumerable<string> EnumerateExecutablesFromPath(string fileName)
+        {
+            var pathValue = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+            var pathDirectories = pathValue
+                .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            foreach (var pathDirectory in pathDirectories)
+            {
+                yield return Path.Combine(pathDirectory, fileName);
+            }
+        }
+
+        private static string GetModelArtifactsRoot(ProfileModel profile, ProfileEnvironmentModel model)
+        {
+            var repoRoot = profile.TryGetRepoRootFolder(model);
+            var baseRoot = repoRoot.IsNullOrEmpty() ? model.ModelRootFolder : repoRoot;
+
+            if (baseRoot.IsNullOrEmpty())
+                baseRoot = Directory.GetCurrentDirectory();
+
+            return Path.Combine(baseRoot, "Artifacts");
+        }
+
+        private static void EnsureCleanDirectory(string path)
+        {
+            if (Directory.Exists(path))
+                Directory.Delete(path, recursive: true);
+
+            Directory.CreateDirectory(path);
+        }
+
+        private static bool TryResolveBuiltPayloadRoot(string buildOutputRoot, string modelName, out string payloadRoot)
+        {
+            payloadRoot = string.Empty;
+
+            var directPayloadRoot = Path.Combine(buildOutputRoot, "Bin", modelName);
+            if (IsValidPayloadRoot(directPayloadRoot, modelName))
+            {
+                payloadRoot = directPayloadRoot;
+                return true;
+            }
+
+            var directBinRoot = Path.Combine(buildOutputRoot, "Bin");
+            if (IsValidPayloadRoot(directBinRoot, modelName))
+            {
+                payloadRoot = directBinRoot;
+                return true;
+            }
+
+            var xrefPath = Directory.Exists(buildOutputRoot)
+                ? Directory.GetFiles(buildOutputRoot, $"{modelName}.xref", SearchOption.AllDirectories)
+                    .OrderBy(path => path.Count(character => character == Path.DirectorySeparatorChar))
+                    .FirstOrDefault()
+                : null;
+
+            if (xrefPath.IsNullOrEmpty())
+                return false;
+
+            var candidateRoot = Path.GetDirectoryName(xrefPath!) ?? string.Empty;
+            if (!IsValidPayloadRoot(candidateRoot, modelName))
+                return false;
+
+            payloadRoot = candidateRoot;
+            return true;
+        }
+
+        private static bool IsValidPayloadRoot(string payloadRoot, string modelName)
+        {
+            if (payloadRoot.IsNullOrEmpty() || !Directory.Exists(payloadRoot))
+                return false;
+
+            return File.Exists(Path.Combine(payloadRoot, $"{modelName}.xref"))
+                || File.Exists(Path.Combine(payloadRoot, "bin", $"Dynamics.AX.{modelName}.dll"));
+        }
+
+        private static void CreateDeployablePackageZip(string payloadRoot, string modelName, string deployablePackagePath)
+        {
+            var tempPayloadZipPath = Path.Combine(Path.GetTempPath(), $"fodev-{modelName}-{Guid.NewGuid():N}.zip");
+
+            try
+            {
+                using (var innerArchive = ZipFile.Open(tempPayloadZipPath, ZipArchiveMode.Create))
+                {
+                    AddPayloadEntryIfExists(innerArchive, payloadRoot, $"{modelName}.xref", $"{modelName}.xref");
+
+                    foreach (var folderName in IncludedDeployablePayloadFolders)
+                    {
+                        AddDirectoryToArchive(innerArchive, Path.Combine(payloadRoot, folderName), folderName);
+                    }
+                }
+
+                using var outerArchive = ZipFile.Open(deployablePackagePath, ZipArchiveMode.Create);
+                outerArchive.CreateEntryFromFile(tempPayloadZipPath, $"AOSService/Packages/files/{modelName}.zip", CompressionLevel.Optimal);
+            }
+            finally
+            {
+                if (File.Exists(tempPayloadZipPath))
+                    File.Delete(tempPayloadZipPath);
+            }
+        }
+
+        private static void AddPayloadEntryIfExists(ZipArchive archive, string payloadRoot, string sourceName, string entryName)
+        {
+            var sourcePath = Path.Combine(payloadRoot, sourceName);
+            if (File.Exists(sourcePath))
+            {
+                archive.CreateEntryFromFile(sourcePath, entryName, CompressionLevel.Optimal);
+            }
+        }
+
+        private static void AddDirectoryToArchive(ZipArchive archive, string directoryPath, string archiveRoot)
+        {
+            if (!Directory.Exists(directoryPath))
+                return;
+
+            var files = Directory.GetFiles(directoryPath, "*", SearchOption.AllDirectories);
+            foreach (var filePath in files)
+            {
+                var relativePath = Path.GetRelativePath(directoryPath, filePath)
+                    .Replace(Path.DirectorySeparatorChar, '/');
+                archive.CreateEntryFromFile(filePath, $"{archiveRoot}/{relativePath}", CompressionLevel.Optimal);
+            }
+        }
+
         private static string? ResolveNuGetExecutable()
         {
             var pathValue = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
@@ -698,6 +1292,7 @@ namespace FODevManager.Services
             public string GetKey() => $"{Id}|{Version}";
         }
 
+        private sealed record MsBuildContext(string CompilerPackageRoot, string BuildTasksDirectory, string ReferenceFolder);
         private sealed record ResolvedModelDescriptor(PackageReference PackageReference, string ModelName, string ModelFolder);
     }
 }

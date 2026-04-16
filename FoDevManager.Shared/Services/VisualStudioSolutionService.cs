@@ -68,6 +68,26 @@ namespace FODevManager.Services
             return CreateSolutionFile(profile.ProfileName, solutionDir, solutionFilePath);
         }
 
+        public string CreateTemporarySingleModelSolution(ProfileModel profile, ProfileEnvironmentModel model, string tempRootFolder)
+        {
+            if (profile == null) throw new ArgumentNullException(nameof(profile));
+            if (model == null) throw new ArgumentNullException(nameof(model));
+            if (tempRootFolder.IsNullOrEmpty()) throw new ArgumentException("Temporary solution folder is required.", nameof(tempRootFolder));
+
+            Directory.CreateDirectory(tempRootFolder);
+
+            var temporaryProfile = new ProfileModel
+            {
+                ProfileName = $"{profile.ProfileName}-{model.ModelName}",
+                SolutionFilePath = Path.Combine(tempRootFolder, $"{model.ModelName}.packagebuild.sln")
+            };
+
+            CreateSolutionFile(temporaryProfile.ProfileName, tempRootFolder, temporaryProfile.SolutionFilePath);
+            AddProjectToSolution(temporaryProfile, model);
+
+            return temporaryProfile.SolutionFilePath;
+        }
+
         private string CreateSolutionFile(string profileName, string solutionDir, string solutionFilePath)
         {
             if (!Directory.Exists(solutionDir))
