@@ -2302,7 +2302,17 @@ namespace FODevManager.WinUI
             if (canSelectNugetVersion && packageVersionComboBox.SelectedItem is string selectedPackageVersion)
                 environmentModel.PackageVersion = selectedPackageVersion;
 
-            _profileService.UpdateModelProperties(environmentViewModel.ProfileName, environmentModel, sourceVersion);
+            var operationName = canSelectNugetVersion
+                ? $"Update NuGet package version for {environmentViewModel.ModelName}"
+                : $"Update model properties for {environmentViewModel.ModelName}";
+
+            var updated = await RunOperationAsync(
+                () => _profileService.UpdateModelProperties(environmentViewModel.ProfileName, environmentModel, sourceVersion),
+                operationName,
+                shutdownServer: false);
+
+            if (!updated)
+                return;
 
             UIRefresh(environmentViewModel.ProfileName);
         }
