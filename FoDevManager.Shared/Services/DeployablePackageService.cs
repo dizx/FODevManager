@@ -68,7 +68,10 @@ namespace FODevManager.Services
             }
 
             if (!TryGetPackageContext(repository, out var packageContext))
+            {
+                MessageLogger.Error($"❌ Nuget is not configured for repository '{repository.DisplayName}'. Cannot prepare compiled NuGet models");
                 return false;
+            }
 
             var extractedPackages = new List<PackageReference>();
             foreach (var packageReference in packageContext.Packages)
@@ -231,6 +234,9 @@ namespace FODevManager.Services
                 return false;
             }
 
+            if (!ValidatePackageVersionExists(repository, packageId, packageVersion))
+                return false;
+
             UpsertPackageReference(isvConfigPath, packageId, packageVersion);
             return EnsureCompiledNugetModels(profile, repository);
         }
@@ -278,6 +284,9 @@ namespace FODevManager.Services
                 return false;
             }
 
+            if (!ValidatePackageVersionExists(repository, newPackageId, newPackageVersion))
+                return false;
+
             if (!existingPackageId.IsNullOrEmpty() && !existingPackageId.SameAs(newPackageId))
             {
                 RemovePackageReference(isvConfigPath, existingPackageId);
@@ -285,6 +294,48 @@ namespace FODevManager.Services
 
             UpsertPackageReference(isvConfigPath, newPackageId, newPackageVersion);
             return EnsureCompiledNugetModels(profile, repository);
+        }
+
+        public bool UpdatePackageVersion(ProfileModel profile, RepositoryModel repository, string packageId, string packageVersion)
+        {
+            if (profile == null || repository == null || packageId.IsNullOrEmpty() || packageVersion.IsNullOrEmpty())
+                return false;
+
+            if (!TryGetIsvConfigPath(repository, createIfMissing: true, out var isvConfigPath))
+            {
+                MessageLogger.Error($"❌ Could not locate Build\\isv.config for repository '{repository.DisplayName}'");
+                return false;
+            }
+
+            if (!ValidatePackageVersionExists(repository, packageId, packageVersion))
+                return false;
+
+            UpsertPackageReference(isvConfigPath, packageId, packageVersion);
+            return EnsureCompiledNugetModels(profile, repository);
+        }
+
+        public List<string> GetAvailablePackageVersions(RepositoryModel repository, string packageId)
+        {
+            if (repository == null || packageId.IsNullOrEmpty())
+                return new List<string>();
+
+            if (!TryResolvePackageNugetConfigPath(repository, out var nugetConfigPath))
+                return new List<string>();
+
+            if (!TryGetAvailablePackageVersions(
+                    repository.RepoRootFolder ?? Directory.GetCurrentDirectory(),
+                    nugetConfigPath,
+                    packageId,
+                    out var versions,
+                    out var errorMessage))
+            {
+                MessageLogger.Warning($"⚠️ Could not load available versions for package '{packageId}'. {errorMessage}");
+                return new List<string>();
+            }
+
+            return versions
+                .OrderByDescending(version => version, StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         private bool TryGetPackageContext(RepositoryModel repository, out PackageContext context)
@@ -298,12 +349,8 @@ namespace FODevManager.Services
                 return false;
             }
 
-            var nugetConfigPath = FindRepositoryConfigFile(repositoryRoot, "nuget.config");
-            if (nugetConfigPath.IsNullOrEmpty())
-            {
-                MessageLogger.LogOnly($"No nuget.config found under repository '{repository.DisplayName}'");
+            if (!TryResolvePackageNugetConfigPath(repository, out var nugetConfigPath))
                 return false;
-            }
 
             var isvConfigPath = FindRepositoryConfigFile(repositoryRoot, "isv.config");
             if (isvConfigPath.IsNullOrEmpty())
@@ -480,6 +527,9 @@ namespace FODevManager.Services
             installedPackageFolder = Path.Combine(downloadedRoot, $"{packageReference.Id}.{packageReference.Version}");
             if (Directory.Exists(installedPackageFolder) && Directory.EnumerateFileSystemEntries(installedPackageFolder).Any())
                 return true;
+
+            if (!ValidatePackageVersionExists(context, packageReference.Id, packageReference.Version))
+                return false;
 
             var targetInstalledPackageFolder = installedPackageFolder;
 
@@ -714,6 +764,67 @@ namespace FODevManager.Services
             return true;
         }
 
+        private bool TryResolvePackageNugetConfigPath(RepositoryModel repository, out string nugetConfigPath)
+        {
+            nugetConfigPath = string.Empty;
+
+            var repositoryRoot = (repository.RepoRootFolder ?? string.Empty).Trim();
+            if (repositoryRoot.IsNullOrEmpty())
+                return false;
+
+            nugetConfigPath = FindRepositoryConfigFile(repositoryRoot, "nuget.config") ?? string.Empty;
+            if (!nugetConfigPath.IsNullOrEmpty())
+                return true;
+
+            nugetConfigPath = ResolveDefaultNugetConfigPath() ?? string.Empty;
+            if (!nugetConfigPath.IsNullOrEmpty())
+            {
+                MessageLogger.LogOnly($"No nuget.config found under repository '{repository.DisplayName}'. Falling back to '{nugetConfigPath}'");
+                return true;
+            }
+
+            MessageLogger.LogOnly($"No nuget.config found under repository '{repository.DisplayName}', and no system NuGet.Config could be resolved");
+            return false;
+        }
+
+        private bool ValidatePackageVersionExists(RepositoryModel repository, string packageId, string packageVersion)
+        {
+            if (!TryResolvePackageNugetConfigPath(repository, out var nugetConfigPath))
+                return false;
+
+            return ValidatePackageVersionExists(
+                repository.RepoRootFolder ?? Directory.GetCurrentDirectory(),
+                nugetConfigPath,
+                packageId,
+                packageVersion);
+        }
+
+        private bool ValidatePackageVersionExists(PackageContext context, string packageId, string packageVersion)
+            => ValidatePackageVersionExists(context.RepositoryRoot, context.NugetConfigPath, packageId, packageVersion);
+
+        private bool ValidatePackageVersionExists(
+            string workingDirectory,
+            string nugetConfigPath,
+            string packageId,
+            string packageVersion)
+        {
+            if (TryGetAvailablePackageVersions(workingDirectory, nugetConfigPath, packageId, out var versions, out var errorMessage))
+            {
+                if (versions.Contains(packageVersion, StringComparer.OrdinalIgnoreCase))
+                    return true;
+
+                var availableVersions = versions.Count == 0
+                    ? "none"
+                    : string.Join(", ", versions.OrderByDescending(version => version, StringComparer.OrdinalIgnoreCase));
+
+                MessageLogger.Error($"❌ Package '{packageId}' version '{packageVersion}' was not found. Available versions: {availableVersions}");
+                return false;
+            }
+
+            MessageLogger.Error($"❌ Could not verify package '{packageId}' version '{packageVersion}'. {errorMessage}");
+            return false;
+        }
+
         private bool ValidateBuildPackageSettings(string nugetConfigPath)
         {
             var azureFeedEndpoints = LoadAzureArtifactsFeedEndpoints(nugetConfigPath);
@@ -824,6 +935,77 @@ namespace FODevManager.Services
                 return currentDirectoryCandidate;
 
             return null;
+        }
+
+        private static string? ResolveDefaultNugetConfigPath()
+        {
+            var userNugetConfig = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "NuGet",
+                "NuGet.Config");
+
+            if (File.Exists(userNugetConfig))
+                return userNugetConfig;
+
+            return null;
+        }
+
+        private bool TryGetAvailablePackageVersions(
+            string workingDirectory,
+            string nugetConfigPath,
+            string packageId,
+            out List<string> versions,
+            out string errorMessage)
+        {
+            versions = new List<string>();
+            errorMessage = string.Empty;
+
+            var nugetExecutable = ResolveNuGetExecutable();
+            if (nugetExecutable.IsNullOrEmpty())
+            {
+                errorMessage = "Could not locate nuget.exe on PATH.";
+                return false;
+            }
+
+            var processStartInfo = new ProcessStartInfo
+            {
+                FileName = nugetExecutable,
+                Arguments = $"list \"{packageId}\" -AllVersions -Prerelease -ConfigFile \"{nugetConfigPath}\" -NonInteractive",
+                WorkingDirectory = workingDirectory.IsNullOrEmpty() ? Directory.GetCurrentDirectory() : workingDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            ApplyAzureArtifactsCredentials(processStartInfo, nugetConfigPath);
+
+            if (!RunProcess(processStartInfo, out var output))
+            {
+                errorMessage = output;
+                return false;
+            }
+
+            versions = output
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(line => line.Trim())
+                .Where(line => !line.StartsWith("WARNING", StringComparison.OrdinalIgnoreCase))
+                .Where(line => !line.StartsWith("Feeds used", StringComparison.OrdinalIgnoreCase))
+                .Select(line =>
+                {
+                    var separatorIndex = line.LastIndexOf(' ');
+                    if (separatorIndex <= 0)
+                        return string.Empty;
+
+                    var listedPackageId = line[..separatorIndex].Trim();
+                    var listedVersion = line[(separatorIndex + 1)..].Trim();
+                    return listedPackageId.SameAs(packageId) ? listedVersion : string.Empty;
+                })
+                .Where(version => !version.IsNullOrEmpty())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return true;
         }
 
         private bool TryEnsureFoBuildPackages(string buildPackagesRoot, string nugetConfigPath, out Dictionary<string, string> packageRoots)

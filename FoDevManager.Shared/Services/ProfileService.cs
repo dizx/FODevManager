@@ -1346,11 +1346,12 @@ namespace FODevManager.Services
                 var document = XDocument.Load(descriptorFilePath);
                 var majorValue = document.Descendants("VersionMajor").FirstOrDefault()?.Value;
                 var minorValue = document.Descendants("VersionMinor").FirstOrDefault()?.Value;
+                var buildValue = document.Descendants("VersionBuild").FirstOrDefault()?.Value;
                 var revisionValue = document.Descendants("VersionRevision").FirstOrDefault()?.Value;
 
                 if (!int.TryParse(majorValue, out var major)
                     || !int.TryParse(minorValue, out var minor)
-                    || !int.TryParse(revisionValue, out var revision))
+                    || !TryResolveFoVersionComponent(buildValue, revisionValue, out var revision))
                 {
                     return false;
                 }
@@ -1374,6 +1375,7 @@ namespace FODevManager.Services
                 var document = XDocument.Load(descriptorFilePath);
                 var majorElement = document.Descendants("VersionMajor").FirstOrDefault();
                 var minorElement = document.Descendants("VersionMinor").FirstOrDefault();
+                var buildElement = document.Descendants("VersionBuild").FirstOrDefault();
                 var revisionElement = document.Descendants("VersionRevision").FirstOrDefault();
 
                 if (majorElement == null || minorElement == null || revisionElement == null)
@@ -1381,13 +1383,22 @@ namespace FODevManager.Services
 
                 if (!int.TryParse(majorElement.Value, out var major)
                     || !int.TryParse(minorElement.Value, out var minor)
-                    || !int.TryParse(revisionElement.Value, out var revision))
+                    || !TryResolveFoVersionComponent(buildElement?.Value, revisionElement.Value, out var revision))
                 {
                     return false;
                 }
 
                 revision++;
-                revisionElement.Value = revision.ToString();
+                if (buildElement == null)
+                {
+                    revisionElement.AddBeforeSelf(new XElement("VersionBuild", revision.ToString()));
+                }
+                else
+                {
+                    buildElement.Value = revision.ToString();
+                }
+
+                revisionElement.Value = "0";
                 document.Save(descriptorFilePath);
 
                 newVersion = new ModelVersion(major, minor, revision);
@@ -1413,6 +1424,31 @@ namespace FODevManager.Services
                     MessageLogger.Warning($"Failed to restore descriptor file '{descriptorFile.Key}': {exception.Message}");
                 }
             }
+        }
+
+        private static bool TryResolveFoVersionComponent(string? buildValue, string? revisionValue, out int versionComponent)
+        {
+            versionComponent = 0;
+
+            if (int.TryParse(buildValue, out var build) && build > 0)
+            {
+                versionComponent = build;
+                return true;
+            }
+
+            if (int.TryParse(revisionValue, out var revision))
+            {
+                versionComponent = revision;
+                return true;
+            }
+
+            if (int.TryParse(buildValue, out build))
+            {
+                versionComponent = build;
+                return true;
+            }
+
+            return false;
         }
 
         private sealed class ReleaseTagTarget
@@ -1608,6 +1644,23 @@ namespace FODevManager.Services
         {
             var profile = LoadProfile(profileName);
             return profile.FindModel(modelName);
+        }
+
+        public List<string> GetAvailablePackageVersions(string profileName, string modelName)
+        {
+            if (profileName.IsNullOrEmpty() || modelName.IsNullOrEmpty())
+                return new List<string>();
+
+            var profile = _fileService.LoadProfile(profileName);
+            var model = profile.FindModel(modelName);
+            if (model == null || model.ModelType != ModelType.CompiledNuget || model.PackageId.IsNullOrEmpty())
+                return new List<string>();
+
+            var repository = profile.FindRepositoryForModel(model);
+            if (repository == null)
+                return new List<string>();
+
+            return _deployablePackageService.GetAvailablePackageVersions(repository, model.PackageId);
         }
 
         private bool EnsureRepositoryAvailable(RepositoryModel? repository)
@@ -1919,8 +1972,26 @@ namespace FODevManager.Services
 
             if (targetEnvironment.ModelType == ModelType.CompiledNuget)
             {
-                targetEnvironment.PackageId = updatedEnvironment.PackageId?.Trim() ?? string.Empty;
-                targetEnvironment.PackageVersion = updatedEnvironment.PackageVersion?.Trim() ?? string.Empty;
+                var repository = profile.FindRepositoryForModel(targetEnvironment);
+                if (repository == null)
+                {
+                    MessageLogger.Error($"UpdateModelProperties: model '{updatedEnvironment.ModelName}' is not mapped to a repository");
+                    return;
+                }
+
+                var targetPackageId = targetEnvironment.PackageId?.Trim() ?? string.Empty;
+                var targetPackageVersion = updatedEnvironment.PackageVersion?.Trim() ?? string.Empty;
+                if (!targetPackageId.IsNullOrEmpty()
+                    && !targetPackageVersion.IsNullOrEmpty()
+                    && !targetPackageVersion.SameAs(targetEnvironment.PackageVersion))
+                {
+                    if (!_deployablePackageService.UpdatePackageVersion(profile, repository, targetPackageId, targetPackageVersion))
+                        return;
+
+                    _fileService.SaveProfile(profile, updateExternal: true);
+                    MessageLogger.Info($"Model properties saved: {targetEnvironment.ModelName}");
+                    return;
+                }
             }
 
             _fileService.SaveProfile(profile, updateExternal: true);

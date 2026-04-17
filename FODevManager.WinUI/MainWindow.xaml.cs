@@ -2009,9 +2009,11 @@ namespace FODevManager.WinUI
         {
             ProfileEnvironmentModel environmentModel = environmentViewModel.Model;
             var canEditVersion = environmentModel.ModelType == ModelType.Source;
+            var canSelectNugetVersion = environmentModel.ModelType == ModelType.CompiledNuget;
             var canChooseMainFoModel = environmentModel.ModelType == ModelType.Source;
             var maxDialogBodyWidth = Math.Max(440, Math.Min(620, this.Bounds.Width - 220));
             var availableDialogBodyHeight = Math.Max(560, this.Bounds.Height - 80);
+            var availablePackageVersions = new List<string>();
 
             _modelVersionService.TryGetVersion(environmentModel, out var currentVersion);
 
@@ -2045,6 +2047,21 @@ namespace FODevManager.WinUI
                 Text = environmentViewModel.HasVersion ? environmentViewModel.VersionText : "Unavailable",
                 FontWeight = FontWeights.SemiBold
             };
+
+            if (canSelectNugetVersion && !environmentModel.PackageVersion.IsNullOrEmpty())
+                availablePackageVersions.Add(environmentModel.PackageVersion);
+
+            var packageVersionComboBox = new ComboBox
+            {
+                MinWidth = 260,
+                PlaceholderText = "Select package version",
+                ItemsSource = availablePackageVersions
+            };
+
+            if (canSelectNugetVersion && !environmentModel.PackageVersion.IsNullOrEmpty())
+            {
+                packageVersionComboBox.SelectedItem = environmentModel.PackageVersion;
+            }
 
             static TextBlock CreateFieldLabel(string text) => new()
             {
@@ -2129,13 +2146,17 @@ namespace FODevManager.WinUI
                         versionRevisionTextBox
                     }
                 })
-                : CreateValueContainer(readOnlyVersionText);
+                : canSelectNugetVersion
+                    ? CreateValueContainer(packageVersionComboBox)
+                    : CreateValueContainer(readOnlyVersionText);
 
             var versionSection = CreateSectionWithContent(
                 "Version",
                 canEditVersion
                     ? "Source model version can be edited here"
-                    : "Compiled model details are read-only",
+                    : canSelectNugetVersion
+                        ? "Select a package version available from the configured NuGet feed"
+                        : "Compiled model details are read-only",
                 versionEditorOrValue);
 
             var modelDetailsSectionContent = new List<UIElement>
@@ -2152,6 +2173,10 @@ namespace FODevManager.WinUI
             else
             {
                 modelDetailsSectionContent.Add(CreateReadOnlyField("Compiled", environmentModel.CompiledModelFolder));
+                if (canSelectNugetVersion)
+                {
+                    modelDetailsSectionContent.Add(CreateReadOnlyField("Package", environmentModel.PackageId));
+                }
             }
 
             var contentPanel = new StackPanel
@@ -2211,6 +2236,43 @@ namespace FODevManager.WinUI
 
             };
 
+            if (canSelectNugetVersion)
+            {
+                packageVersionComboBox.IsEnabled = false;
+
+                _ = Task.Run(() => _profileService.GetAvailablePackageVersions(environmentViewModel.ProfileName, environmentViewModel.ModelName))
+                    .ContinueWith(task =>
+                    {
+                        var loadedVersions = task.Status == TaskStatus.RanToCompletion
+                            ? task.Result
+                            : new List<string>();
+
+                        DispatcherQueue.TryEnqueue(() =>
+                        {
+                            var selectedVersion = environmentModel.PackageVersion;
+                            packageVersionComboBox.ItemsSource = null;
+
+                            var mergedVersions = new List<string>();
+                            if (!selectedVersion.IsNullOrEmpty())
+                                mergedVersions.Add(selectedVersion);
+
+                            foreach (var version in loadedVersions)
+                            {
+                                if (!mergedVersions.Any(existing => existing.SameAs(version)))
+                                    mergedVersions.Add(version);
+                            }
+
+                            packageVersionComboBox.ItemsSource = mergedVersions;
+                            if (!selectedVersion.IsNullOrEmpty())
+                                packageVersionComboBox.SelectedItem = mergedVersions.FirstOrDefault(version => version.SameAs(selectedVersion));
+
+                            packageVersionComboBox.IsEnabled = mergedVersions.Count > 0;
+                            if (mergedVersions.Count == 0)
+                                packageVersionComboBox.PlaceholderText = "No versions found";
+                        });
+                    }, TaskScheduler.Default);
+            }
+
             var dialogResult = await dialog.ShowAsync();
             if (dialogResult != ContentDialogResult.Primary)
                 return;
@@ -2237,6 +2299,8 @@ namespace FODevManager.WinUI
             }
 
             environmentModel.IsMainFOModel = canChooseMainFoModel && mainFoToggle.IsOn;
+            if (canSelectNugetVersion && packageVersionComboBox.SelectedItem is string selectedPackageVersion)
+                environmentModel.PackageVersion = selectedPackageVersion;
 
             _profileService.UpdateModelProperties(environmentViewModel.ProfileName, environmentModel, sourceVersion);
 

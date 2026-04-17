@@ -9,7 +9,7 @@ namespace FODevManager.Services
 {
     public sealed class ModelVersionService
     {
-        private static readonly Regex VersionPattern = new(@"(?<major>\d+)\.(?<minor>\d+)\.(?<revision>\d+)(?:\.\d+)?", RegexOptions.Compiled);
+        private static readonly Regex VersionPattern = new(@"(?<major>\d+)\.(?<minor>\d+)\.(?<build>\d+)(?:\.(?<revision>\d+))?", RegexOptions.Compiled);
 
         public bool TryGetVersion(ProfileEnvironmentModel model, out ModelVersion version)
         {
@@ -77,10 +77,8 @@ namespace FODevManager.Services
 
                 SetOrAddElement(root, "VersionMajor", version.Major.ToString());
                 SetOrAddElement(root, "VersionMinor", version.Minor.ToString());
-                SetOrAddElement(root, "VersionRevision", version.Revision.ToString());
-
-                if (root.Element("VersionBuild") == null)
-                    root.Add(new XElement("VersionBuild", "0"));
+                SetOrAddElement(root, "VersionBuild", version.Revision.ToString());
+                SetOrAddElement(root, "VersionRevision", "0");
 
                 document.Save(descriptorFilePath);
 
@@ -109,11 +107,12 @@ namespace FODevManager.Services
                 var document = XDocument.Load(descriptorFilePath);
                 var majorValue = document.Descendants("VersionMajor").FirstOrDefault()?.Value;
                 var minorValue = document.Descendants("VersionMinor").FirstOrDefault()?.Value;
+                var buildValue = document.Descendants("VersionBuild").FirstOrDefault()?.Value;
                 var revisionValue = document.Descendants("VersionRevision").FirstOrDefault()?.Value;
 
                 if (!int.TryParse(majorValue, out var major)
                     || !int.TryParse(minorValue, out var minor)
-                    || !int.TryParse(revisionValue, out var revision))
+                    || !TryResolveFoVersionComponent(buildValue, revisionValue, out var revision))
                 {
                     return false;
                 }
@@ -151,10 +150,15 @@ namespace FODevManager.Services
                 if (!match.Success)
                     return false;
 
+                var build = int.Parse(match.Groups["build"].Value);
+                var revision = match.Groups["revision"].Success
+                    ? int.Parse(match.Groups["revision"].Value)
+                    : 0;
+
                 version = new ModelVersion(
                     int.Parse(match.Groups["major"].Value),
                     int.Parse(match.Groups["minor"].Value),
-                    int.Parse(match.Groups["revision"].Value));
+                    build > 0 ? build : revision);
 
                 return true;
             }
@@ -230,6 +234,31 @@ namespace FODevManager.Services
             }
 
             existing.Value = value;
+        }
+
+        private static bool TryResolveFoVersionComponent(string? buildValue, string? revisionValue, out int versionComponent)
+        {
+            versionComponent = 0;
+
+            if (int.TryParse(buildValue, out var build) && build > 0)
+            {
+                versionComponent = build;
+                return true;
+            }
+
+            if (int.TryParse(revisionValue, out var revision))
+            {
+                versionComponent = revision;
+                return true;
+            }
+
+            if (int.TryParse(buildValue, out build))
+            {
+                versionComponent = build;
+                return true;
+            }
+
+            return false;
         }
 
         private static bool TryUpdateMatchingNuspecVersion(ProfileEnvironmentModel model, ModelVersion version)
