@@ -78,7 +78,7 @@ namespace FODevManager.Services
 
                     if (!Directory.Exists(linkPath))
                     {
-                        MessageLogger.Info($"🔄 Deploying model: {model.ModelName}...");
+                        MessageLogger.Info($"🔄 Deploying model: {model.ModelName}..");
                         
                         if(DeploySingleModel(profile, model.ModelName))
                             model.IsDeployed = true;
@@ -88,13 +88,13 @@ namespace FODevManager.Services
 
                 if (!anyUndeployed)
                 {
-                    MessageLogger.Info($"✅ All models in profile '{profileName}' are already deployed.");
+                    MessageLogger.Info($"✅ All models in profile '{profileName}' are already deployed");
                     return false;
                 }
 
                 _fileService.SaveProfile(profile);
 
-                MessageLogger.Info($"✅ Deployment complete. Updated profile '{profileName}'.");
+                MessageLogger.Info($"✅ Deployment complete. Updated profile '{profileName}'");
             }
             catch (Exception ex)
             {
@@ -118,22 +118,22 @@ namespace FODevManager.Services
                 var model = profile.FindModel(modelName); 
                 if (model == null)
                 {
-                    MessageLogger.Error($"❌ Model '{modelName}' not found in profile '{profileName}'.");
+                    MessageLogger.Error($"❌ Model '{modelName}' not found in profile '{profileName}'");
                     return;
                 }
                 string linkPath = Path.Combine(_deploymentBasePath, modelName);
 
                 if (!Directory.Exists(linkPath))
                 {
-                    MessageLogger.Error($"❌ Model '{modelName}' is NOT deployed.");
+                    MessageLogger.Error($"❌ Model '{modelName}' is NOT deployed");
                     return;
                 }
 
                 try
                 {
-                    MessageLogger.Info($"🔄 Removing deployment link for model '{modelName}'...");
+                    MessageLogger.Info($"🔄 Removing deployment link for model '{modelName}'..");
                     Directory.Delete(linkPath, true);
-                    MessageLogger.Highlight($"✅ Model '{modelName}' successfully undeployed.");
+                    MessageLogger.Highlight($"✅ Model '{modelName}' successfully undeployed");
 
                     // Update profile status
                     model.IsDeployed = false;
@@ -164,7 +164,7 @@ namespace FODevManager.Services
 
                     if (Directory.Exists(linkPath))
                     {
-                        MessageLogger.Info($"🔄 Removing deployment link for model '{model.ModelName}'...");
+                        MessageLogger.Info($"🔄 Removing deployment link for model '{model.ModelName}'..");
                         Directory.Delete(linkPath, true);
                         model.IsDeployed = false;
                         anyDeployed = true;
@@ -173,12 +173,12 @@ namespace FODevManager.Services
 
                 if (!anyDeployed)
                 {
-                    MessageLogger.Info($"✅ All models are already undeployed.");
+                    MessageLogger.Info($"✅ All models are already undeployed");
                     return;
                 }
 
                 
-                MessageLogger.Info($"✅ Undeployment complete.");
+                MessageLogger.Info($"✅ Undeployment complete");
             }
             catch (Exception ex)
             {
@@ -205,7 +205,7 @@ namespace FODevManager.Services
 
                     if (Directory.Exists(linkPath))
                     {
-                        MessageLogger.Info($"🔄 Removing deployment link for model '{model.ModelName}'...");
+                        MessageLogger.Info($"🔄 Removing deployment link for model '{model.ModelName}'..");
                         Directory.Delete(linkPath, true);
                         model.IsDeployed = false;
                         anyDeployed = true;
@@ -214,12 +214,12 @@ namespace FODevManager.Services
 
                 if (!anyDeployed)
                 {
-                    MessageLogger.Info($"✅ All models in profile '{profileName}' are already undeployed.");
+                    MessageLogger.Info($"✅ All models in profile '{profileName}' are already undeployed");
                     return;
                 }
 
                 _fileService.SaveProfile(profile);
-                MessageLogger.Info($"✅ Undeployment complete. Updated profile '{profileName}'.");
+                MessageLogger.Info($"✅ Undeployment complete. Updated profile '{profileName}'");
             }
             catch (Exception ex)
             {
@@ -238,7 +238,7 @@ namespace FODevManager.Services
                 var model = profile.FindModel(modelName);
                 if (model == null)
                 {
-                    MessageLogger.Error($"❌ Model '{modelName}' not found in profile '{profile.ProfileName}'.");
+                    MessageLogger.Error($"❌ Model '{modelName}' not found in profile '{profile.ProfileName}'");
                     return false;
                 }
                 string targetDir = Path.Combine(_deploymentBasePath, modelName);
@@ -251,7 +251,7 @@ namespace FODevManager.Services
 
                 if (!Directory.Exists(sourcePath))
                 {
-                    MessageLogger.Error($"❌ Error: Model not found at {sourcePath}.");
+                    MessageLogger.Error($"❌ Error: Model not found at {sourcePath}");
                     return false;
                 }
 
@@ -262,7 +262,7 @@ namespace FODevManager.Services
                 }
 
                 Directory.CreateSymbolicLink(linkPath, sourcePath);
-                MessageLogger.Info($"✅ Model '{modelName}' deployed successfully.");
+                MessageLogger.Info($"✅ Model '{modelName}' deployed successfully");
 
                 return true;
             }
@@ -285,7 +285,7 @@ namespace FODevManager.Services
             var model = profile.FindModel(modelName);
             if (model == null)
             {
-                MessageLogger.Error($"❌ Model '{modelName}' not found in profile '{profile.ProfileName}'.");
+                MessageLogger.Error($"❌ Model '{modelName}' not found in profile '{profile.ProfileName}'");
                 return;
             }
 
@@ -294,7 +294,7 @@ namespace FODevManager.Services
                 string modelRootPath = FileHelper.GetModelRootFolder(model.ProjectFilePath);
                 if (!Directory.Exists(modelRootPath))
                 {
-                    MessageLogger.Error($"❌ Error: Model root folder not found at {modelRootPath}.");
+                    MessageLogger.Error($"❌ Error: Model root folder not found at {modelRootPath}");
                     return;
                 }
                 model.ModelRootFolder = modelRootPath;
@@ -306,7 +306,7 @@ namespace FODevManager.Services
 
             if (Directory.Exists(linkPath))
             {
-                MessageLogger.Info($"✅ Model '{modelName}' is deployed at {linkPath}.");
+                MessageLogger.Info($"✅ Model '{modelName}' is deployed at {linkPath}");
                 
                 if (model.IsDeployed == false)
                 {
@@ -317,7 +317,7 @@ namespace FODevManager.Services
             }
             else
             {
-                MessageLogger.Warning($"❌ Model '{modelName}' is NOT deployed.");
+                MessageLogger.Warning($"❌ Model '{modelName}' is NOT deployed");
                 if(model.IsDeployed == true)
                 {
                     model.IsDeployed = false;
@@ -348,14 +348,14 @@ namespace FODevManager.Services
             var model = profile.AllModelEntries.FirstOrDefault(model => model.ModelName.SameAs(modelName));
             if (model == null)
             {
-                MessageLogger.Warning($"❌ Model '{modelName}' not found in profile '{profileName}'.");
+                MessageLogger.Warning($"❌ Model '{modelName}' not found in profile '{profileName}'");
                 return false;
             }
 
             var repository = model.Repository;
             if (repository == null)
             {
-                MessageLogger.Warning($"❌ Model '{modelName}' is not mapped to a repository in profile '{profileName}'.");
+                MessageLogger.Warning($"❌ Model '{modelName}' is not mapped to a repository in profile '{profileName}'");
                 return false;
             }
 
@@ -364,13 +364,13 @@ namespace FODevManager.Services
                 var repoRootFolder = (repository.RepoRootFolder ?? string.Empty).Trim();
                 if (repoRootFolder.IsNullOrEmpty())
                 {
-                    MessageLogger.Warning($"❌ Repository root folder is missing for model '{modelName}'.");
+                    MessageLogger.Warning($"❌ Repository root folder is missing for model '{modelName}'");
                     return false;
                 }
 
                 if (!GitHelper.IsGitRepository(repoRootFolder, out var gitRemoteUrl))
                 {
-                    MessageLogger.Warning($"❌ Repo for model '{modelName}' is NOT a Git repository.");
+                    MessageLogger.Warning($"❌ Repo for model '{modelName}' is NOT a Git repository");
                     return false;
                 }
 
@@ -425,7 +425,7 @@ namespace FODevManager.Services
 
             if (model == null)
             {
-                MessageLogger.Warning($"❌ Model '{modelName}' not found in profile '{profileName}'.");
+                MessageLogger.Warning($"❌ Model '{modelName}' not found in profile '{profileName}'");
                 return;
             }
 
@@ -435,7 +435,7 @@ namespace FODevManager.Services
             }
             else
             {
-                MessageLogger.Info($"❌ The model '{modelName}' in profile '{profileName}' is not a Git repository.");
+                MessageLogger.Info($"❌ The model '{modelName}' in profile '{profileName}' is not a Git repository");
             }
         }
 
@@ -568,7 +568,7 @@ namespace FODevManager.Services
 
                     ServiceHelper.StartW3SVC();
 
-                    MessageLogger.Highlight($"✅ Successfully deleted '{modelName}' from deployment path.");
+                    MessageLogger.Highlight($"✅ Successfully deleted '{modelName}' from deployment path");
                 }
 
                 return true;
@@ -588,7 +588,7 @@ namespace FODevManager.Services
             var modelRootPath = FileHelper.GetModelRootFolder(environmentPath);
             if (!Directory.Exists(modelRootPath))
             {
-                MessageLogger.Error($"❌ Error: Model root folder not found at {modelRootPath}.");
+                MessageLogger.Error($"❌ Error: Model root folder not found at {modelRootPath}");
                 return;
             }
 
@@ -599,14 +599,14 @@ namespace FODevManager.Services
                     modelName = DetectModelNameFromMetadata(modelRootPath);
                     if (modelName.IsNullOrEmpty())
                     {
-                        throw new Exception("❌ Unable to find model name from Metadata folder.");
+                        throw new Exception("❌ Unable to find model name from Metadata folder");
                     }
                 }
 
                 projectFilePath = GetProjectFilePath(modelName, modelRootPath);
                 if (!File.Exists(projectFilePath))
                 {
-                    MessageLogger.Info($"{projectFilePath} does not exist.");
+                    MessageLogger.Info($"{projectFilePath} does not exist");
                     if (Singleton<Engine>.Instance.EnvironmentType == EnvironmentType.Console)
                         MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" -model \"ModelName\" add \"ProjectFilePath\"");
                     return;
@@ -615,7 +615,7 @@ namespace FODevManager.Services
                 metaDataFolder = FileHelper.GetMetadataFolder(modelName, modelRootPath);
                 if (!Directory.Exists(metaDataFolder))
                 {
-                    MessageLogger.Error($"❌ Error: Metadata folder not found at {metaDataFolder}.");
+                    MessageLogger.Error($"❌ Error: Metadata folder not found at {metaDataFolder}");
                     return;
                 }
             }
@@ -630,7 +630,7 @@ namespace FODevManager.Services
 
             if (profile.AllModels.Any(e => e.ModelName.SameAs(modelName)))
             {
-                MessageLogger.Warning($"⚠️ Model '{modelName}' is already in the profile '{profileName}'. Skipping add.");
+                MessageLogger.Warning($"⚠️ Model '{modelName}' is already in the profile '{profileName}'. Skipping add");
                 return;
             }
 
@@ -788,7 +788,7 @@ namespace FODevManager.Services
         private string GenerateProjectFromTemplate(string modelName, string guid)
         {
             string path = Path.Combine(AppContext.BaseDirectory, "Templates", "ProjectTemplate.rnrproj");
-            if (!File.Exists(path)) throw new FileNotFoundException("Project template file not found.");
+            if (!File.Exists(path)) throw new FileNotFoundException("Project template file not found");
 
             string template = File.ReadAllText(path);
             return template
@@ -810,20 +810,20 @@ namespace FODevManager.Services
             var model = profile.FindModel(modelName);
             if (model == null)
             {
-                MessageLogger.Error($"❌ Model '{modelName}' not found in profile '{profile.ProfileName}'.");
+                MessageLogger.Error($"❌ Model '{modelName}' not found in profile '{profile.ProfileName}'");
                 return false;
             }
 
             if (periTask.IsNullOrEmpty())
             {
-                MessageLogger.Warning("⚠️ Task cannot be empty.");
+                MessageLogger.Warning("⚠️ Task cannot be empty");
                 return false;
             }
 
             var repository = profile.FindRepositoryForModel(model);
             if (repository == null)
             {
-                MessageLogger.Warning($"⚠️ Model '{model.ModelName}' is not mapped to a repository.");
+                MessageLogger.Warning($"⚠️ Model '{model.ModelName}' is not mapped to a repository");
                 return false;
             }
 
@@ -845,13 +845,13 @@ namespace FODevManager.Services
 
             if (repoPath.IsNullOrEmpty() || !Directory.Exists(repoPath))
             {
-                MessageLogger.Warning($"⚠️ Repo root folder not found for '{model.ModelName}'. Skipping branch switch.");
+                MessageLogger.Warning($"⚠️ Repo root folder not found for '{model.ModelName}'. Skipping branch switch");
                 return true;
             }
 
             if (!GitHelper.IsGitRepository(repoPath))
             {
-                MessageLogger.Warning($"⚠️ '{repoPath}' is not a Git repository. Skipping branch switch.");
+                MessageLogger.Warning($"⚠️ '{repoPath}' is not a Git repository. Skipping branch switch");
                 return true;
             }
 
@@ -862,11 +862,11 @@ namespace FODevManager.Services
             {
                 repository.LastKnownBranch = GitHelper.GetActiveBranch(repoPath) ?? repository.LastKnownBranch;
                 _fileService.SaveProfile(profile);
-                MessageLogger.Highlight($"✅ Switched to branch '{fullBranch}'.");
+                MessageLogger.Highlight($"✅ Switched to branch '{fullBranch}'");
             }
             else
             {
-                MessageLogger.Warning($"⚠️ Failed to switch to branch '{fullBranch}'.");
+                MessageLogger.Warning($"⚠️ Failed to switch to branch '{fullBranch}'");
             }
 
             return true;
@@ -881,7 +881,7 @@ namespace FODevManager.Services
 
             if (repository == null)
             {
-                MessageLogger.Warning($"⚠️ Repository '{repoId}' not found in profile '{profileName}'.");
+                MessageLogger.Warning($"⚠️ Repository '{repoId}' not found in profile '{profileName}'");
                 return false;
             }
 
@@ -902,13 +902,13 @@ namespace FODevManager.Services
             var repoPath = (repository.RepoRootFolder ?? string.Empty).Trim();
             if (repoPath.IsNullOrEmpty() || !Directory.Exists(repoPath))
             {
-                MessageLogger.Warning($"⚠️ Repo root folder not found for repo '{repository.DisplayName}'. Skipping branch switch.");
+                MessageLogger.Warning($"⚠️ Repo root folder not found for repo '{repository.DisplayName}'. Skipping branch switch");
                 return true;
             }
 
             if (!GitHelper.IsGitRepository(repoPath))
             {
-                MessageLogger.Warning($"⚠️ '{repoPath}' is not a Git repository. Skipping branch switch.");
+                MessageLogger.Warning($"⚠️ '{repoPath}' is not a Git repository. Skipping branch switch");
                 return true;
             }
 
@@ -919,11 +919,11 @@ namespace FODevManager.Services
             {
                 repository.LastKnownBranch = GitHelper.GetActiveBranch(repoPath) ?? repository.LastKnownBranch;
                 _fileService.SaveProfile(profile);
-                MessageLogger.Highlight($"✅ Switched to branch '{fullBranch}'.");
+                MessageLogger.Highlight($"✅ Switched to branch '{fullBranch}'");
             }
             else
             {
-                MessageLogger.Warning($"⚠️ Failed to switch to branch '{fullBranch}'.");
+                MessageLogger.Warning($"⚠️ Failed to switch to branch '{fullBranch}'");
             }
 
             return true;

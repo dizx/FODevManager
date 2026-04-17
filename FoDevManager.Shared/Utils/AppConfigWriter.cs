@@ -25,7 +25,7 @@ namespace FODevManager.Shared.Utils
         public void UpdateSetting(string key, object value)
         {
             if (key.IsNullOrEmpty())
-                throw new ArgumentException("Key cannot be empty.", nameof(key));
+                throw new ArgumentException("Key cannot be empty", nameof(key));
 
             try
             {

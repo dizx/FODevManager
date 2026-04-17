@@ -14,7 +14,7 @@ namespace FODevManager.WinUI.Framework
     {
         private static UiDispatcher? _uiDispatcher;
 
-        private static UiDispatcher Ui => _uiDispatcher ?? throw new InvalidOperationException("BusyOps.Initialize must be called before using BusyOps.");
+        private static UiDispatcher Ui => _uiDispatcher ?? throw new InvalidOperationException("BusyOps.Initialize must be called before using BusyOps");
 
         public static void Initialize(UiDispatcher uiDispatcher)
         {
@@ -67,7 +67,7 @@ namespace FODevManager.WinUI.Framework
                     }
 
                     if (!operationName.IsNullOrEmpty())
-                        MessageLogger.Highlight($"▶ {operationName} started.");
+                        MessageLogger.Highlight($"▶ {operationName} started");
 
                     Singleton<W3cServiceState>.Instance.InOperation = true;
 
@@ -76,7 +76,7 @@ namespace FODevManager.WinUI.Framework
                     Singleton<W3cServiceState>.Instance.InOperation = false;
 
                     if (!operationName.IsNullOrEmpty())
-                        MessageLogger.Highlight($"✓ {operationName} completed.");
+                        MessageLogger.Highlight($"✓ {operationName} completed");
 
                     return new TryResult<T>(true, result);
                 }

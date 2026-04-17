@@ -96,7 +96,7 @@ namespace FODevManager.WinUI.ViewModel
                 cfg.PushDeployablePackageOnBuild = PushDeployablePackageOnBuild;
                 cfg.PushDeployablePackageSource = PushDeployablePackageSource;
 
-                MessageLogger.Highlight("Settings saved.");
+                MessageLogger.Highlight("Settings saved");
             }
             catch (Exception ex)
             {

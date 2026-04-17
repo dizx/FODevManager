@@ -27,7 +27,7 @@ namespace FODevManager.WinUI.ViewModel
         public BusyOverlayViewModel()
         {
             _dispatcher = DispatcherQueue.GetForCurrentThread()
-                ?? throw new InvalidOperationException("Create BusyOverlayViewModel on the UI thread.");
+                ?? throw new InvalidOperationException("Create BusyOverlayViewModel on the UI thread");
 
             var busy = Singleton<BusyHandler>.Instance;
 

@@ -38,7 +38,7 @@ namespace FODevManager.WinUI
 
             if (App.MainWindow == null)
             {
-                MessageLogger.Warning("Window handle not available for folder picker.");
+                MessageLogger.Warning("Window handle not available for folder picker");
                 return;
             }
 

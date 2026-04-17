@@ -48,7 +48,7 @@ namespace FODevManager.Services
 
                     if (profilesByName.ContainsKey(profile.ProfileName))
                     {
-                        MessageLogger.Warning($"Duplicate profile name '{profile.ProfileName}' detected while refreshing profiles. Keeping the latest loaded profile.");
+                        MessageLogger.Warning($"Duplicate profile name '{profile.ProfileName}' detected while refreshing profiles. Keeping the latest loaded profile");
                     }
 
                     profilesByName[profile.ProfileName] = profile;

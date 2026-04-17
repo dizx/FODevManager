@@ -155,7 +155,7 @@
                              PlaceholderText="Database name"
                              IsReadOnly="True"
                              KeyDown="DatabaseNameTextBox_KeyDown"
-                             ToolTipService.ToolTip="Profile database name. Click Edit to change it." />
+                             ToolTipService.ToolTip="Profile database name. Click Edit to change it" />
                     <Button x:Name="DatabaseNameEditButton"
                             Content="Edit"
                             Click="DatabaseNameEditButton_Click"
@@ -171,7 +171,7 @@
                             Visibility="Collapsed"
                             ToolTipService.ToolTip="Cancel editing the database name" />
                     <TextBlock x:Name="DatabaseNameHintText"
-                               Text="Local override only. Press Enter or Apply to save, Esc or Cancel to discard."
+                               Text="Local override only. Press Enter or Apply to save, Esc or Cancel to discard"
                                VerticalAlignment="Center"
                                Opacity="0.75"
                                Visibility="Collapsed" />
@@ -328,7 +328,7 @@
 
                 <!-- 🔷 Row 3: Add Model -->
                 <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="10" Margin="0,10,0,0">
-                    <TextBox x:Name="ModelPathTextBox" Width="300" PlaceholderText="Browse model folder or paste NuGet URL..." IsReadOnly="True" />
+                    <TextBox x:Name="ModelPathTextBox" Width="300" PlaceholderText="Browse model folder or paste NuGet URL.." IsReadOnly="True" />
                     <Button Content="Paste" Click="PasteModelPath_Click" ToolTipService.ToolTip="Paste a model folder path or NuGet URL from the clipboard" />
                     <Button Content="Browse" Click="BrowseModel_Click" ToolTipService.ToolTip="Browse for existing models on disk" />
                     <Button Content="Add Model" Click="AddModel_Click" ToolTipService.ToolTip="Add a model from a local path or a NuGet URL"  />

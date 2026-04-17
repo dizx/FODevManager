@@ -49,7 +49,7 @@ namespace FODevManager.Utils
 
             if (args.Length < 2)
             {
-                MessageLogger.Error("Insufficient arguments provided.");
+                MessageLogger.Error("Insufficient arguments provided");
                 MessageLogger.Info("Usage: fodev.exe -profile \"ProfileName\" <command> [options]");
                 IsValid = false;
                 return;
@@ -70,7 +70,7 @@ namespace FODevManager.Utils
 
             if (args.Length < 2)
             {
-                MessageLogger.Error("Error: Insufficient arguments provided.");
+                MessageLogger.Error("Error: Insufficient arguments provided");
                 IsValid = false;
                 return;
             }
@@ -203,47 +203,47 @@ namespace FODevManager.Utils
             switch (command.ToLower())
             {
                 case "create":
-                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" create\nCreates a new profile JSON and solution.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" create\nCreates a new profile JSON and solution");
                     break;
                 case "import":
                     MessageLogger.Info("Usage: fodev.exe -profile import  \"C:\\Path\\profile.json\"\n Imports a new JSON profile and repositories");
                     break;
                 case "delete":
-                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" delete\nDeletes a profile and its .sln file.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" delete\nDeletes a profile and its .sln file");
                     break;
                 case "add":
-                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" add \"C:\\Path\\project.rnrproj\"\nAdds a model to a profile.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" add \"C:\\Path\\project.rnrproj\"\nAdds a model to a profile");
                     break;
                 case "remove":
-                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" remove\nRemoves a model from the profile.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" remove\nRemoves a model from the profile");
                     break;
                 case "deploy":
-                    MessageLogger.Info("Usage:\n  fodev.exe -profile \"MyProfile\" -model \"MyModel\" deploy\n  fodev.exe -profile \"MyProfile\" deploy\nDeploys model(s) to the FO metadata directory.");
+                    MessageLogger.Info("Usage:\n  fodev.exe -profile \"MyProfile\" -model \"MyModel\" deploy\n  fodev.exe -profile \"MyProfile\" deploy\nDeploys model(s) to the FO metadata directory");
                     break;
                 case "check":
-                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" check\nValidates existence of models and their files.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" check\nValidates existence of models and their files");
                     break;
                 case "list":
-                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" list\nLists all models in a profile.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" list\nLists all models in a profile");
                     break;
                 case "git-check":
-                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" git-check\nChecks if the model is in a Git repository.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" git-check\nChecks if the model is in a Git repository");
                     break;
                 case "git-open":
-                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" git-open\nOpens the Git remote URL in a browser.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" -model \"MyModel\" git-open\nOpens the Git remote URL in a browser");
                     break;
                 case "switch":
-                    MessageLogger.Info("Usage: fodev.exe switch -profile \"MyProfile\" Switches to the specified profile safely.");
+                    MessageLogger.Info("Usage: fodev.exe switch -profile \"MyProfile\" Switches to the specified profile safely");
                     break;
                 case "db-set":
-                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" db set \"DatabaseName\" Sets the database name to be used by this profile.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" db set \"DatabaseName\" Sets the database name to be used by this profile");
                     break;
                 case "db-apply":
-                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" db-apply\\nApplies the database setting from the profile to web.config.");
+                    MessageLogger.Info("Usage: fodev.exe -profile \"MyProfile\" db-apply\\nApplies the database setting from the profile to web.config");
                     break;
 
                 default:
-                    MessageLogger.Info("Unknown command. Use 'fodev.exe help' to list all commands.");
+                    MessageLogger.Info("Unknown command. Use 'fodev.exe help' to list all commands");
                     break;
             }
         }

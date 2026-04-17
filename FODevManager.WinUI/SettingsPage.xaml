@@ -36,20 +36,20 @@
                         HorizontalAlignment="Stretch"
                         MaxWidth="760">
             <StackPanel Spacing="6">
-                <TextBlock Text="App behavior and package feed access live here." Style="{StaticResource FieldHintStyle}" />
+                <TextBlock Text="App behavior and package feed access live here" Style="{StaticResource FieldHintStyle}" />
             </StackPanel>
 
             <Border Style="{StaticResource SectionCardStyle}">
                 <StackPanel Spacing="16">
                     <StackPanel Spacing="4">
                         <TextBlock Text="Workflow" FontSize="18" FontWeight="SemiBold" />
-                        <TextBlock Text="Control how careful the app should be when switching profiles and where new source work starts." Style="{StaticResource FieldHintStyle}" />
+                        <TextBlock Text="Control how careful the app should be when switching profiles and where new source work starts" Style="{StaticResource FieldHintStyle}" />
                     </StackPanel>
 
                     <Border CornerRadius="10" Padding="14" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
                         <StackPanel Spacing="8">
                             <TextBlock Text="Profile switching safety" Style="{StaticResource FieldLabelStyle}" />
-                            <TextBlock Text="Warn when repositories have uncommitted changes before a profile switch continues." Style="{StaticResource FieldHintStyle}" />
+                            <TextBlock Text="Warn when repositories have uncommitted changes before a profile switch continues" Style="{StaticResource FieldHintStyle}" />
                             <ToggleSwitch
                                 Header="Check uncommitted changes on profile switch"
                                 IsOn="{Binding CheckUncommittedBeforeSwitch, Mode=TwoWay}" />
@@ -58,7 +58,7 @@
 
                     <StackPanel Spacing="6">
                         <TextBlock Text="Default source folder" Style="{StaticResource FieldLabelStyle}" />
-                        <TextBlock Text="Used as the suggested starting location when creating or importing development assets." Style="{StaticResource FieldHintStyle}" />
+                        <TextBlock Text="Used as the suggested starting location when creating or importing development assets" Style="{StaticResource FieldHintStyle}" />
                         <Grid ColumnSpacing="10" HorizontalAlignment="Stretch">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -69,7 +69,7 @@
                                      HorizontalAlignment="Stretch"
                                      Text="{Binding DefaultSourceDirectory, Mode=TwoWay}"
                                      PlaceholderText="Choose a default working folder" />
-                            <Button Grid.Column="1" Content="Browse..." Click="OnBrowseClick" />
+                            <Button Grid.Column="1" Content="Browse.." Click="OnBrowseClick" />
                         </Grid>
                     </StackPanel>
                 </StackPanel>
@@ -79,19 +79,19 @@
                 <StackPanel Spacing="16">
                     <StackPanel Spacing="4">
                         <TextBlock Text="Azure Artifacts" FontSize="18" FontWeight="SemiBold" />
-                        <TextBlock Text="These credentials are used when private package feeds require authentication during NuGet package download." Style="{StaticResource FieldHintStyle}" />
+                        <TextBlock Text="These credentials are used when private package feeds require authentication during NuGet package download" Style="{StaticResource FieldHintStyle}" />
                     </StackPanel>
 
                     <StackPanel Spacing="6">
                         <TextBlock Text="Username" Style="{StaticResource FieldLabelStyle}" />
-                        <TextBlock Text="Optional. If you use a PAT, this can be a friendly service account name." Style="{StaticResource FieldHintStyle}" />
+                        <TextBlock Text="Optional. If you use a PAT, this can be a friendly service account name" Style="{StaticResource FieldHintStyle}" />
                         <TextBox Text="{Binding AzureArtifactsUsername, Mode=TwoWay}" PlaceholderText="For example: FODevManager" />
                     </StackPanel>
 
                     <StackPanel Spacing="16">
                         <StackPanel Spacing="6">
                             <TextBlock Text="Personal access token" Style="{StaticResource FieldLabelStyle}" />
-                            <TextBlock Text="Recommended for Azure DevOps package feeds. Stored in app settings." Style="{StaticResource FieldHintStyle}" />
+                            <TextBlock Text="Recommended for Azure DevOps package feeds. Stored in app settings" Style="{StaticResource FieldHintStyle}" />
                             <PasswordBox x:Name="AzureArtifactsPatBox"
                                          PasswordChanged="AzureArtifactsPatBox_PasswordChanged"
                                          PlaceholderText="Paste PAT" />
@@ -99,7 +99,7 @@
 
                         <StackPanel Spacing="6">
                             <TextBlock Text="API key" Style="{StaticResource FieldLabelStyle}" />
-                            <TextBlock Text="Use this if your feed expects an API key instead of a PAT." Style="{StaticResource FieldHintStyle}" />
+                            <TextBlock Text="Use this if your feed expects an API key instead of a PAT" Style="{StaticResource FieldHintStyle}" />
                             <PasswordBox x:Name="AzureArtifactsApiKeyBox"
                                          PasswordChanged="AzureArtifactsApiKeyBox_PasswordChanged"
                                          PlaceholderText="Paste API key" />
@@ -112,13 +112,13 @@
                 <StackPanel Spacing="16">
                     <StackPanel Spacing="4">
                         <TextBlock Text="Package publishing" FontSize="18" FontWeight="SemiBold" />
-                        <TextBlock Text="Control what happens after a deployable package is created." Style="{StaticResource FieldHintStyle}" />
+                        <TextBlock Text="Control what happens after a deployable package is created" Style="{StaticResource FieldHintStyle}" />
                     </StackPanel>
 
                     <Border CornerRadius="10" Padding="14" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
                         <StackPanel Spacing="8">
                             <TextBlock Text="Push after package build" Style="{StaticResource FieldLabelStyle}" />
-                            <TextBlock Text="When enabled, NugetUtil will push the generated package immediately after fopack completes." Style="{StaticResource FieldHintStyle}" />
+                            <TextBlock Text="When enabled, NugetUtil will push the generated package immediately after fopack completes" Style="{StaticResource FieldHintStyle}" />
                             <ToggleSwitch
                                 Header="Push deployable package right away"
                                 IsOn="{Binding PushDeployablePackageOnBuild, Mode=TwoWay}" />
@@ -127,7 +127,7 @@
 
                     <StackPanel Spacing="6">
                         <TextBlock Text="NuGet source name" Style="{StaticResource FieldLabelStyle}" />
-                        <TextBlock Text="Optional. Passed to NugetUtil as -source. Leave empty if the default configured source should be used." Style="{StaticResource FieldHintStyle}" />
+                        <TextBlock Text="Optional. Passed to NugetUtil as -source. Leave empty if the default configured source should be used" Style="{StaticResource FieldHintStyle}" />
                         <TextBox Text="{Binding PushDeployablePackageSource, Mode=TwoWay}" PlaceholderText="For example: MyFeed" />
                     </StackPanel>
                 </StackPanel>

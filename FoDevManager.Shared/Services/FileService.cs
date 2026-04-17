@@ -121,7 +121,7 @@ namespace FODevManager.Services
             var data = JsonSerializer.Serialize(objectToClone);
             var result = JsonSerializer.Deserialize<T>(data);
             if (result == null)
-                throw new InvalidOperationException("Deserialization resulted in null.");
+                throw new InvalidOperationException("Deserialization resulted in null");
             return result;
         }
 
@@ -138,7 +138,7 @@ namespace FODevManager.Services
 
             if (!File.Exists(profilePath))
             {
-                MessageLogger.Warning($"⚠️ Profile '{profileName}' does not exist.");
+                MessageLogger.Warning($"⚠️ Profile '{profileName}' does not exist");
                 return;
             }
 

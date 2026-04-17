@@ -48,7 +48,7 @@
                         </ItemsControl>
                     </ScrollViewer>
                 </Border>
-                <TextBlock Text="This will close when the operation completes." Opacity="0.7" FontSize="12"/>
+                <TextBlock Text="This will close when the operation completes" Opacity="0.7" FontSize="12"/>
             </StackPanel>
         </Grid>
     </Grid>

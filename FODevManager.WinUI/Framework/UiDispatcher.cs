@@ -42,7 +42,7 @@ namespace FODevManager.WinUI.Framework
             });
 
             if (!enqueued)
-                taskCompletionSource.TrySetException(new InvalidOperationException("Failed to enqueue work on UI thread."));
+                taskCompletionSource.TrySetException(new InvalidOperationException("Failed to enqueue work on UI thread"));
 
             return taskCompletionSource.Task;
         }
@@ -73,7 +73,7 @@ namespace FODevManager.WinUI.Framework
             });
 
             if (!enqueued)
-                taskCompletionSource.TrySetException(new InvalidOperationException("Failed to enqueue work on UI thread."));
+                taskCompletionSource.TrySetException(new InvalidOperationException("Failed to enqueue work on UI thread"));
 
             return taskCompletionSource.Task;
         }
@@ -104,7 +104,7 @@ namespace FODevManager.WinUI.Framework
             });
 
             if (!enqueued)
-                taskCompletionSource.TrySetException(new InvalidOperationException("Failed to enqueue work on UI thread."));
+                taskCompletionSource.TrySetException(new InvalidOperationException("Failed to enqueue work on UI thread"));
 
             return taskCompletionSource.Task;
         }
@@ -135,7 +135,7 @@ namespace FODevManager.WinUI.Framework
             });
 
             if (!enqueued)
-                taskCompletionSource.TrySetException(new InvalidOperationException("Failed to enqueue work on UI thread."));
+                taskCompletionSource.TrySetException(new InvalidOperationException("Failed to enqueue work on UI thread"));
 
             return taskCompletionSource.Task;
         }

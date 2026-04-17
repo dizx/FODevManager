@@ -19,7 +19,7 @@ namespace FODevManager.Shared.Utils
                 var originalText = File.ReadAllText(configFilePath, Encoding.UTF8);
 
                 // Cheap and safe enough: only migrate the key name token, keep the value untouched.
-                // Example: "PeriTaskUrl": "https://..."  ->  "TaskUrl": "https://..."
+                // Example: "PeriTaskUrl": "https://.."  ->  "TaskUrl": "https://.."
                 var migratedText = originalText.Replace("\"PeriTaskUrl\"", "\"TaskUrl\"", StringComparison.Ordinal);
 
                 if (string.Equals(originalText, migratedText, StringComparison.Ordinal))
@@ -27,7 +27,7 @@ namespace FODevManager.Shared.Utils
 
                 File.WriteAllText(configFilePath, migratedText, Encoding.UTF8);
 
-                MessageLogger.Highlight("Config migration applied: PeriTaskUrl -> TaskUrl.");
+                MessageLogger.Highlight("Config migration applied: PeriTaskUrl -> TaskUrl");
             }
             catch (Exception exception)
             {

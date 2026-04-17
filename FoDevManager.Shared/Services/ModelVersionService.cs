@@ -44,14 +44,14 @@ namespace FODevManager.Services
 
             if (model.ModelType != ModelType.Source)
             {
-                MessageLogger.Warning($"Version editing is only supported for source models. '{model.ModelName}' is {model.ModelType}.");
+                MessageLogger.Warning($"Version editing is only supported for source models. '{model.ModelName}' is {model.ModelType}");
                 return false;
             }
 
             var descriptorFilePath = GetDescriptorFilePath(model);
             if (descriptorFilePath.IsNullOrEmpty())
             {
-                MessageLogger.Error($"Could not resolve descriptor file for model '{model.ModelName}'.");
+                MessageLogger.Error($"Could not resolve descriptor file for model '{model.ModelName}'");
                 return false;
             }
 

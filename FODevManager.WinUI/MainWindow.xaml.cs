@@ -63,7 +63,7 @@ namespace FODevManager.WinUI
         private int _profileLoadRequestId;
         private readonly ConcurrentDictionary<string, byte> _queuedNugetPreparationProfiles = new(StringComparer.OrdinalIgnoreCase);
 
-        private UiDispatcher Ui => _uiDispatcher ?? throw new InvalidOperationException("BusyOps.Initialize must be called before using BusyOps.");
+        private UiDispatcher Ui => _uiDispatcher ?? throw new InvalidOperationException("BusyOps.Initialize must be called before using BusyOps");
 
         public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService, ModelVersionService modelVersionService, AppConfig appConfig)
         {
@@ -112,7 +112,7 @@ namespace FODevManager.WinUI
 
             LoadProfiles();
 
-            UIMessageHelper.LogToUI($"READY...");
+            UIMessageHelper.LogToUI($"READY..");
 
             // Replace the lambda with a proper handler that includes cancellation
             this.Closed += (_, args) => 
@@ -193,7 +193,7 @@ namespace FODevManager.WinUI
                     var ageMs = (DateTime.UtcNow - _lastUiTickUtc).TotalMilliseconds;
                     if (ageMs > 1500)
                     {
-                        MessageLogger.Error($"UI STALL detected: last tick {ageMs:0} ms ago.");
+                        MessageLogger.Error($"UI STALL detected: last tick {ageMs:0} ms ago");
                     }
                 }
             });
@@ -681,7 +681,7 @@ namespace FODevManager.WinUI
 
             if (loadResult == null)
             {
-                MessageLogger.Error($"LoadModelListViewData: Could not load profile '{profileName}'.");
+                MessageLogger.Error($"LoadModelListViewData: Could not load profile '{profileName}'");
                 CombinedList.ItemsSource = new List<object>();
                 return;
             }
@@ -717,7 +717,7 @@ namespace FODevManager.WinUI
             var anchorModel = group.Models.FirstOrDefault();
             if (anchorModel is null || anchorModel.ModelName.IsNullOrEmpty())
             {
-                MessageLogger.Warning("⚠️ No model found in this repo group to open Git.");
+                MessageLogger.Warning("⚠️ No model found in this repo group to open Git");
                 return;
             }
 
@@ -775,7 +775,7 @@ namespace FODevManager.WinUI
                         switchBranch: true);
                 }, "Assign Task", false);
 
-                UIMessageHelper.LogToUI($"✅ Assigned Task '{taskId}' to repo '{group.DisplayName}'.");
+                UIMessageHelper.LogToUI($"✅ Assigned Task '{taskId}' to repo '{group.DisplayName}'");
             }
             catch (Exception exception)
             {
@@ -914,7 +914,7 @@ namespace FODevManager.WinUI
                 }
                 else
                 {
-                    UpdateStatus("❗ Solution file not found or path not set.");
+                    UpdateStatus("❗ Solution file not found or path not set");
                 }
             }
         }
@@ -999,7 +999,7 @@ namespace FODevManager.WinUI
             var repoUrl = urlTextBox.Text?.Trim() ?? string.Empty;
             if (repoUrl.IsNullOrEmpty())
             {
-                MessageLogger.Warning("Import cancelled: URL was empty.");
+                MessageLogger.Warning("Import cancelled: URL was empty");
                 return;
             }
 
@@ -1007,13 +1007,13 @@ namespace FODevManager.WinUI
 
             if (!ok)
             {
-                MessageLogger.Error("Import failed due to an error during cloning or importing.");
+                MessageLogger.Error("Import failed due to an error during cloning or importing");
                 return;
             }
             
             if (importedProfile == null)
             {
-                MessageLogger.Error("Import failed. No profile was imported.");
+                MessageLogger.Error("Import failed. No profile was imported");
                 return;
             }
 
@@ -1027,10 +1027,10 @@ namespace FODevManager.WinUI
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
-                UpdateStatus($"Deploying profile '{profileName}'...");
+                UpdateStatus($"Deploying profile '{profileName}'..");
                 await DeployAllModels(profileName);
                 LoadModelListViewData(profileName);
-                UpdateStatus($"✅ Deployment complete for '{profileName}'.");
+                UpdateStatus($"✅ Deployment complete for '{profileName}'");
             }
         }
 
@@ -1042,7 +1042,7 @@ namespace FODevManager.WinUI
                LoadModelListViewData(profileName);
             }
 
-            UpdateStatus($"🧹 Undeployment complete for all models in all profiles.");
+            UpdateStatus($"🧹 Undeployment complete for all models in all profiles");
         }
 
         private async void RefreshProfile_Click(object sender, RoutedEventArgs e)
@@ -1104,14 +1104,14 @@ namespace FODevManager.WinUI
             var dataPackageView = Clipboard.GetContent();
             if (dataPackageView == null || !dataPackageView.Contains(StandardDataFormats.Text))
             {
-                UpdateStatus("Clipboard does not contain text.");
+                UpdateStatus("Clipboard does not contain text");
                 return;
             }
 
             var text = (await dataPackageView.GetTextAsync())?.Trim() ?? string.Empty;
             if (text.IsNullOrEmpty())
             {
-                UpdateStatus("Clipboard text is empty.");
+                UpdateStatus("Clipboard text is empty");
                 return;
             }
 
@@ -1154,7 +1154,7 @@ namespace FODevManager.WinUI
 
                 await RemoveModelFromProfile(profileName, modelName);
                 LoadModelListViewData(profileName);
-                UpdateStatus($"🗑️ Model '{modelName}' removed from '{profileName}'.");
+                UpdateStatus($"🗑️ Model '{modelName}' removed from '{profileName}'");
             }
         }
 
@@ -1228,7 +1228,7 @@ namespace FODevManager.WinUI
 
             contentPanel.Children.Add(new TextBlock
             {
-                Text = "© 2026 ECIT Peritus AS. All rights reserved.",
+                Text = "© 2026 ECIT Peritus AS. All rights reserved",
                 FontStyle = FontStyle.Italic
             });
 
@@ -1317,7 +1317,7 @@ namespace FODevManager.WinUI
 
             if (repositories.Count == 0)
             {
-                UpdateStatus($"No repositories are available in profile '{profileName}' for NuGet package installation.");
+                UpdateStatus($"No repositories are available in profile '{profileName}' for NuGet package installation");
                 return false;
             }
 
@@ -1350,7 +1350,7 @@ namespace FODevManager.WinUI
             };
 
             var content = new StackPanel { Spacing = 8 };
-            content.Children.Add(new TextBlock { Text = "Choose which repository should own this package." });
+            content.Children.Add(new TextBlock { Text = "Choose which repository should own this package" });
             content.Children.Add(repositoryComboBox);
             content.Children.Add(new TextBlock { Text = "Package URL:" });
             content.Children.Add(new TextBlock
@@ -1474,7 +1474,7 @@ namespace FODevManager.WinUI
         {
             if (ActiveProfile == null)
             {
-                MessageLogger.Warning("Select a profile before editing the database name.");
+                MessageLogger.Warning("Select a profile before editing the database name");
                 return;
             }
 
@@ -1497,14 +1497,14 @@ namespace FODevManager.WinUI
             var newDbString = (DatabaseNameTextBox.Text ?? string.Empty).Trim();
             if (newDbString.SameAs(ActiveProfile.DatabaseName))
             {
-                MessageLogger.Info("Database name unchanged.");
+                MessageLogger.Info("Database name unchanged");
                 SetDatabaseEditingState(false);
                 return;
             }
 
             if (newDbString.IsNullOrEmpty())
             {
-                MessageLogger.Warning("Database name cannot be empty.");
+                MessageLogger.Warning("Database name cannot be empty");
                 DatabaseNameTextBox.Text = ActiveProfile.DatabaseName;
                 return;
             }
@@ -1523,7 +1523,7 @@ namespace FODevManager.WinUI
             if (result != ContentDialogResult.Primary)
             {
                 CancelDatabaseNameEdit();
-                MessageLogger.Info("Database change cancelled.");
+                MessageLogger.Info("Database change cancelled");
                 return;
             }
 
@@ -1544,7 +1544,7 @@ namespace FODevManager.WinUI
         private void DatabaseNameCancelButton_Click(object sender, RoutedEventArgs e)
         {
             CancelDatabaseNameEdit();
-            MessageLogger.Info("Database change cancelled.");
+            MessageLogger.Info("Database change cancelled");
         }
 
         private async void DatabaseNameApplyButton_Click(object sender, RoutedEventArgs e)
@@ -1557,7 +1557,7 @@ namespace FODevManager.WinUI
             if (e.Key == VirtualKey.Escape)
             {
                 CancelDatabaseNameEdit();
-                MessageLogger.Info("Database change cancelled.");
+                MessageLogger.Info("Database change cancelled");
                 return;
             }
 
@@ -1573,13 +1573,13 @@ namespace FODevManager.WinUI
             if (newDbString.SameAs(ActiveProfile.DatabaseName))
             {
                 // nothing changed—do nothing
-                MessageLogger.Info("Database name unchanged.");
+                MessageLogger.Info("Database name unchanged");
                 return;
             }
 
             if (newDbString.IsNullOrEmpty())
             {
-                MessageLogger.Warning("Database name cannot be empty.");
+                MessageLogger.Warning("Database name cannot be empty");
                 DatabaseNameTextBox.Text = ActiveProfile.DatabaseName;
                 return;
             }
@@ -1600,7 +1600,7 @@ namespace FODevManager.WinUI
                 // revert if user says No
                 DatabaseNameTextBox.Text = ActiveProfile.DatabaseName;
                 DatabaseNameTextBox.IsReadOnly = true;
-                MessageLogger.Info("Database change cancelled.");
+                MessageLogger.Info("Database change cancelled");
                 return;
             }
 
@@ -1713,7 +1713,7 @@ namespace FODevManager.WinUI
                     var profile = LoadProfileByName(profileName);
                     if (profile == null)
                     {
-                        MessageLogger.Error($"✖ Profile '{profileName}' could not be loaded.");
+                        MessageLogger.Error($"✖ Profile '{profileName}' could not be loaded");
                         return;
                     }
                 }
@@ -1721,7 +1721,7 @@ namespace FODevManager.WinUI
                 var dlg = new ContentDialog
                 {
                     Title = "Delete profile?",
-                    Content = $"This will permanently delete the profile '{selectedProfileName}'\n\nThis cannot be undone.",
+                    Content = $"This will permanently delete the profile '{selectedProfileName}'\n\nThis cannot be undone",
                     PrimaryButtonText = "Delete",
                     CloseButtonText = "Cancel",
                     DefaultButton = ContentDialogButton.Close,
@@ -1731,7 +1731,7 @@ namespace FODevManager.WinUI
                 var result = await dlg.ShowAsync();
                 if (result != ContentDialogResult.Primary)
                 {
-                    MessageLogger.Info("ℹ Delete profile cancelled.");
+                    MessageLogger.Info("ℹ Delete profile cancelled");
                     return;
                 }
 
@@ -1945,21 +1945,21 @@ namespace FODevManager.WinUI
                     },
                     CreateSectionWithContent(
                         "Repository Details",
-                        "Reference information for this repository.",
+                        "Reference information for this repository",
                         CreateReadOnlyField("Repository", repositoryModel.RepoId),
                         CreateReadOnlyField("Root", repositoryModel.RepoRootFolder)),
                     CreateSectionWithContent(
                         "General",
-                        "Repository naming and branch preferences.",
+                        "Repository naming and branch preferences",
                         CreateEditableField("Display name", displayNameTextBox),
                         CreateEditableField("Preferred branch", preferredBranchTextBox)),
                     CreateSectionWithContent(
                         "Git Behavior",
-                        "Control what should happen when the profile loads or the branch is dirty.",
+                        "Control what should happen when the profile loads or the branch is dirty",
                         behaviorPanel),
                     CreateSectionWithContent(
                         "Task information",
-                        "Current task information for this repository.",
+                        "Current task information for this repository",
                         CreateEditableField("Task", taskTextBox),
                         CreateEditableField("Task comment", taskCommentTextBox))
                 }
@@ -2123,9 +2123,9 @@ namespace FODevManager.WinUI
                     Children =
                     {
                         versionMajorTextBox,
-                        new TextBlock { Text = ".", VerticalAlignment = VerticalAlignment.Center, Opacity = 0.72 },
+                        new TextBlock { Text = "", VerticalAlignment = VerticalAlignment.Center, Opacity = 0.72 },
                         versionMinorTextBox,
-                        new TextBlock { Text = ".", VerticalAlignment = VerticalAlignment.Center, Opacity = 0.72 },
+                        new TextBlock { Text = "", VerticalAlignment = VerticalAlignment.Center, Opacity = 0.72 },
                         versionRevisionTextBox
                     }
                 })
@@ -2134,8 +2134,8 @@ namespace FODevManager.WinUI
             var versionSection = CreateSectionWithContent(
                 "Version",
                 canEditVersion
-                    ? "Source model version can be edited here."
-                    : "Compiled model details are read-only.",
+                    ? "Source model version can be edited here"
+                    : "Compiled model details are read-only",
                 versionEditorOrValue);
 
             var modelDetailsSectionContent = new List<UIElement>
@@ -2175,14 +2175,14 @@ namespace FODevManager.WinUI
                 contentPanel.Children.Add(
                     CreateSectionWithContent(
                         "Solution role",
-                        "Control whether this source model should be treated as the main solution root.",
+                        "Control whether this source model should be treated as the main solution root",
                         CreateValueContainer(mainFoToggle)));
             }
 
             contentPanel.Children.Add(
                 CreateSectionWithContent(
                     "Model Details",
-                    "Reference information for this model.",
+                    "Reference information for this model",
                     modelDetailsSectionContent.ToArray()));
 
             UIElement dialogContent = new Grid
@@ -2225,7 +2225,7 @@ namespace FODevManager.WinUI
                     await new ContentDialog
                     {
                         Title = "Invalid version",
-                        Content = "Version must use non-negative integers in the format major.minor.revision.",
+                        Content = "Version must use non-negative integers in the format major.minor.revision",
                         CloseButtonText = "OK",
                         XamlRoot = this.Content.XamlRoot
                     }.ShowAsync();

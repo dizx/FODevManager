@@ -105,7 +105,7 @@ namespace FODevManager.WinUI
                     outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss}] [{Level:u3}] {Message:lj}{NewLine}{Exception}")
                 .CreateLogger();
 
-            Log.Information("Logger initialized.");
+            Log.Information("Logger initialized");
         }
        
 
@@ -160,7 +160,7 @@ namespace FODevManager.WinUI
         {
             if(Services == null)
             {
-                throw new InvalidOperationException("Service provider is not initialized.");
+                throw new InvalidOperationException("Service provider is not initialized");
             }
 
             var profileService = Services.GetRequiredService<ProfileService>();

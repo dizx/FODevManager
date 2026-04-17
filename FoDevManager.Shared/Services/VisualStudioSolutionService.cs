@@ -68,24 +68,24 @@ namespace FODevManager.Services
             return CreateSolutionFile(profile.ProfileName, solutionDir, solutionFilePath);
         }
 
-        public string CreateSingleModelBuildSolution(ProfileModel profile, ProfileEnvironmentModel model)
+        public string CreateBuildSolution(ProfileModel profile, ProfileEnvironmentModel model)
         {
             if (profile == null) throw new ArgumentNullException(nameof(profile));
             if (model == null) throw new ArgumentNullException(nameof(model));
             if (model.ProjectFilePath.IsNullOrEmpty())
-                throw new ArgumentException("Model project file path is required.", nameof(model));
+                throw new ArgumentException("Model project file path is required", nameof(model));
 
             var projectFilePath = Path.GetFullPath(model.ProjectFilePath);
             var solutionDirectory = Path.GetDirectoryName(projectFilePath);
             if (solutionDirectory.IsNullOrEmpty())
-                throw new InvalidOperationException($"Could not resolve a solution directory for '{projectFilePath}'.");
+                throw new InvalidOperationException($"Could not resolve a solution directory for '{projectFilePath}'");
 
             if (!File.Exists(projectFilePath))
-                throw new FileNotFoundException("Source project file not found.", projectFilePath);
+                throw new FileNotFoundException("Source project file not found", projectFilePath);
 
             var sourceSolutionFilePath = GetSolutionFilePath(profile);
             if (!File.Exists(sourceSolutionFilePath))
-                throw new FileNotFoundException("Source solution file not found.", sourceSolutionFilePath);
+                throw new FileNotFoundException("Source solution file not found", sourceSolutionFilePath);
 
             Directory.CreateDirectory(solutionDirectory);
             var solutionFilePath = Path.Combine(solutionDirectory, $"{model.ModelName}.packagebuild.sln");
@@ -125,11 +125,10 @@ namespace FODevManager.Services
             }
 
             if (!projectFound)
-                throw new InvalidOperationException($"Model '{model.ModelName}' could not be found in solution '{sourceSolutionFilePath}'.");
+                throw new InvalidOperationException($"Model '{model.ModelName}' could not be found in solution '{sourceSolutionFilePath}'");
 
             File.WriteAllText(solutionFilePath, builder.ToString());
-
-            MessageLogger.Info($"✅ Single-model build solution ready: {solutionFilePath}");
+            
             return solutionFilePath;
         }
 
@@ -142,7 +141,7 @@ namespace FODevManager.Services
 
             if (File.Exists(solutionFilePath))
             {
-                MessageLogger.Warning($"Solution file already exists for profile '{profileName}'.");
+                MessageLogger.Warning($"Solution file already exists for profile '{profileName}'");
                 return solutionFilePath;
             }
 
@@ -165,7 +164,7 @@ namespace FODevManager.Services
             var projectFilePath = model.ProjectFilePath;
             if (projectFilePath.IsNullOrEmpty())
             {
-                MessageLogger.Error("Environment has no ProjectFilePath.");
+                MessageLogger.Error("Environment has no ProjectFilePath");
                 return;
             }
 
@@ -180,7 +179,7 @@ namespace FODevManager.Services
 
             if (!File.Exists(solutionFilePath))
             {
-                MessageLogger.Info($"Solution file does not exist for profile '{profile.ProfileName}'. Creating one...");
+                MessageLogger.Info($"Solution file does not exist for profile '{profile.ProfileName}'. Creating one..");
                 CreateSolutionFile(profile); 
             }
 
@@ -194,7 +193,7 @@ namespace FODevManager.Services
 
             if (alreadyInSolution)
             {
-                MessageLogger.Warning($"Project '{model.ModelName}' already in solution.");
+                MessageLogger.Warning($"Project '{model.ModelName}' already in solution");
                 return;
             }
 
@@ -213,7 +212,7 @@ namespace FODevManager.Services
             sb.AppendLine("EndProject");
 
             File.WriteAllText(solutionFilePath, sb.ToString());
-            MessageLogger.Info($"Added project '{model.ModelName}' to solution '{profile.ProfileName}.sln'.");
+            MessageLogger.Info($"Added project '{model.ModelName}' to solution '{profile.ProfileName}.sln'");
         }
 
         private static string? TryGetProjectNameFromLine(string line)
@@ -244,7 +243,7 @@ namespace FODevManager.Services
 
             if (!File.Exists(solutionFilePath))
             {
-                MessageLogger.Warning($"Solution file for profile '{profile.ProfileName}' does not exist.");
+                MessageLogger.Warning($"Solution file for profile '{profile.ProfileName}' does not exist");
                 return;
             }
 
@@ -274,14 +273,14 @@ namespace FODevManager.Services
             }
 
             File.WriteAllText(solutionFilePath, sb.ToString());
-            MessageLogger.Info($"Removed project '{modelName}' from solution '{profile.ProfileName}.sln'.");
+            MessageLogger.Info($"Removed project '{modelName}' from solution '{profile.ProfileName}.sln'");
         }
 
         public void OpenSolution(string solutionPath)
         {
             if (solutionPath.IsNullOrEmpty() || !File.Exists(solutionPath))
             {
-                MessageLogger.Error("Solution file not found.");
+                MessageLogger.Error("Solution file not found");
                 return;
             }
 

@@ -33,7 +33,7 @@ namespace FODevManager.Utils
         {
             if (!File.Exists(WebConfigPath))
             {
-                MessageLogger.Warning("❌ web.config not found.");
+                MessageLogger.Warning("❌ web.config not found");
                 return;
             }
 
@@ -45,14 +45,14 @@ namespace FODevManager.Utils
 
                 if (dbKey == null)
                 {
-                    MessageLogger.Warning("❌ 'DataAccess.Database' key not found in web.config.");
+                    MessageLogger.Warning("❌ 'DataAccess.Database' key not found in web.config");
                     return;
                 }
 
                 string? currentDb = dbKey.Attribute("value")?.Value;
                 if (currentDb == dbName)
                 {
-                    MessageLogger.Info($"ℹ️ Database is already set to '{dbName}'. No change needed.");
+                    MessageLogger.Info($"ℹ️ Database is already set to '{dbName}'. No change needed");
                     return;
                 }
 

@@ -24,23 +24,15 @@ namespace FODevManager.Services
             Application2BuildPackageId,
             ApplicationSuiteBuildPackageId
         ];
+        private readonly AppConfig _config;
         private readonly string _deployablePackagesRoot;
         private readonly string _deploymentBasePath;
-        private readonly string _azureArtifactsUsername;
-        private readonly string _azureArtifactsPat;
-        private readonly string _azureArtifactsApiKey;
-        private readonly bool _pushDeployablePackageOnBuild;
-        private readonly string _pushDeployablePackageSource;
 
         public DeployablePackageService(AppConfig config)
         {
-            _deployablePackagesRoot = config.DeployablePackages;
-            _deploymentBasePath = config.DeploymentBasePath;
-            _azureArtifactsUsername = config.AzureArtifactsUsername;
-            _azureArtifactsPat = config.AzureArtifactsPat;
-            _azureArtifactsApiKey = config.AzureArtifactsApiKey;
-            _pushDeployablePackageOnBuild = config.PushDeployablePackageOnBuild;
-            _pushDeployablePackageSource = config.PushDeployablePackageSource;
+            _config = config ?? throw new ArgumentNullException(nameof(config));
+            _deployablePackagesRoot = _config.DeployablePackages;
+            _deploymentBasePath = _config.DeploymentBasePath;
 
             if (!_deployablePackagesRoot.IsNullOrEmpty())
             {
@@ -71,7 +63,7 @@ namespace FODevManager.Services
 
             if (_deployablePackagesRoot.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ DeployablePackages is not configured. Cannot prepare compiled NuGet models.");
+                MessageLogger.Error("❌ DeployablePackages is not configured. Cannot prepare compiled NuGet models");
                 return false;
             }
 
@@ -87,7 +79,7 @@ namespace FODevManager.Services
 
             if (extractedPackages.Count == 0)
             {
-                MessageLogger.Warning($"⚠️ No deployable packages could be prepared for repository '{repository.DisplayName}'.");
+                MessageLogger.Warning($"⚠️ No deployable packages could be prepared for repository '{repository.DisplayName}'");
                 return false;
             }
 
@@ -102,7 +94,7 @@ namespace FODevManager.Services
             var repository = profile.FindRepositoryForModel(model);
             if (repository == null)
             {
-                MessageLogger.Warning($"⚠️ Compiled NuGet model '{model.ModelName}' is not mapped to a repository. Skipping package preparation.");
+                MessageLogger.Warning($"⚠️ Compiled NuGet model '{model.ModelName}' is not mapped to a repository. Skipping package preparation");
                 return false;
             }
 
@@ -125,13 +117,13 @@ namespace FODevManager.Services
 
             if (model.ModelType != ModelType.Source)
             {
-                MessageLogger.Error($"❌ Only source models can be packaged. '{model.ModelName}' is {model.ModelType}.");
+                MessageLogger.Error($"❌ Only source models can be packaged. '{model.ModelName}' is {model.ModelType}");
                 return false;
             }
 
             if (model.ModelName.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Model name is required to build a deployable package.");
+                MessageLogger.Error("❌ Model name is required to build a deployable package");
                 return false;
             }
 
@@ -143,14 +135,14 @@ namespace FODevManager.Services
 
             if (_deployablePackagesRoot.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ DeployablePackages is not configured. Cannot build package artifacts.");
+                MessageLogger.Error("❌ DeployablePackages is not configured. Cannot build package artifacts");
                 return false;
             }
 
             var appNugetConfigPath = ResolveApplicationNugetConfigPath();
             if (appNugetConfigPath.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Could not locate FO Dev Manager nuget.config in the app directory.");
+                MessageLogger.Error("❌ Could not locate FO Dev Manager nuget.config in the app directory");
                 return false;
             }
 
@@ -176,21 +168,21 @@ namespace FODevManager.Services
             Directory.CreateDirectory(buildOutputRoot);
             Directory.CreateDirectory(nugetOutputRoot);
 
-            MessageLogger.Highlight($"📦 Building deployable package for '{model.ModelName}'...");
+            MessageLogger.Highlight($"📦 Building package for '{model.ModelName}'.");
 
             if (!RunMsBuild(solutionFilePath, buildContext, buildOutputRoot))
                 return false;
 
             if (!TryResolveBuiltPayloadRoot(buildOutputRoot, model.ModelName, out var payloadRoot))
             {
-                MessageLogger.Error($"❌ Could not find compiled payload for model '{model.ModelName}' under '{buildOutputRoot}'.");
+                MessageLogger.Error($"❌ Could not find compiled payload for model '{model.ModelName}' under '{buildOutputRoot}'");
                 return false;
             }
 
             var sourceFileCount = Directory.GetFiles(payloadRoot, "*", SearchOption.AllDirectories).Length;
             if (sourceFileCount == 0)
             {
-                MessageLogger.Error($"❌ Compiled payload root '{payloadRoot}' contains no files.");
+                MessageLogger.Error($"❌ Compiled payload root '{payloadRoot}' contains no files");
                 return false;
             }
 
@@ -207,13 +199,11 @@ namespace FODevManager.Services
             var capturedFileCount = Directory.GetFiles(capturedPayloadRoot, "*", SearchOption.AllDirectories).Length;
             if (capturedFileCount == 0)
             {
-                MessageLogger.Error($"❌ Build output copy created '{capturedPayloadRoot}' but no files were copied from '{payloadRoot}'.");
+                MessageLogger.Error($"❌ Build output copy created '{capturedPayloadRoot}' but no files were copied from '{payloadRoot}'");
                 return false;
             }
 
-            MessageLogger.Info($"📦 Using compiled payload directory: {payloadRoot} ({sourceFileCount} files)");
-            MessageLogger.Info($"📁 Captured build output: {capturedPayloadRoot} ({capturedFileCount} files)");
-            MessageLogger.Highlight($"✅ Build output captured for model '{model.ModelName}'.");
+            MessageLogger.Highlight($"✅ Build model '{model.ModelName}' is completed");
 
             if (!RunNugetUtilFopack(capturedPayloadRoot, nugetOutputRoot, out var packagePath, out var nuspecPath))
                 return false;
@@ -231,13 +221,13 @@ namespace FODevManager.Services
 
             if (!TryParseNugetPackageUrl(packageUrl, out var packageId, out var packageVersion))
             {
-                MessageLogger.Error($"❌ Unsupported package URL '{packageUrl}'.");
+                MessageLogger.Error($"❌ Unsupported package URL '{packageUrl}'");
                 return false;
             }
 
             if (!TryGetIsvConfigPath(repository, createIfMissing: true, out var isvConfigPath))
             {
-                MessageLogger.Error($"❌ Could not locate Build\\isv.config for repository '{repository.DisplayName}'.");
+                MessageLogger.Error($"❌ Could not locate Build\\isv.config for repository '{repository.DisplayName}'");
                 return false;
             }
 
@@ -278,13 +268,13 @@ namespace FODevManager.Services
 
             if (!TryParseNugetPackageUrl(packageUrl, out var newPackageId, out var newPackageVersion))
             {
-                MessageLogger.Error($"❌ Unsupported package URL '{packageUrl}'.");
+                MessageLogger.Error($"❌ Unsupported package URL '{packageUrl}'");
                 return false;
             }
 
             if (!TryGetIsvConfigPath(repository, createIfMissing: true, out var isvConfigPath))
             {
-                MessageLogger.Error($"❌ Could not locate Build\\isv.config for repository '{repository.DisplayName}'.");
+                MessageLogger.Error($"❌ Could not locate Build\\isv.config for repository '{repository.DisplayName}'");
                 return false;
             }
 
@@ -304,28 +294,28 @@ namespace FODevManager.Services
             var repositoryRoot = (repository.RepoRootFolder ?? string.Empty).Trim();
             if (repositoryRoot.IsNullOrEmpty() || !Directory.Exists(repositoryRoot))
             {
-                MessageLogger.LogOnly($"Repository root folder is missing for '{repository.DisplayName}'. Cannot prepare compiled NuGet models.");
+                MessageLogger.LogOnly($"Repository root folder is missing for '{repository.DisplayName}'. Cannot prepare compiled NuGet models");
                 return false;
             }
 
             var nugetConfigPath = FindRepositoryConfigFile(repositoryRoot, "nuget.config");
             if (nugetConfigPath.IsNullOrEmpty())
             {
-                MessageLogger.LogOnly($"No nuget.config found under repository '{repository.DisplayName}'.");
+                MessageLogger.LogOnly($"No nuget.config found under repository '{repository.DisplayName}'");
                 return false;
             }
 
             var isvConfigPath = FindRepositoryConfigFile(repositoryRoot, "isv.config");
             if (isvConfigPath.IsNullOrEmpty())
             {
-                MessageLogger.LogOnly($"No isv.config found under repository '{repository.DisplayName}'.");
+                MessageLogger.LogOnly($"No isv.config found under repository '{repository.DisplayName}'");
                 return false;
             }
 
             var packages = LoadIsvPackageReferences(isvConfigPath);
             if (packages.Count == 0)
             {
-                MessageLogger.LogOnly($"No package entries found in Build\\isv.config for repository '{repository.DisplayName}'.");
+                MessageLogger.LogOnly($"No package entries found in Build\\isv.config for repository '{repository.DisplayName}'");
                 return false;
             }
 
@@ -457,7 +447,7 @@ namespace FODevManager.Services
 
                 if (!HasCompiledPackageContent(installedPackageFolder))
                 {
-                    MessageLogger.Warning($"⚠️ NuGet package '{packageReference.Id} {packageReference.Version}' did not contain compiled model files.");
+                    MessageLogger.Warning($"⚠️ NuGet package '{packageReference.Id} {packageReference.Version}' did not contain compiled model files");
                     return false;
                 }
 
@@ -496,7 +486,7 @@ namespace FODevManager.Services
             var nugetExecutable = ResolveNuGetExecutable();
             if (nugetExecutable.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Could not locate nuget.exe on PATH. Cannot download deployable packages.");
+                MessageLogger.Error("❌ Could not locate nuget.exe on PATH. Cannot download deployable packages");
                 return false;
             }
 
@@ -522,7 +512,7 @@ namespace FODevManager.Services
                             throw new InvalidOperationException($"NuGet install failed for '{packageReference.Id} {packageReference.Version}'. {output}".Trim());
 
                         if (!Directory.Exists(targetInstalledPackageFolder))
-                            throw new InvalidOperationException($"NuGet install completed for '{packageReference.Id} {packageReference.Version}', but '{targetInstalledPackageFolder}' was not created.");
+                            throw new InvalidOperationException($"NuGet install completed for '{packageReference.Id} {packageReference.Version}', but '{targetInstalledPackageFolder}' was not created");
                     },
                     times: NugetDownloadRetryCount,
                     onRetry: (attempt, exception, retryDelay) =>
@@ -531,7 +521,7 @@ namespace FODevManager.Services
                             $"⚠️ NuGet download attempt {attempt} failed for '{packageReference.Id} {packageReference.Version}'. Retrying in {retryDelay.TotalSeconds:0}s. {exception.Message}");
                     });
 
-                MessageLogger.Info($"📦 Downloaded deployable package '{packageReference.Id} {packageReference.Version}'.");
+                MessageLogger.Info($"📦 Downloaded deployable package '{packageReference.Id} {packageReference.Version}'");
                 return Directory.Exists(installedPackageFolder);
             }
             catch (Exception exception)
@@ -734,8 +724,8 @@ namespace FODevManager.Services
             if (!secret.IsNullOrEmpty())
                 return true;
 
-            MessageLogger.Error("❌ Cannot download FO build packages because private Azure Artifacts feeds are configured but no credentials are saved in Settings.");
-            MessageLogger.Info("Open Settings and provide an Azure Artifacts PAT or API key before retrying package download.");
+            MessageLogger.Error("❌ Cannot download FO build packages because private Azure Artifacts feeds are configured but no credentials are saved in Settings");
+            MessageLogger.Info("Open Settings and provide an Azure Artifacts PAT or API key before retrying package download");
             MessageLogger.LogOnly($"Azure Artifacts feeds: {string.Join(", ", azureFeedEndpoints)}");
 
             return false;
@@ -751,7 +741,7 @@ namespace FODevManager.Services
             if (feedEndpoints.Count == 0)
                 return;
 
-            var username = _azureArtifactsUsername.IsNullOrEmpty() ? "FODevManager" : _azureArtifactsUsername;
+            var username = _config.AzureArtifactsUsername.IsNullOrEmpty() ? "FODevManager" : _config.AzureArtifactsUsername;
             var endpointCredentials = string.Join(",",
                 feedEndpoints.Select(endpoint =>
                     $"{{\"endpoint\":\"{EscapeJson(endpoint)}\",\"username\":\"{EscapeJson(username)}\",\"password\":\"{EscapeJson(secret)}\"}}"));
@@ -775,8 +765,8 @@ namespace FODevManager.Services
                 : repository.DisplayName;
 
             MessageLogger.Error(
-                $"❌ Cannot prepare NuGet packages for repository '{displayName}' because private Azure Artifacts feeds are configured but no credentials are saved in Settings.");
-            MessageLogger.Info("Open Settings and provide an Azure Artifacts PAT or API key before retrying package download.");
+                $"❌ Cannot prepare NuGet packages for repository '{displayName}' because private Azure Artifacts feeds are configured but no credentials are saved in Settings");
+            MessageLogger.Info("Open Settings and provide an Azure Artifacts PAT or API key before retrying package download");
             MessageLogger.LogOnly($"Azure Artifacts feeds: {string.Join(", ", azureFeedEndpoints)}");
 
             return false;
@@ -784,10 +774,10 @@ namespace FODevManager.Services
 
         private string ResolveAzureArtifactsSecret()
         {
-            if (!_azureArtifactsPat.IsNullOrEmpty())
-                return _azureArtifactsPat;
+            if (!_config.AzureArtifactsPat.IsNullOrEmpty())
+                return _config.AzureArtifactsPat;
 
-            return _azureArtifactsApiKey ?? string.Empty;
+            return _config.AzureArtifactsApiKey ?? string.Empty;
         }
 
         private static List<string> LoadAzureArtifactsFeedEndpoints(string nugetConfigPath)
@@ -862,11 +852,11 @@ namespace FODevManager.Services
             var nugetExecutable = ResolveNuGetExecutable();
             if (nugetExecutable.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Could not locate nuget.exe on PATH. Cannot download FO build packages.");
+                MessageLogger.Error("❌ Could not locate nuget.exe on PATH. Cannot download FO build packages");
                 return false;
             }
 
-            MessageLogger.Info($"📥 Downloading build package '{packageId}'...");
+            MessageLogger.Info($"📥 Downloading build package '{packageId}'..");
 
             var processStartInfo = new ProcessStartInfo
             {
@@ -891,7 +881,7 @@ namespace FODevManager.Services
 
                         resolvedPackageRoot = ResolveInstalledPackageRoot(buildPackagesRoot, packageId);
                         if (resolvedPackageRoot.IsNullOrEmpty())
-                            throw new InvalidOperationException($"Package '{packageId}' was downloaded, but the installed folder could not be resolved.");
+                            throw new InvalidOperationException($"Package '{packageId}' was downloaded, but the installed folder could not be resolved");
                     },
                     times: NugetDownloadRetryCount,
                     onRetry: (attempt, exception, retryDelay) =>
@@ -958,7 +948,7 @@ namespace FODevManager.Services
             var msbuildExecutable = ResolveMsBuildExecutable();
             if (msbuildExecutable.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Could not locate msbuild.exe. Ensure Visual Studio Build Tools are installed and msbuild is on PATH.");
+                MessageLogger.Error("❌ Could not locate msbuild.exe. Ensure Visual Studio Build Tools are installed and msbuild is on PATH");
                 return false;
             }
 
@@ -983,7 +973,7 @@ namespace FODevManager.Services
                 CreateNoWindow = true
             };
 
-            MessageLogger.Info($"🛠️ Running MSBuild for solution '{solutionFilePath}'...");
+            MessageLogger.Info($"🛠️ Running MSBuild for solution '{solutionFilePath}'.");
 
             if (!RunProcess(processStartInfo, out var output))
             {
@@ -991,7 +981,7 @@ namespace FODevManager.Services
                 return false;
             }
 
-            MessageLogger.Info($"✅ MSBuild completed for '{Path.GetFileName(solutionFilePath)}'.");
+            MessageLogger.Info($"✅ MSBuild completed for '{Path.GetFileName(solutionFilePath)}'");
             return true;
         }
 
@@ -1003,17 +993,17 @@ namespace FODevManager.Services
             var nugetUtilPath = ResolveNugetUtilExecutable();
             if (nugetUtilPath.IsNullOrEmpty())
             {
-                MessageLogger.Error($"❌ Could not locate NugetUtil. Expected '{NugetUtilDefaultPath}' or an executable on PATH.");
+                MessageLogger.Error($"❌ Could not locate NugetUtil. Expected '{NugetUtilDefaultPath}' or an executable on PATH");
                 return false;
             }
 
             var arguments = $"fopack \"{payloadRoot}\" -output \"{nugetOutputRoot}\" -save-nuspec";
-            if (_pushDeployablePackageOnBuild)
+            if (_config.PushDeployablePackageOnBuild)
             {
-                arguments += " -push";
+                arguments += " -push -yes";
 
-                if (!_pushDeployablePackageSource.IsNullOrEmpty())
-                    arguments += $" -source \"{_pushDeployablePackageSource}\"";
+                if (!_config.PushDeployablePackageSource.IsNullOrEmpty())
+                    arguments += $" -source \"{_config.PushDeployablePackageSource}\"";
             }
 
             var processStartInfo = new ProcessStartInfo
@@ -1028,8 +1018,9 @@ namespace FODevManager.Services
             };
 
             var appNugetConfigPath = ResolveApplicationNugetConfigPath();
-            if (!appNugetConfigPath.IsNullOrEmpty())
-                ApplyAzureArtifactsCredentials(processStartInfo, appNugetConfigPath);
+            
+            //if (_config.PushDeployablePackageOnBuild && !appNugetConfigPath.IsNullOrEmpty())
+            //    ApplyAzureArtifactsCredentials(processStartInfo, appNugetConfigPath);
 
             if (!RunProcess(processStartInfo, out var output))
             {
@@ -1046,13 +1037,13 @@ namespace FODevManager.Services
 
             if (packageFiles.Length == 0)
             {
-                MessageLogger.Error($"❌ NugetUtil completed, but no .nupkg was created under '{nugetOutputRoot}'.");
+                MessageLogger.Error($"❌ NugetUtil completed, but no .nupkg was created under '{nugetOutputRoot}'");
                 return false;
             }
 
             if (nuspecFiles.Length == 0)
             {
-                MessageLogger.Error($"❌ NugetUtil completed, but no .nuspec was created under '{nugetOutputRoot}'.");
+                MessageLogger.Error($"❌ NugetUtil completed, but no .nuspec was created under '{nugetOutputRoot}'");
                 return false;
             }
 
@@ -1061,7 +1052,7 @@ namespace FODevManager.Services
 
             MessageLogger.Info($"📦 NuGet package: {packagePath}");
             MessageLogger.Info($"📄 Nuspec: {nuspecPath}");
-            MessageLogger.Info("✅ NugetUtil packaging completed.");
+            MessageLogger.Info("✅ NugetUtil packaging completed");
             return true;
         }
 
@@ -1072,13 +1063,13 @@ namespace FODevManager.Services
 
             if (nuspecPath.IsNullOrEmpty() || !File.Exists(nuspecPath))
             {
-                MessageLogger.Error($"❌ Generated nuspec '{nuspecPath}' could not be found.");
+                MessageLogger.Error($"❌ Generated nuspec '{nuspecPath}' could not be found");
                 return false;
             }
 
             if (!TryGetModelPackageRoot(model, out var modelPackageRoot))
             {
-                MessageLogger.Error($"❌ Could not resolve a model root folder for '{model.ModelName}' to place the nuspec.");
+                MessageLogger.Error($"❌ Could not resolve a model root folder for '{model.ModelName}' to place the nuspec");
                 return false;
             }
 
