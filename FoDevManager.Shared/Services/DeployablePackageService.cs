@@ -61,6 +61,9 @@ namespace FODevManager.Services
             if (profile == null || repository == null)
                 return false;
 
+            if (repository.Models == null || !repository.Models.Any(model => model.ModelType == ModelType.CompiledNuget))
+                return false;
+
             if (_deployablePackagesRoot.IsNullOrEmpty())
             {
                 MessageLogger.Error("❌ DeployablePackages is not configured. Cannot prepare compiled NuGet models");
