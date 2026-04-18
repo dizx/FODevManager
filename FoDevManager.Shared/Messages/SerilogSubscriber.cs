@@ -17,7 +17,7 @@ namespace FODevManager.Logging
             switch (msg.Type)
             {
                 case MessageType.LogOnly:
-                    Log.Information(msg.Content);
+                    Log.Debug(msg.Content);
                     break;
                 case MessageType.Info:
                     Log.Information(msg.Content);

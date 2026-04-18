@@ -61,8 +61,20 @@ namespace FODevManager.Services
             if (profile == null || repository == null)
                 return false;
 
-            if (repository.Models == null || !repository.Models.Any(model => model.ModelType == ModelType.CompiledNuget))
-                return false;
+            var hasNugetModels = repository.Models != null && repository.Models.Any(model => model.ModelType == ModelType.CompiledNuget);
+            if (!hasNugetModels)
+            {
+                if (!TryGetIsvConfigPath(repository, createIfMissing: false, out var isvConfigPath)
+                    || isvConfigPath.IsNullOrEmpty()
+                    || !File.Exists(isvConfigPath))
+                {
+                    return false;
+                }
+
+                var configuredPackages = LoadIsvPackageReferences(isvConfigPath);
+                if (configuredPackages.Count == 0)
+                    return false;
+            }
 
             if (_deployablePackagesRoot.IsNullOrEmpty())
             {
@@ -241,7 +253,9 @@ namespace FODevManager.Services
                 return false;
 
             UpsertPackageReference(isvConfigPath, packageId, packageVersion);
-            return EnsureCompiledNugetModels(profile, repository);
+            var updated = EnsureCompiledNugetModels(profile, repository);
+            ApplyPackageUrl(repository, packageId, packageUrl);
+            return updated;
         }
 
         public bool RemovePackage(ProfileModel profile, RepositoryModel repository, string packageId)
@@ -296,7 +310,9 @@ namespace FODevManager.Services
             }
 
             UpsertPackageReference(isvConfigPath, newPackageId, newPackageVersion);
-            return EnsureCompiledNugetModels(profile, repository);
+            var updated = EnsureCompiledNugetModels(profile, repository);
+            ApplyPackageUrl(repository, newPackageId, packageUrl);
+            return updated;
         }
 
         public bool UpdatePackageVersion(ProfileModel profile, RepositoryModel repository, string packageId, string packageVersion)
@@ -449,6 +465,19 @@ namespace FODevManager.Services
             return updated;
         }
 
+        private static void ApplyPackageUrl(RepositoryModel repository, string packageId, string packageUrl)
+        {
+            if (repository?.Models == null || packageId.IsNullOrEmpty() || packageUrl.IsNullOrEmpty())
+                return;
+
+            foreach (var model in repository.Models.Where(model =>
+                         model.ModelType == ModelType.CompiledNuget &&
+                         model.PackageId.SameAs(packageId)))
+            {
+                model.PackageUrl = packageUrl.Trim();
+            }
+        }
+
         private static bool SetIfDifferent(ProfileEnvironmentModel model, string _, string newValue, Action<string> setter)
         {
             var currentValue = _ switch
@@ -492,7 +521,7 @@ namespace FODevManager.Services
                 var downloadedRoot = Path.Combine(extractedRoot, ".download");
                 FileHelper.EnsureDirectoryExists(downloadedRoot);
 
-                if (!EnsurePackageDownloaded(packageReference, context, downloadedRoot, out var installedPackageFolder))
+                if (!DownloadPackage(packageReference, context, downloadedRoot, out var installedPackageFolder))
                     return false;
 
                 if (!HasCompiledPackageContent(installedPackageFolder))
@@ -525,7 +554,7 @@ namespace FODevManager.Services
             return Directory.GetFiles(packageFolder, "*.xref", SearchOption.AllDirectories).Any();
         }
 
-        private bool EnsurePackageDownloaded(PackageReference packageReference, PackageContext context, string downloadedRoot, out string installedPackageFolder)
+        private bool DownloadPackage(PackageReference packageReference, PackageContext context, string downloadedRoot, out string installedPackageFolder)
         {
             installedPackageFolder = Path.Combine(downloadedRoot, $"{packageReference.Id}.{packageReference.Version}");
             if (Directory.Exists(installedPackageFolder) && Directory.EnumerateFileSystemEntries(installedPackageFolder).Any())

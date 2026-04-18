@@ -71,8 +71,6 @@ namespace FODevManager.WinUI
             this.Activated += MainWindow_Activated;
 
             BusyOverlayVm = new BusyOverlayViewModel();
-            
-            this.Activated += MainWindow_Activated;
             this.Closed += MainWindow_Closed;
 
 
@@ -95,12 +93,9 @@ namespace FODevManager.WinUI
             _modelVersionService = modelVersionService;
             _appConfig = appConfig;
 
-
-            // Initialize Mica + TitleBar
             ApplyMicaEffect();
             SetTitleBar(AppTitleBar);
 
-            // Store AppWindow reference
             _appWindow = GetAppWindowForCurrentWindow();
 
             var titleBar = _appWindow.TitleBar;
@@ -113,13 +108,6 @@ namespace FODevManager.WinUI
             LoadProfiles();
 
             UIMessageHelper.LogToUI($"READY..");
-
-            // Replace the lambda with a proper handler that includes cancellation
-            this.Closed += (_, args) => 
-            {
-                _profileMonitorCancellationTokenSource?.Cancel();
-                BusyOverlayVm.Dispose();
-            };
         }
         private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
         {
@@ -360,6 +348,10 @@ namespace FODevManager.WinUI
                 {
                     MessageLogger.Error($"Background NuGet preparation failed for profile '{profile.ProfileName}': {exception.Message}");
                 }
+                finally
+                {
+                    _queuedNugetPreparationProfiles.TryRemove(profile.ProfileName, out _);
+                }
             });
         }
 
@@ -507,7 +499,6 @@ namespace FODevManager.WinUI
             }
             catch (OperationCanceledException)
             {
-                // Expected during shutdown / profile switch
             }
             catch (Exception exception)
             {
@@ -653,7 +644,6 @@ namespace FODevManager.WinUI
             }
             catch (OperationCanceledException)
             {
-                // Expected on shutdown/profile switch
             }
             catch (Exception ex)
             {
@@ -1797,6 +1787,23 @@ namespace FODevManager.WinUI
 
             flyout.Items.Add(propertiesMenuItem);
 
+            if (clickedItem is ProfileEnvironmentViewModel nugetViewModel
+                && nugetViewModel.Model.ModelType == ModelType.CompiledNuget
+                && !nugetViewModel.Model.PackageUrl.IsNullOrEmpty())
+            {
+                var openPackageMenuItem = new MenuFlyoutItem
+                {
+                    Text = "Open Package"
+                };
+
+                openPackageMenuItem.Click += (_, _) =>
+                {
+                    ServiceHelper.OpenUrl(nugetViewModel.Model.PackageUrl);
+                };
+
+                flyout.Items.Add(openPackageMenuItem);
+            }
+
             if (clickedItem is ProfileEnvironmentViewModel packageViewModel
                 && packageViewModel.Model.ModelType == ModelType.Source)
             {
@@ -2176,6 +2183,7 @@ namespace FODevManager.WinUI
                 if (canSelectNugetVersion)
                 {
                     modelDetailsSectionContent.Add(CreateReadOnlyField("Package", environmentModel.PackageId));
+                    modelDetailsSectionContent.Add(CreateReadOnlyField("Package URL", environmentModel.PackageUrl));
                 }
             }
 

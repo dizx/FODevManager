@@ -34,7 +34,6 @@ namespace FODevManager.Services
             _modelIdEnd = config.ModelIdEnd;
             
 
-            // Ensure directories exist
             FileHelper.EnsureDirectoryExists(_deploymentBasePath);
             FileHelper.EnsureDirectoryExists(_defaultSourceDirectory);
         }
@@ -277,7 +276,7 @@ namespace FODevManager.Services
         public void CheckModelDeployment(string profileName, string modelName, bool updateProfile = false)
         {
             var profile = _fileService.LoadProfile(profileName);
-
+            CheckModelDeployment(profile, modelName, updateProfile);
         }
 
         public void CheckModelDeployment(ProfileModel profile, string modelName, bool updateProfile = false)

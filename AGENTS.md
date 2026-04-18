@@ -146,6 +146,7 @@ Use:
 - `MessageLogger.Highlight`
 
 Do not introduce `Console.WriteLine` in places that follow the project convention.
+Do not use punctuation at the end of comments 
 
 ## When editing code
 Before making changes, identify:

@@ -18,6 +18,8 @@ namespace FODevManager.Models
 
         public string PackageVersion { get; set; } = "";
 
+        public string PackageUrl { get; set; } = "";
+
         public bool IsDeployed { get; set; } = false;
 
         public bool IsMainFOModel { get; set; } = false;

@@ -816,6 +816,39 @@ namespace FODevManager.Services
             MessageLogger.Info($"NuGet package '{packageUrl}' added to repository '{repository.DisplayName}'");
         }
 
+        private static string UpdatePackageOverviewUrl(string existingPackageUrl, string packageId, string packageVersion)
+        {
+            if (existingPackageUrl.IsNullOrEmpty()
+                || packageId.IsNullOrEmpty()
+                || packageVersion.IsNullOrEmpty()
+                || !Uri.TryCreate(existingPackageUrl, UriKind.Absolute, out var existingUri))
+            {
+                return existingPackageUrl ?? string.Empty;
+            }
+
+            var segments = existingUri.AbsolutePath
+                .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(Uri.UnescapeDataString)
+                .ToArray();
+
+            var nugetIndex = Array.FindIndex(segments, segment => segment.SameAs("NuGet"));
+            if (nugetIndex < 0 || nugetIndex + 3 >= segments.Length)
+                return existingPackageUrl;
+
+            segments[nugetIndex + 1] = packageId;
+            segments[nugetIndex + 2] = "overview";
+            segments[nugetIndex + 3] = packageVersion;
+
+            var builder = new UriBuilder(existingUri)
+            {
+                Path = "/" + string.Join("/", segments.Select(Uri.EscapeDataString)),
+                Query = string.Empty,
+                Fragment = string.Empty
+            };
+
+            return builder.Uri.AbsoluteUri;
+        }
+
         private static bool LooksLikeNugetUrl(string value)
         {
             if (value.IsNullOrEmpty())
@@ -1985,6 +2018,11 @@ namespace FODevManager.Services
                     && !targetPackageVersion.IsNullOrEmpty()
                     && !targetPackageVersion.SameAs(targetEnvironment.PackageVersion))
                 {
+                    targetEnvironment.PackageUrl = UpdatePackageOverviewUrl(
+                        targetEnvironment.PackageUrl,
+                        targetPackageId,
+                        targetPackageVersion);
+
                     if (!_deployablePackageService.UpdatePackageVersion(profile, repository, targetPackageId, targetPackageVersion))
                         return;
 
