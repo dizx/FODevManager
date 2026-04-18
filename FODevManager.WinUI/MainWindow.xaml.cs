@@ -1416,7 +1416,7 @@ namespace FODevManager.WinUI
         {
             var (ok, success) = await BusyOps.TrySyncAsAsync(
                 () => _profileService.BuildDeployableNugetPackage(profileName, modelName),
-                "Build deployable package");
+                "Build Compiled Nuget");
 
             return ok && success;
         }
@@ -1809,7 +1809,7 @@ namespace FODevManager.WinUI
             {
                 var buildPackageMenuItem = new MenuFlyoutItem
                 {
-                    Text = "Build Deployable Package…"
+                    Text = "Build Compiled Nuget…"
                 };
 
                 buildPackageMenuItem.Click += async (_, _) =>

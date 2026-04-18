@@ -112,7 +112,7 @@
                 <StackPanel Spacing="16">
                     <StackPanel Spacing="4">
                         <TextBlock Text="Package publishing" FontSize="18" FontWeight="SemiBold" />
-                        <TextBlock Text="Control what happens after a deployable package is created" Style="{StaticResource FieldHintStyle}" />
+                        <TextBlock Text="Control what happens after a Compiled Nuget is created" Style="{StaticResource FieldHintStyle}" />
                     </StackPanel>
 
                     <Border CornerRadius="10" Padding="14" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
@@ -120,7 +120,7 @@
                             <TextBlock Text="Push after package build" Style="{StaticResource FieldLabelStyle}" />
                             <TextBlock Text="When enabled, NugetUtil will push the generated package immediately after fopack completes" Style="{StaticResource FieldHintStyle}" />
                             <ToggleSwitch
-                                Header="Push deployable package right away"
+                                Header="Push Compiled Nuget right away"
                                 IsOn="{Binding PushDeployablePackageOnBuild, Mode=TwoWay}" />
                         </StackPanel>
                     </Border>

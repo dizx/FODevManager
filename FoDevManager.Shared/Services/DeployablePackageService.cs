@@ -78,7 +78,7 @@ namespace FODevManager.Services
 
             if (_deployablePackagesRoot.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ DeployablePackages is not configured. Cannot prepare compiled NuGet models");
+                MessageLogger.Error("❌ DeployablePackages is not configured. Cannot prepare Compiled Nuget models");
                 return false;
             }
 
@@ -97,7 +97,7 @@ namespace FODevManager.Services
 
             if (extractedPackages.Count == 0)
             {
-                MessageLogger.Warning($"⚠️ No deployable packages could be prepared for repository '{repository.DisplayName}'");
+                MessageLogger.Warning($"⚠️ No Compiled Nuget packages could be prepared for repository '{repository.DisplayName}'");
                 return false;
             }
 
@@ -141,7 +141,7 @@ namespace FODevManager.Services
 
             if (model.ModelName.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Model name is required to build a deployable package");
+                MessageLogger.Error("❌ Model name is required to build a Compiled Nuget");
                 return false;
             }
 
@@ -153,7 +153,7 @@ namespace FODevManager.Services
 
             if (_deployablePackagesRoot.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ DeployablePackages is not configured. Cannot build package artifacts");
+                MessageLogger.Error("❌ DeployablePackages is not configured. Cannot build Compiled Nuget artifacts");
                 return false;
             }
 
@@ -568,7 +568,7 @@ namespace FODevManager.Services
             var nugetExecutable = ResolveNuGetExecutable();
             if (nugetExecutable.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Could not locate nuget.exe on PATH. Cannot download deployable packages");
+                MessageLogger.Error("❌ Could not locate nuget.exe on PATH. Cannot download Compiled Nuget packages");
                 return false;
             }
 
@@ -603,7 +603,7 @@ namespace FODevManager.Services
                             $"⚠️ NuGet download attempt {attempt} failed for '{packageReference.Id} {packageReference.Version}'. Retrying in {retryDelay.TotalSeconds:0}s. {exception.Message}");
                     });
 
-                MessageLogger.Info($"📦 Downloaded deployable package '{packageReference.Id} {packageReference.Version}'");
+                MessageLogger.Info($"📦 Downloaded Compiled Nuget package '{packageReference.Id} {packageReference.Version}'");
                 return Directory.Exists(installedPackageFolder);
             }
             catch (Exception exception)
