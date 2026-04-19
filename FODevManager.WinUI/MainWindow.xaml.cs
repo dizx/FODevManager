@@ -111,10 +111,27 @@ namespace FODevManager.WinUI
         }
         private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
         {
-            IntPtr windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
-            WindowId windowId = Win32Interop.GetWindowIdFromWindow(windowHandle);
-            AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
-            appWindow.SetIcon(@"Assets\FODev.ico");
+            try
+            {
+                IntPtr windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                WindowId windowId = Win32Interop.GetWindowIdFromWindow(windowHandle);
+                AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+                var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "FODev.ico");
+
+                if (File.Exists(iconPath))
+                {
+                    appWindow.SetIcon(iconPath);
+                }
+                else
+                {
+                    MessageLogger.Warning($"Window icon file not found at {iconPath}");
+                }
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Warning($"Failed to apply window icon. {exception.Message}");
+                App.WriteStartupCrashLog("MainWindow activation failed while setting icon", exception);
+            }
         }
 
         private void ApplyMicaEffect()
@@ -1250,7 +1267,7 @@ namespace FODevManager.WinUI
             if (!informationalVersion.IsNullOrEmpty())
                 return informationalVersion.Split('+')[0];
 
-            return Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.1.0-beta";
+            return Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.1.0";
         }
 
         private static async Task<bool> RunOperationAsync(Action action, string operationName, bool shutdownServer = true)
