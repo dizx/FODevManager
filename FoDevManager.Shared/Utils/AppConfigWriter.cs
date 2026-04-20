@@ -73,6 +73,9 @@ namespace FODevManager.Shared.Utils
                         case nameof(AppConfig.AzureArtifactsApiKey):
                             _config.AzureArtifactsApiKey = Convert.ToString(value) ?? string.Empty;
                             break;
+                        case nameof(AppConfig.NuGetExecutablePath):
+                            _config.NuGetExecutablePath = Convert.ToString(value) ?? string.Empty;
+                            break;
                         case nameof(AppConfig.PushDeployablePackageOnBuild):
                             _config.PushDeployablePackageOnBuild = Convert.ToBoolean(value);
                             break;

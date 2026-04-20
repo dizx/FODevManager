@@ -104,6 +104,23 @@
                                          PasswordChanged="AzureArtifactsApiKeyBox_PasswordChanged"
                                          PlaceholderText="Paste API key" />
                         </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="NuGet executable" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBlock Text="Optional. Set this if nuget.exe is not available on PATH or different machines keep resolving different versions" Style="{StaticResource FieldHintStyle}" />
+                            <Grid ColumnSpacing="10" HorizontalAlignment="Stretch">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBox Grid.Column="0"
+                                         HorizontalAlignment="Stretch"
+                                         Text="{Binding NuGetExecutablePath, Mode=TwoWay}"
+                                         PlaceholderText="For example: C:\Tools\nuget.exe" />
+                                <Button Grid.Column="1" Content="Browse.." Click="OnBrowseNuGetExecutableClick" />
+                            </Grid>
+                        </StackPanel>
                     </StackPanel>
                 </StackPanel>
             </Border>

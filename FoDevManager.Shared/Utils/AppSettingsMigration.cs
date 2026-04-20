@@ -70,6 +70,7 @@ namespace FODevManager.Shared.Utils
                 [nameof(AppConfig.AzureArtifactsUsername)] = string.Empty,
                 [nameof(AppConfig.AzureArtifactsPat)] = string.Empty,
                 [nameof(AppConfig.AzureArtifactsApiKey)] = string.Empty,
+                [nameof(AppConfig.NuGetExecutablePath)] = string.Empty,
                 [nameof(AppConfig.PushDeployablePackageOnBuild)] = false,
                 [nameof(AppConfig.PushDeployablePackageSource)] = string.Empty
             };

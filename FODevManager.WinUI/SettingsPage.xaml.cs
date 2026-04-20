@@ -53,6 +53,28 @@ namespace FODevManager.WinUI
             }
         }
 
+        private async void OnBrowseNuGetExecutableClick(object sender, RoutedEventArgs e)
+        {
+            var picker = new FileOpenPicker();
+            picker.FileTypeFilter.Add(".exe");
+
+            if (App.MainWindow == null)
+            {
+                MessageLogger.Warning("Window handle not available for file picker");
+                return;
+            }
+
+            var hWnd = WindowNative.GetWindowHandle(App.MainWindow);
+            InitializeWithWindow.Initialize(picker, hWnd);
+
+            var file = await picker.PickSingleFileAsync();
+            if (file != null)
+            {
+                _vm.NuGetExecutablePath = file.Path;
+                MessageLogger.Highlight($"NuGet executable set to: {file.Path}");
+            }
+        }
+
         private void OnSaveClick(object sender, RoutedEventArgs e)
         {
             _vm.Save();

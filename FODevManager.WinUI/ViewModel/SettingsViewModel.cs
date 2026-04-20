@@ -44,6 +44,13 @@ namespace FODevManager.WinUI.ViewModel
             set => SetProperty(ref _azureArtifactsApiKey, value ?? string.Empty);
         }
 
+        private string _nuGetExecutablePath = string.Empty;
+        public string NuGetExecutablePath
+        {
+            get => _nuGetExecutablePath;
+            set => SetProperty(ref _nuGetExecutablePath, value ?? string.Empty);
+        }
+
         private bool _pushDeployablePackageOnBuild;
         public bool PushDeployablePackageOnBuild
         {
@@ -69,6 +76,7 @@ namespace FODevManager.WinUI.ViewModel
             _azureArtifactsUsername = cfg.AzureArtifactsUsername;
             _azureArtifactsPat = cfg.AzureArtifactsPat;
             _azureArtifactsApiKey = cfg.AzureArtifactsApiKey;
+            _nuGetExecutablePath = cfg.NuGetExecutablePath;
             _pushDeployablePackageOnBuild = cfg.PushDeployablePackageOnBuild;
             _pushDeployablePackageSource = cfg.PushDeployablePackageSource;
         }
@@ -83,6 +91,7 @@ namespace FODevManager.WinUI.ViewModel
                 _configWriter.UpdateSetting(nameof(AppConfig.AzureArtifactsUsername), AzureArtifactsUsername);
                 _configWriter.UpdateSetting(nameof(AppConfig.AzureArtifactsPat), AzureArtifactsPat);
                 _configWriter.UpdateSetting(nameof(AppConfig.AzureArtifactsApiKey), AzureArtifactsApiKey);
+                _configWriter.UpdateSetting(nameof(AppConfig.NuGetExecutablePath), NuGetExecutablePath);
                 _configWriter.UpdateSetting(nameof(AppConfig.PushDeployablePackageOnBuild), PushDeployablePackageOnBuild);
                 _configWriter.UpdateSetting(nameof(AppConfig.PushDeployablePackageSource), PushDeployablePackageSource);
 
@@ -93,6 +102,7 @@ namespace FODevManager.WinUI.ViewModel
                 cfg.AzureArtifactsUsername = AzureArtifactsUsername;
                 cfg.AzureArtifactsPat = AzureArtifactsPat;
                 cfg.AzureArtifactsApiKey = AzureArtifactsApiKey;
+                cfg.NuGetExecutablePath = NuGetExecutablePath;
                 cfg.PushDeployablePackageOnBuild = PushDeployablePackageOnBuild;
                 cfg.PushDeployablePackageSource = PushDeployablePackageSource;
 

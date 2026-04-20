@@ -22,6 +22,7 @@ namespace FODevManager.Utils
         public string AzureArtifactsUsername { get; set; } = string.Empty;
         public string AzureArtifactsPat { get; set; } = string.Empty;
         public string AzureArtifactsApiKey { get; set; } = string.Empty;
+        public string NuGetExecutablePath { get; set; } = string.Empty;
         public bool PushDeployablePackageOnBuild { get; set; } = false;
         public string PushDeployablePackageSource { get; set; } = string.Empty;
 
@@ -46,6 +47,7 @@ namespace FODevManager.Utils
             AzureArtifactsUsername = Environment.ExpandEnvironmentVariables(configuration["AzureArtifactsUsername"] ?? string.Empty);
             AzureArtifactsPat = Environment.ExpandEnvironmentVariables(configuration["AzureArtifactsPat"] ?? string.Empty);
             AzureArtifactsApiKey = Environment.ExpandEnvironmentVariables(configuration["AzureArtifactsApiKey"] ?? string.Empty);
+            NuGetExecutablePath = Environment.ExpandEnvironmentVariables(configuration["NuGetExecutablePath"] ?? string.Empty);
             PushDeployablePackageSource = Environment.ExpandEnvironmentVariables(configuration["PushDeployablePackageSource"] ?? string.Empty);
             ModelIdBegin = ReadInt(configuration, "ModelIdBegin", DefaultModelIdBegin, "ModelIdStart");
             ModelIdEnd = ReadInt(configuration, "ModelIdEnd", DefaultModelIdEnd);
