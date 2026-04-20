@@ -2,6 +2,7 @@ using FODevManager.Messages;
 using FODevManager.Models;
 using FODevManager.Shared.Utils;
 using FODevManager.Utils;
+using Microsoft.Win32;
 using System.Diagnostics;
 using System.Xml.Linq;
 
@@ -167,8 +168,10 @@ namespace FODevManager.Services
             if (!ValidateBuildPackageSettings(appNugetConfigPath))
                 return false;
 
-            var buildPackagesRoot = Path.Combine(_deployablePackagesRoot, "BuildPackages");
+            var buildPackagesRoot = ResolvePreferredBuildPackagesRoot();
             FileHelper.EnsureDirectoryExists(buildPackagesRoot);
+
+            MessageLogger.LogOnly($"Build package cache root: {buildPackagesRoot}");
 
             if (!TryEnsureFoBuildPackages(buildPackagesRoot, appNugetConfigPath, out var packageRoots))
                 return false;
@@ -188,7 +191,7 @@ namespace FODevManager.Services
 
             MessageLogger.Highlight($"📦 Building package for '{model.ModelName}'.");
 
-            if (!RunMsBuild(solutionFilePath, buildContext, buildOutputRoot))
+            if (!RunMsBuild(solutionFilePath, buildContext, buildOutputRoot, runRoot))
                 return false;
 
             if (!TryResolveBuiltPayloadRoot(buildOutputRoot, model.ModelName, out var payloadRoot))
@@ -565,10 +568,12 @@ namespace FODevManager.Services
 
             var targetInstalledPackageFolder = installedPackageFolder;
 
-            var nugetExecutable = ResolveNuGetExecutable();
+            var nugetExecutable = ResolveNuGetExecutable(out var nugetSearchLocations);
             if (nugetExecutable.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Could not locate nuget.exe on PATH. Cannot download Compiled Nuget packages");
+                MessageLogger.Error("❌ Could not locate nuget.exe. Cannot download Compiled Nuget packages");
+                MessageLogger.Info("Set a NuGet executable path in Settings or make sure nuget.exe is available on PATH");
+                MessageLogger.LogOnly($"NuGet search locations: {string.Join(" | ", nugetSearchLocations)}");
                 return false;
             }
 
@@ -860,6 +865,31 @@ namespace FODevManager.Services
         private bool ValidateBuildPackageSettings(string nugetConfigPath)
         {
             var azureFeedEndpoints = LoadAzureArtifactsFeedEndpoints(nugetConfigPath);
+            var nugetExecutable = ResolveNuGetExecutable(out var nugetSearchLocations);
+            var longPathsEnabled = IsWindowsLongPathsEnabled();
+
+            MessageLogger.LogOnly($"Build package nuget.config: {nugetConfigPath}");
+            MessageLogger.LogOnly(
+                nugetExecutable.IsNullOrEmpty()
+                    ? $"NuGet executable could not be resolved. Searched: {string.Join(" | ", nugetSearchLocations)}"
+                    : $"NuGet executable: {nugetExecutable}");
+            MessageLogger.LogOnly($"Windows long paths enabled: {longPathsEnabled}");
+
+            if (azureFeedEndpoints.Count > 0)
+                MessageLogger.LogOnly($"Azure Artifacts feeds: {string.Join(", ", azureFeedEndpoints)}");
+
+            if (nugetExecutable.IsNullOrEmpty())
+            {
+                MessageLogger.Error("❌ Could not locate nuget.exe. Add it to PATH or set a NuGet executable path in Settings");
+                return false;
+            }
+
+            if (!longPathsEnabled)
+            {
+                MessageLogger.Warning("⚠️ Windows long paths are disabled on this machine. Large FO build packages may fail to extract");
+                MessageLogger.Info(@"Enable 'LongPathsEnabled' under HKLM\SYSTEM\CurrentControlSet\Control\FileSystem to reduce path-length install failures");
+            }
+
             if (azureFeedEndpoints.Count == 0)
                 return true;
 
@@ -992,10 +1022,10 @@ namespace FODevManager.Services
             versions = new List<string>();
             errorMessage = string.Empty;
 
-            var nugetExecutable = ResolveNuGetExecutable();
+            var nugetExecutable = ResolveNuGetExecutable(out var nugetSearchLocations);
             if (nugetExecutable.IsNullOrEmpty())
             {
-                errorMessage = "Could not locate nuget.exe on PATH.";
+                errorMessage = $"Could not locate nuget.exe. Searched: {string.Join(" | ", nugetSearchLocations)}";
                 return false;
             }
 
@@ -1057,20 +1087,24 @@ namespace FODevManager.Services
 
         private bool TryEnsureFoBuildPackage(string buildPackagesRoot, string nugetConfigPath, string packageId, out string packageRoot)
         {
-            packageRoot = ResolveInstalledPackageRoot(buildPackagesRoot, packageId);
+            packageRoot = ResolveInstalledPackageRoot(GetBuildPackageSearchRoots(buildPackagesRoot), packageId);
             if (!packageRoot.IsNullOrEmpty())
                 return true;
 
             string resolvedPackageRoot = string.Empty;
 
-            var nugetExecutable = ResolveNuGetExecutable();
+            var nugetExecutable = ResolveNuGetExecutable(out var nugetSearchLocations);
             if (nugetExecutable.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Could not locate nuget.exe on PATH. Cannot download FO build packages");
+                MessageLogger.Error("❌ Could not locate nuget.exe. Cannot download FO build packages");
+                MessageLogger.Info("Set a NuGet executable path in Settings or make sure nuget.exe is available on PATH");
+                MessageLogger.LogOnly($"NuGet search locations: {string.Join(" | ", nugetSearchLocations)}");
                 return false;
             }
 
             MessageLogger.Info($"📥 Downloading build package '{packageId}'..");
+            MessageLogger.LogOnly($"Using nuget executable: {nugetExecutable}");
+            MessageLogger.LogOnly($"Using nuget.config: {nugetConfigPath}");
 
             var processStartInfo = new ProcessStartInfo
             {
@@ -1093,7 +1127,7 @@ namespace FODevManager.Services
                         if (!RunProcess(processStartInfo, out var output))
                             throw new InvalidOperationException($"NuGet install failed for '{packageId}'. {output}".Trim());
 
-                        resolvedPackageRoot = ResolveInstalledPackageRoot(buildPackagesRoot, packageId);
+                        resolvedPackageRoot = ResolveInstalledPackageRoot(GetBuildPackageSearchRoots(buildPackagesRoot), packageId);
                         if (resolvedPackageRoot.IsNullOrEmpty())
                             throw new InvalidOperationException($"Package '{packageId}' was downloaded, but the installed folder could not be resolved");
                     },
@@ -1107,6 +1141,10 @@ namespace FODevManager.Services
             catch (Exception exception)
             {
                 MessageLogger.Error($"❌ Failed to download build package '{packageId}': {exception.Message}");
+                if (exception.Message.Contains("Could not find a part of the path", StringComparison.OrdinalIgnoreCase))
+                {
+                    MessageLogger.Info("Try again after upgrading FO Dev Manager. This usually means the package cache path is too long on this machine");
+                }
                 return false;
             }
 
@@ -1115,14 +1153,22 @@ namespace FODevManager.Services
             return true;
         }
 
-        private static string ResolveInstalledPackageRoot(string buildPackagesRoot, string packageId)
+        private string ResolveInstalledPackageRoot(IEnumerable<string> buildPackagesRoots, string packageId)
         {
-            if (!Directory.Exists(buildPackagesRoot))
-                return string.Empty;
+            foreach (var buildPackagesRoot in buildPackagesRoots)
+            {
+                if (!Directory.Exists(buildPackagesRoot))
+                    continue;
 
-            return Directory.GetDirectories(buildPackagesRoot, $"{packageId}.*", SearchOption.TopDirectoryOnly)
-                .OrderByDescending(path => path, StringComparer.OrdinalIgnoreCase)
-                .FirstOrDefault() ?? string.Empty;
+                var packageRoot = Directory.GetDirectories(buildPackagesRoot, $"{packageId}.*", SearchOption.TopDirectoryOnly)
+                    .OrderByDescending(path => path, StringComparer.OrdinalIgnoreCase)
+                    .FirstOrDefault();
+
+                if (!packageRoot.IsNullOrEmpty())
+                    return packageRoot;
+            }
+
+            return string.Empty;
         }
 
         private bool TryBuildMsBuildContext(IReadOnlyDictionary<string, string> packageRoots, out MsBuildContext context)
@@ -1157,7 +1203,7 @@ namespace FODevManager.Services
             return true;
         }
 
-        private bool RunMsBuild(string solutionFilePath, MsBuildContext buildContext, string buildOutputRoot)
+        private bool RunMsBuild(string solutionFilePath, MsBuildContext buildContext, string buildOutputRoot, string runRoot)
         {
             var msbuildExecutable = ResolveMsBuildExecutable();
             if (msbuildExecutable.IsNullOrEmpty())
@@ -1189,7 +1235,13 @@ namespace FODevManager.Services
 
             MessageLogger.Info($"🛠️ Running MSBuild for solution '{solutionFilePath}'.");
 
-            if (!RunProcess(processStartInfo, out var output))
+            var compilerLogsRoot = Path.Combine(runRoot, "CompilerLogs");
+            Directory.CreateDirectory(compilerLogsRoot);
+
+            var succeeded = RunProcess(processStartInfo, out var output);
+            PersistBuildDiagnostics(solutionFilePath, compilerLogsRoot, output);
+
+            if (!succeeded)
             {
                 MessageLogger.Error($"❌ MSBuild failed for '{solutionFilePath}'. {output}".Trim());
                 return false;
@@ -1197,6 +1249,58 @@ namespace FODevManager.Services
 
             MessageLogger.Info($"✅ MSBuild completed for '{Path.GetFileName(solutionFilePath)}'");
             return true;
+        }
+
+        private void PersistBuildDiagnostics(string solutionFilePath, string compilerLogsRoot, string buildOutput)
+        {
+            try
+            {
+                Directory.CreateDirectory(compilerLogsRoot);
+
+                var msbuildLogPath = Path.Combine(compilerLogsRoot, "msbuild.log");
+                File.WriteAllText(msbuildLogPath, buildOutput ?? string.Empty);
+
+                foreach (var logFilePath in EnumerateCompilerLogFiles(solutionFilePath))
+                {
+                    var destinationPath = Path.Combine(compilerLogsRoot, Path.GetFileName(logFilePath));
+                    if (!AreSameFilePath(logFilePath, destinationPath))
+                        File.Copy(logFilePath, destinationPath, overwrite: true);
+                }
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Warning($"âš ï¸ Could not persist compiler diagnostics. {exception.Message}");
+            }
+        }
+
+        private static IEnumerable<string> EnumerateCompilerLogFiles(string solutionFilePath)
+        {
+            var solutionDirectory = Path.GetDirectoryName(solutionFilePath) ?? string.Empty;
+            if (solutionDirectory.IsNullOrEmpty() || !Directory.Exists(solutionDirectory))
+                yield break;
+
+            var patterns = new[]
+            {
+                "*.xppc.log",
+                "*.xppc.xml",
+                "*.labelc.log",
+                "*.labelc.err",
+                "*.reportsc.log",
+                "*.reportsc.xml",
+                "*.xppbp.log",
+                "*.xppbp.xml"
+            };
+
+            var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var pattern in patterns)
+            {
+                foreach (var candidatePath in Directory.GetFiles(solutionDirectory, pattern, SearchOption.TopDirectoryOnly))
+                {
+                    if (seenPaths.Add(candidatePath))
+                        yield return candidatePath;
+                }
+            }
         }
 
         private bool RunNugetUtilFopack(string payloadRoot, string nugetOutputRoot, out string packagePath, out string nuspecPath)
@@ -1410,6 +1514,23 @@ namespace FODevManager.Services
             return true;
         }
 
+        private static bool IsWindowsLongPathsEnabled()
+        {
+            try
+            {
+                var rawValue = Registry.GetValue(
+                    @"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem",
+                    "LongPathsEnabled",
+                    0);
+
+                return rawValue is int intValue && intValue != 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static string ResolveNugetUtilExecutable()
         {
             if (File.Exists(NugetUtilDefaultPath))
@@ -1439,6 +1560,24 @@ namespace FODevManager.Services
                 baseRoot = Directory.GetCurrentDirectory();
 
             return Path.Combine(baseRoot, "Artifacts");
+        }
+
+        private string ResolvePreferredBuildPackagesRoot()
+        {
+            return Path.Combine(_deployablePackagesRoot, "BuildPackages");
+        }
+
+        private IEnumerable<string> GetBuildPackageSearchRoots(string preferredBuildPackagesRoot)
+        {
+            if (!preferredBuildPackagesRoot.IsNullOrEmpty())
+                yield return preferredBuildPackagesRoot;
+
+            var legacyBuildPackagesRoot = Path.Combine(_deployablePackagesRoot, "BuildPackages");
+            if (!legacyBuildPackagesRoot.IsNullOrEmpty()
+                && !AreSameDirectoryPath(preferredBuildPackagesRoot, legacyBuildPackagesRoot))
+            {
+                yield return legacyBuildPackagesRoot;
+            }
         }
 
         private static void EnsureCleanDirectory(string path)
@@ -1572,27 +1711,40 @@ namespace FODevManager.Services
         }
 
 
-        private static string? ResolveNuGetExecutable()
+        private string ResolveNuGetExecutable(out IReadOnlyList<string> searchLocations)
         {
-            var pathValue = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-            var pathDirectories = pathValue
-                .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var candidates = GetNuGetExecutableCandidates().ToList();
+            searchLocations = candidates;
 
-            foreach (var pathDirectory in pathDirectories)
-            {
-                var candidate = Path.Combine(pathDirectory, "nuget.exe");
-                if (File.Exists(candidate))
-                    return candidate;
-            }
+            return candidates.FirstOrDefault(File.Exists) ?? string.Empty;
+        }
 
-            foreach (var pathDirectory in pathDirectories)
-            {
-                var candidate = Path.Combine(pathDirectory, "nuget");
-                if (File.Exists(candidate))
-                    return candidate;
-            }
+        private IEnumerable<string> GetNuGetExecutableCandidates()
+        {
+            if (!_config.NuGetExecutablePath.IsNullOrEmpty())
+                yield return Environment.ExpandEnvironmentVariables(_config.NuGetExecutablePath);
 
-            return null;
+            var appBaseDirectory = AppContext.BaseDirectory;
+            yield return Path.Combine(appBaseDirectory, "nuget.exe");
+            yield return Path.Combine(appBaseDirectory, "Tools", "nuget.exe");
+
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (!localAppData.IsNullOrEmpty())
+                yield return Path.Combine(localAppData, "FODevManager", "Tools", "nuget.exe");
+
+            var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            if (!programFilesX86.IsNullOrEmpty())
+                yield return Path.Combine(programFilesX86, "NuGet", "nuget.exe");
+
+            var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            if (!programFiles.IsNullOrEmpty())
+                yield return Path.Combine(programFiles, "NuGet", "nuget.exe");
+
+            foreach (var candidate in EnumerateExecutablesFromPath("nuget.exe"))
+                yield return candidate;
+
+            foreach (var candidate in EnumerateExecutablesFromPath("nuget"))
+                yield return candidate;
         }
 
         private sealed record PackageContext(string RepositoryRoot, string IsvConfigPath, string NugetConfigPath, IReadOnlyList<PackageReference> Packages);
