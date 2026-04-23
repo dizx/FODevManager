@@ -1267,7 +1267,7 @@ namespace FODevManager.WinUI
             if (!informationalVersion.IsNullOrEmpty())
                 return informationalVersion.Split('+')[0];
 
-            return Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.1.2";
+            return Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.1.3";
         }
 
         private static async Task<bool> RunOperationAsync(Action action, string operationName, bool shutdownServer = true)
