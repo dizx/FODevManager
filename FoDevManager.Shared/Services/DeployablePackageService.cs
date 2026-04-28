@@ -405,11 +405,14 @@ namespace FODevManager.Services
                 var extractedRoot = GetExtractedPackageRoot(packageReference);
                 foreach (var modelFolder in GetExtractedModelFolders(extractedRoot))
                 {
-                    descriptors.Add(new ResolvedModelDescriptor(packageReference, Path.GetFileName(modelFolder), modelFolder));
+                    var modelName = ResolveCompiledModelName(modelFolder, packageReference);
+                    descriptors.Add(new ResolvedModelDescriptor(packageReference, modelName, modelFolder));
                 }
             }
 
-            var existingNugetModels = (repository.Models ?? new List<ProfileEnvironmentModel>())
+            repository.Models ??= new List<ProfileEnvironmentModel>();
+
+            var existingNugetModels = repository.Models
                 .Where(model => model.ModelType == ModelType.CompiledNuget)
                 .ToList();
 
@@ -441,11 +444,49 @@ namespace FODevManager.Services
 
             foreach (var staleModel in existingNugetModels.Where(model => !descriptorNames.Contains(model.ModelName)).ToList())
             {
+                updated |= TryRemoveLegacyVersionedDeploymentLink(staleModel, descriptors);
                 repository.Models.Remove(staleModel);
                 updated = true;
             }
 
             return updated;
+        }
+
+        private bool TryRemoveLegacyVersionedDeploymentLink(ProfileEnvironmentModel staleModel, IReadOnlyCollection<ResolvedModelDescriptor> descriptors)
+        {
+            if (!IsLegacyVersionedNugetModel(staleModel, descriptors))
+                return false;
+
+            var deploymentLinkPath = Path.Combine(_deploymentBasePath, staleModel.ModelName);
+            if (!Directory.Exists(deploymentLinkPath))
+                return false;
+
+            try
+            {
+                var attributes = File.GetAttributes(deploymentLinkPath);
+                if (!attributes.HasFlag(FileAttributes.ReparsePoint))
+                {
+                    MessageLogger.Warning($"⚠️ Legacy deployment path '{deploymentLinkPath}' is a real directory. Leaving it in place");
+                    return false;
+                }
+
+                Directory.Delete(deploymentLinkPath);
+                MessageLogger.Info($"🧹 Removed legacy versioned NuGet deployment link '{deploymentLinkPath}'");
+                return true;
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Warning($"⚠️ Could not remove legacy deployment link '{deploymentLinkPath}': {exception.Message}");
+                return false;
+            }
+        }
+
+        private static bool IsLegacyVersionedNugetModel(ProfileEnvironmentModel staleModel, IReadOnlyCollection<ResolvedModelDescriptor> descriptors)
+        {
+            return descriptors.Any(descriptor =>
+                descriptor.PackageReference.Id.SameAs(staleModel.PackageId)
+                && descriptor.PackageReference.Version.SameAs(staleModel.PackageVersion)
+                && staleModel.ModelName.SameAs($"{descriptor.PackageReference.Id}-{descriptor.PackageReference.Version}"));
         }
 
         private static bool ApplyResolvedModel(ProfileEnvironmentModel model, RepositoryModel repository, ResolvedModelDescriptor descriptor)
@@ -512,6 +553,48 @@ namespace FODevManager.Services
                 .Where(path => !path.IsNullOrEmpty())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)!;
+        }
+
+        private static string ResolveCompiledModelName(string modelFolder, PackageReference packageReference)
+        {
+            if (Directory.Exists(modelFolder))
+            {
+                var xrefModelName = Directory
+                    .GetFiles(modelFolder, "*.xref", SearchOption.TopDirectoryOnly)
+                    .Select(Path.GetFileNameWithoutExtension)
+                    .Where(name => !name.IsNullOrEmpty())
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .FirstOrDefault();
+
+                if (!xrefModelName.IsNullOrEmpty())
+                    return xrefModelName!;
+
+                var binFolder = Path.Combine(modelFolder, "bin");
+                if (Directory.Exists(binFolder))
+                {
+                    var compiledAssemblyName = Directory
+                        .GetFiles(binFolder, "Dynamics.AX.*.dll", SearchOption.TopDirectoryOnly)
+                        .Select(Path.GetFileNameWithoutExtension)
+                        .Where(name => !name.IsNullOrEmpty() && name.StartsWith("Dynamics.AX.", StringComparison.OrdinalIgnoreCase))
+                        .Select(name => name!.Substring("Dynamics.AX.".Length))
+                        .Where(name => !name.IsNullOrEmpty())
+                        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                        .FirstOrDefault();
+
+                    if (!compiledAssemblyName.IsNullOrEmpty())
+                        return compiledAssemblyName!;
+                }
+            }
+
+            var folderName = Path.GetFileName(modelFolder) ?? string.Empty;
+            var packageVersionSuffix = $"-{packageReference.Version}";
+            if (!folderName.IsNullOrEmpty()
+                && folderName.EndsWith(packageVersionSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return folderName[..^packageVersionSuffix.Length];
+            }
+
+            return folderName;
         }
 
         private bool EnsurePackageExtracted(PackageReference packageReference, PackageContext context)
@@ -1134,16 +1217,19 @@ namespace FODevManager.Services
                     times: NugetDownloadRetryCount,
                     onRetry: (attempt, exception, retryDelay) =>
                     {
+                        MessageLogger.LogOnly($"Build package download raw failure for '{packageId}': {exception.Message}");
                         MessageLogger.Warning(
-                            $"⚠️ Build package download attempt {attempt} failed for '{packageId}'. Retrying in {retryDelay.TotalSeconds:0}s. {exception.Message}");
+                            $"⚠️ Build package download attempt {attempt} failed for '{packageId}'. Retrying in {retryDelay.TotalSeconds:0}s. {SummarizeNugetInstallFailure(packageId, buildPackagesRoot, exception.Message)}");
                     });
             }
             catch (Exception exception)
             {
-                MessageLogger.Error($"❌ Failed to download build package '{packageId}': {exception.Message}");
-                if (exception.Message.Contains("Could not find a part of the path", StringComparison.OrdinalIgnoreCase))
+                MessageLogger.LogOnly($"Build package download raw failure for '{packageId}': {exception.Message}");
+                MessageLogger.Error($"❌ Failed to download build package '{packageId}': {SummarizeNugetInstallFailure(packageId, buildPackagesRoot, exception.Message)}");
+                if (IsLikelyLongPathFailure(exception.Message))
                 {
-                    MessageLogger.Info("Try again after upgrading FO Dev Manager. This usually means the package cache path is too long on this machine");
+                    MessageLogger.Warning("⚠️ Package extraction appears to be hitting a Windows long-path limit on this machine");
+                    MessageLogger.Info("Enable Win32 long paths in Local Group Policy or set LongPathsEnabled=1, then restart the machine");
                 }
                 return false;
             }
@@ -1182,14 +1268,17 @@ namespace FODevManager.Services
             if (!Directory.Exists(buildTasksDirectory))
                 return false;
 
-            var referenceFolders = new[]
-            {
+            var referenceFolders = new List<string>();
+
+            if (Directory.Exists(_deploymentBasePath))
+                referenceFolders.Add(_deploymentBasePath);
+
+            referenceFolders.AddRange([
                 Path.Combine(packageRoots[PlatformBuildPackageId], "ref", "net40"),
                 Path.Combine(packageRoots[Application1BuildPackageId], "ref", "net40"),
                 Path.Combine(packageRoots[Application2BuildPackageId], "ref", "net40"),
-                Path.Combine(packageRoots[ApplicationSuiteBuildPackageId], "ref", "net40"),
-                _deploymentBasePath
-            };
+                Path.Combine(packageRoots[ApplicationSuiteBuildPackageId], "ref", "net40")
+            ]);
 
             var missingReferenceFolder = referenceFolders.FirstOrDefault(path => !Directory.Exists(path));
             if (!missingReferenceFolder.IsNullOrEmpty())
@@ -1233,7 +1322,10 @@ namespace FODevManager.Services
                 CreateNoWindow = true
             };
 
+            ApplyDotNetSdkEnvironmentIfNeeded(processStartInfo, msbuildExecutable);
+
             MessageLogger.Info($"🛠️ Running MSBuild for solution '{solutionFilePath}'.");
+            MessageLogger.LogOnly($"Using MSBuild executable: {msbuildExecutable}");
 
             var compilerLogsRoot = Path.Combine(runRoot, "CompilerLogs");
             Directory.CreateDirectory(compilerLogsRoot);
@@ -1449,7 +1541,7 @@ namespace FODevManager.Services
                 return vsWhereCandidate;
 
             var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-            foreach (var visualStudioVersion in new[] { "2022", "2019" })
+            foreach (var visualStudioVersion in new[] { "18", "2022", "2019" })
             {
                 var visualStudioRoot = Path.Combine(programFilesX86, "Microsoft Visual Studio", visualStudioVersion);
                 if (!Directory.Exists(visualStudioRoot))
@@ -1512,6 +1604,130 @@ namespace FODevManager.Services
             }
 
             return true;
+        }
+
+        private static void ApplyDotNetSdkEnvironmentIfNeeded(ProcessStartInfo processStartInfo, string msbuildExecutable)
+        {
+            if (CanResolveMicrosoftNetSdk(msbuildExecutable))
+                return;
+
+            ApplyDotNetSdkEnvironment(processStartInfo);
+        }
+
+        private static bool CanResolveMicrosoftNetSdk(string msbuildExecutable)
+        {
+            if (msbuildExecutable.IsNullOrEmpty() || !File.Exists(msbuildExecutable))
+                return false;
+
+            var msbuildDirectory = Path.GetDirectoryName(msbuildExecutable);
+            if (msbuildDirectory.IsNullOrEmpty())
+                return false;
+
+            var sdkPath = Path.GetFullPath(Path.Combine(msbuildDirectory, "..", "..", "Sdks", "Microsoft.NET.Sdk", "Sdk"));
+            return Directory.Exists(sdkPath);
+        }
+
+        private static void ApplyDotNetSdkEnvironment(ProcessStartInfo processStartInfo)
+        {
+            var dotNetRoot = ResolveDotNetRoot();
+            var sdkRoot = ResolveDotNetSdkRoot(dotNetRoot);
+
+            if (dotNetRoot.IsNullOrEmpty() || sdkRoot.IsNullOrEmpty())
+                return;
+
+            var sdkResolverPath = Path.Combine(sdkRoot, "Sdks");
+            if (!Directory.Exists(sdkResolverPath))
+                return;
+
+            processStartInfo.Environment["DOTNET_ROOT"] = dotNetRoot;
+            processStartInfo.Environment["MSBuildSDKsPath"] = sdkResolverPath;
+            processStartInfo.Environment["MSBuildEnableWorkloadResolver"] = "false";
+
+            var existingPath = processStartInfo.Environment.TryGetValue("PATH", out var path)
+                ? path ?? string.Empty
+                : Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+
+            if (!existingPath
+                    .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Any(entry => AreSameDirectoryPath(entry, dotNetRoot)))
+            {
+                processStartInfo.Environment["PATH"] = $"{dotNetRoot}{Path.PathSeparator}{existingPath}";
+            }
+
+            MessageLogger.LogOnly($"Using .NET SDK resolver path: {sdkResolverPath}");
+        }
+
+        private static string ResolveDotNetRoot()
+        {
+            var configuredRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+            if (!configuredRoot.IsNullOrEmpty() && Directory.Exists(configuredRoot))
+                return configuredRoot;
+
+            var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            var programFilesCandidate = Path.Combine(programFiles, "dotnet");
+            if (Directory.Exists(programFilesCandidate))
+                return programFilesCandidate;
+
+            var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            var programFilesX86Candidate = Path.Combine(programFilesX86, "dotnet");
+            if (Directory.Exists(programFilesX86Candidate))
+                return programFilesX86Candidate;
+
+            return EnumerateExecutablesFromPath("dotnet.exe")
+                .Select(Path.GetDirectoryName)
+                .FirstOrDefault(path => !path.IsNullOrEmpty() && Directory.Exists(path)) ?? string.Empty;
+        }
+
+        private static string ResolveDotNetSdkRoot(string dotNetRoot)
+        {
+            if (dotNetRoot.IsNullOrEmpty())
+                return string.Empty;
+
+            var sdkContainer = Path.Combine(dotNetRoot, "sdk");
+            if (!Directory.Exists(sdkContainer))
+                return string.Empty;
+
+            return Directory.GetDirectories(sdkContainer)
+                .Where(path => Directory.Exists(Path.Combine(path, "Sdks", "Microsoft.NET.Sdk", "Sdk")))
+                .OrderByDescending(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault() ?? string.Empty;
+        }
+
+        private static string SummarizeNugetInstallFailure(string packageId, string installRoot, string rawMessage)
+        {
+            if (IsLikelyLongPathFailure(rawMessage))
+                return $"Package extraction hit a Windows path-length limit under '{installRoot}'";
+
+            if (rawMessage.Contains("Unknown option", StringComparison.OrdinalIgnoreCase))
+                return "NuGet rejected one of the command-line arguments";
+
+            if (rawMessage.Contains("Unable to load the service index", StringComparison.OrdinalIgnoreCase)
+                || rawMessage.Contains("No such host is known", StringComparison.OrdinalIgnoreCase)
+                || rawMessage.Contains("timed out", StringComparison.OrdinalIgnoreCase))
+            {
+                return "NuGet could not reach one of the configured feeds";
+            }
+
+            if (rawMessage.Contains("401", StringComparison.OrdinalIgnoreCase)
+                || rawMessage.Contains("403", StringComparison.OrdinalIgnoreCase)
+                || rawMessage.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase)
+                || rawMessage.Contains("forbidden", StringComparison.OrdinalIgnoreCase))
+            {
+                return "NuGet could not authenticate to one of the configured feeds";
+            }
+
+            return $"NuGet install failed for '{packageId}'";
+        }
+
+        private static bool IsLikelyLongPathFailure(string rawMessage)
+        {
+            if (rawMessage.IsNullOrEmpty())
+                return false;
+
+            return rawMessage.Contains("Could not find a part of the path", StringComparison.OrdinalIgnoreCase)
+                || rawMessage.Contains("The specified path, file name, or both are too long", StringComparison.OrdinalIgnoreCase)
+                || rawMessage.Contains("fully qualified file name must be less than", StringComparison.OrdinalIgnoreCase)
+                || rawMessage.Contains("path too long", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsWindowsLongPathsEnabled()
