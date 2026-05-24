@@ -1,4 +1,4 @@
-﻿
+
 using FODevManager.Shared.Models;
 using FODevManager.Utils;
 using System.Collections.Generic;
@@ -68,10 +68,6 @@ namespace FODevManager.Models
         public static IEnumerable<RepositoryModel> GetRepositories(this ProfileModel profile)
             => profile.Repositories ?? Enumerable.Empty<RepositoryModel>();
 
-        /// <summary>
-        /// Returns the repo root folder (where .git lives) for the given model, if the model belongs to a repository.
-        /// Falls back to model.ModelRootFolder for standalone/backwards compatible models.
-        /// </summary>
         public static string? TryGetRepoRootFolder(this ProfileModel profile, ProfileEnvironmentModel model)
         {
             if (profile == null)
@@ -80,26 +76,23 @@ namespace FODevManager.Models
             if (model == null)
                 throw new ArgumentNullException(nameof(model));
 
-            // Repository-backed model lookup
             if (profile.Repositories != null && profile.Repositories.Count > 0)
             {
                 var repo = profile.Repositories.FirstOrDefault(r =>
                     r.Models != null &&
                     r.Models.Any(modelInRepo =>
-                        modelInRepo.ModelName.SameAs(model.ModelName) 
-                        && modelInRepo.MetadataFolder.SameAs(model.MetadataFolder)));
+                        ReferenceEquals(modelInRepo, model)
+                        || (modelInRepo.ModelName.SameAs(model.ModelName)
+                            && (modelInRepo.MetadataFolder ?? string.Empty).SameAs(model.MetadataFolder ?? string.Empty)
+                            && (modelInRepo.CompiledModelFolder ?? string.Empty).SameAs(model.CompiledModelFolder ?? string.Empty))));
 
                 if (repo != null && !repo.RepoRootFolder.IsNullOrEmpty())
                     return repo.RepoRootFolder;
             }
 
-            // Standalone/backwards compat
             return model.ModelRootFolder.IsNullOrEmpty() ? null : model.ModelRootFolder;
         }
 
-        /// <summary>
-        /// Convenience overload: resolve repo root by model name (best-effort).
-        /// </summary>
         public static string? TryGetRepoRootFolder(this ProfileModel profile, string modelName)
         {
             if (profile == null)
@@ -108,7 +101,6 @@ namespace FODevManager.Models
             if (modelName.IsNullOrEmpty())
                 return null;
 
-            // Prefer repository-backed model
             var repoModel = profile.Repositories?
                 .SelectMany(r => r.Models ?? Enumerable.Empty<ProfileEnvironmentModel>())
                 .FirstOrDefault(m => m.ModelName.SameAs(modelName));
@@ -116,7 +108,6 @@ namespace FODevManager.Models
             if (repoModel != null)
                 return profile.TryGetRepoRootFolder(repoModel);
 
-            // Standalone
             var standalone = profile.StandaloneModels?
                 .FirstOrDefault(m => m.ModelName.SameAs(modelName));
 
@@ -152,16 +143,16 @@ namespace FODevManager.Models
                 return null;
 
             var metadataFolder = model.MetadataFolder ?? string.Empty;
+            var compiledFolder = model.CompiledModelFolder ?? string.Empty;
 
             return profile.Repositories.FirstOrDefault(repo =>
                 repo.Models != null &&
                 repo.Models.Any(repoModel =>
-                    repoModel.ModelName.SameAs(model.ModelName) &&
-                    (repoModel.MetadataFolder ?? string.Empty).SameAs(metadataFolder)));
+                    ReferenceEquals(repoModel, model)
+                    || (repoModel.ModelName.SameAs(model.ModelName)
+                        && (repoModel.MetadataFolder ?? string.Empty).SameAs(metadataFolder)
+                        && (repoModel.CompiledModelFolder ?? string.Empty).SameAs(compiledFolder))));
         }
 
     }
 }
-
-   
-

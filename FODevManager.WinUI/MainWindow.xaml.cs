@@ -19,6 +19,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Serilog;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -27,6 +28,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.System;
 using Windows.UI.Text;
 using WinRT;
@@ -42,6 +44,7 @@ namespace FODevManager.WinUI
         private readonly ProfileService _profileService;
         private readonly FileService _fileService;
         private readonly ModelDeploymentService _deploymentService;
+        private readonly ModelVersionService _modelVersionService;
         private readonly AppConfig _appConfig;
         private MicaController? _micaController;
         private SystemBackdropConfiguration? _backdropConfig;
@@ -57,17 +60,17 @@ namespace FODevManager.WinUI
         private BackgroundQueue? _backgroundQueue;
         private UiDispatcher? _uiDispatcher;
         private int _isGitCheckRunning;
+        private int _profileLoadRequestId;
+        private readonly ConcurrentDictionary<string, byte> _queuedNugetPreparationProfiles = new(StringComparer.OrdinalIgnoreCase);
 
-        private UiDispatcher Ui => _uiDispatcher ?? throw new InvalidOperationException("BusyOps.Initialize must be called before using BusyOps.");
+        private UiDispatcher Ui => _uiDispatcher ?? throw new InvalidOperationException("BusyOps.Initialize must be called before using BusyOps");
 
-        public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService, AppConfig appConfig)
+        public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService, ModelVersionService modelVersionService, AppConfig appConfig)
         {
             this.InitializeComponent();
             this.Activated += MainWindow_Activated;
 
             BusyOverlayVm = new BusyOverlayViewModel();
-            
-            this.Activated += MainWindow_Activated;
             this.Closed += MainWindow_Closed;
 
 
@@ -87,14 +90,12 @@ namespace FODevManager.WinUI
             _profileService = profileService;
             _fileService = fileService;
             _deploymentService = deploymentService;
+            _modelVersionService = modelVersionService;
             _appConfig = appConfig;
 
-
-            // Initialize Mica + TitleBar
             ApplyMicaEffect();
             SetTitleBar(AppTitleBar);
 
-            // Store AppWindow reference
             _appWindow = GetAppWindowForCurrentWindow();
 
             var titleBar = _appWindow.TitleBar;
@@ -106,21 +107,31 @@ namespace FODevManager.WinUI
 
             LoadProfiles();
 
-            UIMessageHelper.LogToUI($"READY...");
-
-            // Replace the lambda with a proper handler that includes cancellation
-            this.Closed += (_, args) => 
-            {
-                _profileMonitorCancellationTokenSource?.Cancel();
-                BusyOverlayVm.Dispose();
-            };
+            UIMessageHelper.LogToUI($"READY..");
         }
         private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
         {
-            IntPtr windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
-            WindowId windowId = Win32Interop.GetWindowIdFromWindow(windowHandle);
-            AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
-            appWindow.SetIcon(@"Assets\FODev.ico");
+            try
+            {
+                IntPtr windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                WindowId windowId = Win32Interop.GetWindowIdFromWindow(windowHandle);
+                AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+                var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "FODev.ico");
+
+                if (File.Exists(iconPath))
+                {
+                    appWindow.SetIcon(iconPath);
+                }
+                else
+                {
+                    MessageLogger.Warning($"Window icon file not found at {iconPath}");
+                }
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Warning($"Failed to apply window icon. {exception.Message}");
+                App.WriteStartupCrashLog("MainWindow activation failed while setting icon", exception);
+            }
         }
 
         private void ApplyMicaEffect()
@@ -187,7 +198,7 @@ namespace FODevManager.WinUI
                     var ageMs = (DateTime.UtcNow - _lastUiTickUtc).TotalMilliseconds;
                     if (ageMs > 1500)
                     {
-                        MessageLogger.Error($"UI STALL detected: last tick {ageMs:0} ms ago.");
+                        MessageLogger.Error($"UI STALL detected: last tick {ageMs:0} ms ago");
                     }
                 }
             });
@@ -209,14 +220,26 @@ namespace FODevManager.WinUI
         }
 
 
+        private sealed class ProfileLoadResult
+        {
+            public required ProfileModel Profile { get; init; }
+            public required ModelsGroupingViewModel Grouping { get; init; }
+            public required List<object> CombinedItems { get; init; }
+        }
+
         private void LoadProfiles(string setProfile = "")
         {
-            var profiles = _fileService.GetAllProfiles();
+            _ = LoadProfilesAsync(setProfile);
+        }
+
+        private async Task LoadProfilesAsync(string setProfile = "")
+        {
+            var profiles = await Task.Run(() => _fileService.GetAllProfiles());
             ProfilesDropdown.ItemsSource = profiles.Select(x => x.ProfileName).ToList();
 
             if (profiles.Any())
             {
-                UIMessageHelper.LogToUI($"🔔 {profiles.Count} profiles loaded");
+                UIMessageHelper.LogToUI($"{profiles.Count} profiles loaded");
 
                 var currentProfile = !setProfile.IsNullOrEmpty() ? profiles.FirstOrDefault(x => x.ProfileName == setProfile) : (profiles.FirstOrDefault(x => x.IsActive) ?? profiles.First());
 
@@ -225,8 +248,8 @@ namespace FODevManager.WinUI
                     UIMessageHelper.LogToUI($"No active profile", MessageType.Warning);
                 }
 
-                SetSelectedProfile(currentProfile);
-
+                if (currentProfile != null)
+                    await SetSelectedProfileAsync(currentProfile.ProfileName);
             }
         }
 
@@ -247,32 +270,106 @@ namespace FODevManager.WinUI
             if (profile == null)
                 return;
 
+            _ = SetSelectedProfileAsync(profile.ProfileName);
+        }
+
+        private async Task SetSelectedProfileAsync(string profileName)
+        {
+            var requestId = Interlocked.Increment(ref _profileLoadRequestId);
+            var loadResult = await Task.Run(() => BuildProfileLoadResult(profileName));
+            if (requestId != _profileLoadRequestId || loadResult == null)
+                return;
+
             ProfilesDropdown.SelectionChanged -= ProfilesDropdown_SelectionChanged;
             try
             {
-                ProfilesDropdown.SelectedItem = profile.ProfileName;
+                ProfilesDropdown.SelectedItem = profileName;
             }
             finally
             {
                 ProfilesDropdown.SelectionChanged += ProfilesDropdown_SelectionChanged;
             }
 
-            SetActiveProfile(profile);
+            ApplyLoadedProfile(loadResult);
         }
 
-        private void SetActiveProfile(ProfileModel? profile)
+        private ProfileLoadResult? BuildProfileLoadResult(string profileName)
         {
+            var profile = _profileService.LoadProfile(profileName);
             if (profile == null)
+                return null;
+
+            var modelViewModels = profile.AllModels
+                .Select(model => model.ToViewModel(profile.ProfileName))
+                .ToList();
+
+            foreach (var viewModel in modelViewModels)
+            {
+                if (_modelVersionService.TryGetVersionText(viewModel.Model, out var versionText))
+                    viewModel.VersionText = versionText;
+            }
+
+            var groupingVm = new ModelsGroupingViewModel(profile, modelViewModels);
+            var firstRepoGroup = groupingVm.GitGroups.FirstOrDefault();
+            if (firstRepoGroup != null)
+                firstRepoGroup.IsExpanded = true;
+
+            var combinedItems = new List<object>();
+            combinedItems.AddRange(groupingVm.GitGroups);
+            combinedItems.AddRange(groupingVm.NonGitModels);
+
+            return new ProfileLoadResult
+            {
+                Profile = profile,
+                Grouping = groupingVm,
+                CombinedItems = combinedItems
+            };
+        }
+
+        private void ApplyLoadedProfile(ProfileLoadResult loadResult)
+        {
+            ActiveProfile = loadResult.Profile;
+            _groupingVm = loadResult.Grouping;
+            CombinedList.ItemsSource = loadResult.CombinedItems;
+            UpdateProfileFields(loadResult.Profile);
+
+            QueueNugetPreparation(loadResult.Profile);
+            StartProfileSyncMonitoring(loadResult.Profile);
+            LogActiveEnvironmentInfo(loadResult.Profile);
+        }
+
+        private void QueueNugetPreparation(ProfileModel profile)
+        {
+            if (profile == null || profile.Repositories == null || profile.Repositories.Count == 0)
                 return;
 
-            ActiveProfile = profile;
-            LoadModelListViewData(profile.ProfileName);
-            UpdateProfileFields(profile);
+            if (!_queuedNugetPreparationProfiles.TryAdd(profile.ProfileName, 0))
+                return;
 
-            StartProfileSyncMonitoring(profile);
-            
-            LogActiveEnvironmentInfo(profile);
+            _backgroundQueue ??= new BackgroundQueue();
+            _backgroundQueue.TryEnqueue(async cancellationToken =>
+            {
+                try
+                {
+                    var updated = _profileService.PrepareCompiledNugetModels(profile.ProfileName);
+                    if (!updated || cancellationToken.IsCancellationRequested)
+                        return;
 
+                    await Ui.EnqueueAsync(async () =>
+                    {
+                        await RefreshProfileViewAsync(profile.ProfileName);
+                        return;
+                    }).ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    MessageLogger.Error($"Background NuGet preparation failed for profile '{profile.ProfileName}': {exception.Message}");
+                }
+                finally
+                {
+                    _queuedNugetPreparationProfiles.TryRemove(profile.ProfileName, out _);
+                }
+            });
         }
 
 
@@ -419,7 +516,6 @@ namespace FODevManager.WinUI
             }
             catch (OperationCanceledException)
             {
-                // Expected during shutdown / profile switch
             }
             catch (Exception exception)
             {
@@ -565,7 +661,6 @@ namespace FODevManager.WinUI
             }
             catch (OperationCanceledException)
             {
-                // Expected on shutdown/profile switch
             }
             catch (Exception ex)
             {
@@ -581,50 +676,41 @@ namespace FODevManager.WinUI
 
         private void LoadModelListViewData(string profileName)
         {
-            var profile = _profileService.LoadProfile(profileName);
-            if (profile == null)
+            _ = RefreshProfileViewAsync(profileName);
+        }
+
+        private async Task RefreshProfileViewAsync(string profileName)
+        {
+            var requestId = Interlocked.Increment(ref _profileLoadRequestId);
+            var loadResult = await Task.Run(() => BuildProfileLoadResult(profileName));
+            if (requestId != _profileLoadRequestId)
+                return;
+
+            if (loadResult == null)
             {
-                MessageLogger.Error($"LoadModelListViewData: Could not load profile '{profileName}'.");
+                MessageLogger.Error($"LoadModelListViewData: Could not load profile '{profileName}'");
                 CombinedList.ItemsSource = new List<object>();
                 return;
             }
 
-            var modelViewModels = _profileService
-                .GetModelsInProfile(profileName)
-                .Select(model => model.ToViewModel(profile.ProfileName))
-                .ToList();
-
-            _groupingVm = new ModelsGroupingViewModel(profile, modelViewModels);
-
-            var firstRepoGroup = _groupingVm.GitGroups.FirstOrDefault();
-            if (firstRepoGroup != null)
-                firstRepoGroup.IsExpanded = true;
-
-            var combinedItems = new List<object>();
-            combinedItems.AddRange(_groupingVm.GitGroups);
-            combinedItems.AddRange(_groupingVm.NonGitModels);
-
-            CombinedList.ItemsSource = combinedItems;
+            ApplyLoadedProfile(loadResult);
         }
 
-        private void ProfilesDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void ProfilesDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
                 if (ActiveProfile?.ProfileName == profileName)
                     return;
 
-                var profile = LoadProfileByName(profileName);
-                if (profile != null)
-                {
-                    SetActiveProfile(profile);
-                }
+                await SetSelectedProfileAsync(profileName);
             }
         }
 
         private void UpdateProfileFields(ProfileModel profile)
         {
             DatabaseNameTextBox.Text = profile.DatabaseName ?? string.Empty;
+            SetDatabaseEditingState(false);
             IsActiveCheckBox.IsChecked = profile.IsActive;
 
         }
@@ -638,7 +724,7 @@ namespace FODevManager.WinUI
             var anchorModel = group.Models.FirstOrDefault();
             if (anchorModel is null || anchorModel.ModelName.IsNullOrEmpty())
             {
-                MessageLogger.Warning("⚠️ No model found in this repo group to open Git.");
+                MessageLogger.Warning("⚠️ No model found in this repo group to open Git");
                 return;
             }
 
@@ -696,7 +782,7 @@ namespace FODevManager.WinUI
                         switchBranch: true);
                 }, "Assign Task", false);
 
-                UIMessageHelper.LogToUI($"✅ Assigned Task '{taskId}' to repo '{group.DisplayName}'.");
+                UIMessageHelper.LogToUI($"✅ Assigned Task '{taskId}' to repo '{group.DisplayName}'");
             }
             catch (Exception exception)
             {
@@ -835,7 +921,7 @@ namespace FODevManager.WinUI
                 }
                 else
                 {
-                    UpdateStatus("❗ Solution file not found or path not set.");
+                    UpdateStatus("❗ Solution file not found or path not set");
                 }
             }
         }
@@ -920,7 +1006,7 @@ namespace FODevManager.WinUI
             var repoUrl = urlTextBox.Text?.Trim() ?? string.Empty;
             if (repoUrl.IsNullOrEmpty())
             {
-                MessageLogger.Warning("Import cancelled: URL was empty.");
+                MessageLogger.Warning("Import cancelled: URL was empty");
                 return;
             }
 
@@ -928,13 +1014,13 @@ namespace FODevManager.WinUI
 
             if (!ok)
             {
-                MessageLogger.Error("Import failed due to an error during cloning or importing.");
+                MessageLogger.Error("Import failed due to an error during cloning or importing");
                 return;
             }
             
             if (importedProfile == null)
             {
-                MessageLogger.Error("Import failed. No profile was imported.");
+                MessageLogger.Error("Import failed. No profile was imported");
                 return;
             }
 
@@ -948,10 +1034,10 @@ namespace FODevManager.WinUI
         {
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
-                UpdateStatus($"Deploying profile '{profileName}'...");
+                UpdateStatus($"Deploying profile '{profileName}'..");
                 await DeployAllModels(profileName);
                 LoadModelListViewData(profileName);
-                UpdateStatus($"✅ Deployment complete for '{profileName}'.");
+                UpdateStatus($"✅ Deployment complete for '{profileName}'");
             }
         }
 
@@ -963,7 +1049,7 @@ namespace FODevManager.WinUI
                LoadModelListViewData(profileName);
             }
 
-            UpdateStatus($"🧹 Undeployment complete for all models in all profiles.");
+            UpdateStatus($"🧹 Undeployment complete for all models in all profiles");
         }
 
         private async void RefreshProfile_Click(object sender, RoutedEventArgs e)
@@ -1020,13 +1106,38 @@ namespace FODevManager.WinUI
             }
         }
 
+        private async void PasteModelPath_Click(object sender, RoutedEventArgs e)
+        {
+            var dataPackageView = Clipboard.GetContent();
+            if (dataPackageView == null || !dataPackageView.Contains(StandardDataFormats.Text))
+            {
+                UpdateStatus("Clipboard does not contain text");
+                return;
+            }
+
+            var text = (await dataPackageView.GetTextAsync())?.Trim() ?? string.Empty;
+            if (text.IsNullOrEmpty())
+            {
+                UpdateStatus("Clipboard text is empty");
+                return;
+            }
+
+            ModelPathTextBox.Text = text;
+        }
+
         private async void AddModel_Click(object sender, RoutedEventArgs e)
         {
             if (ProfilesDropdown.SelectedItem is string profileName && !ModelPathTextBox.Text.IsNullOrEmpty())
             {
                 var path = ModelPathTextBox.Text;
-                await AddModelToProfile(profileName, path);
-                LoadModelListViewData(profileName);
+                if (LooksLikeNugetUrl(path))
+                {
+                    await AddNugetModelToProfile(profileName, path);
+                }
+                else
+                {
+                    await AddModelToProfile(profileName, path);
+                }
                 ModelPathTextBox.Text = string.Empty;
             }
         }
@@ -1050,7 +1161,7 @@ namespace FODevManager.WinUI
 
                 await RemoveModelFromProfile(profileName, modelName);
                 LoadModelListViewData(profileName);
-                UpdateStatus($"🗑️ Model '{modelName}' removed from '{profileName}'.");
+                UpdateStatus($"🗑️ Model '{modelName}' removed from '{profileName}'");
             }
         }
 
@@ -1069,7 +1180,6 @@ namespace FODevManager.WinUI
         {
             var settingsPage = new SettingsPage
             {
-                MinWidth = 800,
                 MinHeight = 500
             };
             var dialog = new ContentDialog
@@ -1080,15 +1190,15 @@ namespace FODevManager.WinUI
                 XamlRoot = this.Content.XamlRoot
             };
 
-            dialog.MaxWidth = 1200;
-            dialog.MinWidth = 800;
+            dialog.MaxWidth = 900;
+            dialog.MinWidth = 640;
 
             await dialog.ShowAsync();
         }
 
         public static void LogStartupInfo()
         {
-            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.1";
+            var version = GetDisplayVersion();
             var buildDate = GetBuildDate().ToString("yyyy-MM-dd HH:mm");
 
 
@@ -1099,7 +1209,7 @@ namespace FODevManager.WinUI
 
         private async void ShowAboutDialog_Click(object sender, RoutedEventArgs e)
         {
-            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "v1.0.1";
+            var version = GetDisplayVersion();
             var buildDate = GetBuildDate().ToString("yyyy-MM-dd HH:mm");
 
             var contentPanel = new StackPanel
@@ -1125,7 +1235,7 @@ namespace FODevManager.WinUI
 
             contentPanel.Children.Add(new TextBlock
             {
-                Text = "© 2025 ECIT Peritus AS. All rights reserved.",
+                Text = "© 2026 ECIT Peritus AS. All rights reserved",
                 FontStyle = FontStyle.Italic
             });
 
@@ -1145,6 +1255,19 @@ namespace FODevManager.WinUI
             };
 
             await dialog.ShowAsync();
+        }
+
+        private static string GetDisplayVersion()
+        {
+            var informationalVersion = Assembly
+                .GetExecutingAssembly()
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+                .InformationalVersion;
+
+            if (!informationalVersion.IsNullOrEmpty())
+                return informationalVersion.Split('+')[0];
+
+            return Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.1.3";
         }
 
         private static async Task<bool> RunOperationAsync(Action action, string operationName, bool shutdownServer = true)
@@ -1189,6 +1312,85 @@ namespace FODevManager.WinUI
 
         }
 
+        private async Task<bool> AddNugetModelToProfile(string profileName, string packageUrl)
+        {
+            var profile = LoadProfileByName(profileName);
+            if (profile == null)
+                return false;
+
+            var repositories = profile.Repositories?
+                .Where(repo => repo != null && !repo.RepoId.IsNullOrEmpty())
+                .ToList() ?? new List<RepositoryModel>();
+
+            if (repositories.Count == 0)
+            {
+                UpdateStatus($"No repositories are available in profile '{profileName}' for NuGet package installation");
+                return false;
+            }
+
+            var selectedRepository = repositories.Count == 1
+                ? repositories[0]
+                : await ShowNugetRepositoryPickerAsync(repositories, packageUrl);
+
+            if (selectedRepository == null)
+                return false;
+
+            var ret = await RunOperationAsync(
+                () => _profileService.AddNugetModel(profileName, selectedRepository.RepoId, string.Empty, packageUrl),
+                "Add NuGet model to profile");
+
+            if (!ret) return false;
+
+            LoadModelListViewData(profileName);
+            return true;
+        }
+
+        private async Task<RepositoryModel?> ShowNugetRepositoryPickerAsync(IReadOnlyList<RepositoryModel> repositories, string packageUrl)
+        {
+            var repositoryComboBox = new ComboBox
+            {
+                PlaceholderText = "Select repository",
+                DisplayMemberPath = nameof(RepositoryModel.DisplayName),
+                ItemsSource = repositories,
+                SelectedIndex = 0,
+                MinWidth = 320
+            };
+
+            var content = new StackPanel { Spacing = 8 };
+            content.Children.Add(new TextBlock { Text = "Choose which repository should own this package" });
+            content.Children.Add(repositoryComboBox);
+            content.Children.Add(new TextBlock { Text = "Package URL:" });
+            content.Children.Add(new TextBlock
+            {
+                Text = packageUrl,
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            var dialog = new ContentDialog
+            {
+                Title = "Add NuGet package",
+                Content = content,
+                PrimaryButtonText = "Add",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result != ContentDialogResult.Primary)
+                return null;
+
+            return repositoryComboBox.SelectedItem as RepositoryModel;
+        }
+
+        private static bool LooksLikeNugetUrl(string value)
+        {
+            if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+                return false;
+
+            return string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+        }
         private async Task<bool> CreateProfile(string profileName)
         {
             return await RunOperationAsync(() => _profileService.CreateProfile(profileName), "Create profile");
@@ -1227,6 +1429,15 @@ namespace FODevManager.WinUI
             return await RunOperationAsync(() => _deploymentService.UnDeployModel(profileName, modelName), "Undeploy model");
         }
 
+        private async Task<bool> BuildDeployablePackageForModel(string profileName, string modelName)
+        {
+            var (ok, success) = await BusyOps.TrySyncAsAsync(
+                () => _profileService.BuildDeployableNugetPackage(profileName, modelName),
+                "Build Compiled Nuget");
+
+            return ok && success;
+        }
+
         private async Task<bool> DeployAllModels(string profileName)
         {
             var (ok, success) = await BusyOps.TrySyncAsAsync(() => _deploymentService.DeployAllUndeployedModels(profileName), "Deploy all models");
@@ -1257,14 +1468,111 @@ namespace FODevManager.WinUI
             return profile;
         }
 
-        private void DatabaseNameTextBox_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
+        private void SetDatabaseEditingState(bool isEditing)
         {
-            DatabaseNameTextBox.IsReadOnly = false;
+            DatabaseNameTextBox.IsReadOnly = !isEditing;
+            DatabaseNameEditButton.Visibility = isEditing ? Visibility.Collapsed : Visibility.Visible;
+            DatabaseNameApplyButton.Visibility = isEditing ? Visibility.Visible : Visibility.Collapsed;
+            DatabaseNameCancelButton.Visibility = isEditing ? Visibility.Visible : Visibility.Collapsed;
+            DatabaseNameHintText.Visibility = isEditing ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void BeginDatabaseNameEdit()
+        {
+            if (ActiveProfile == null)
+            {
+                MessageLogger.Warning("Select a profile before editing the database name");
+                return;
+            }
+
+            SetDatabaseEditingState(true);
+            DatabaseNameTextBox.Focus(FocusState.Programmatic);
+            DatabaseNameTextBox.SelectAll();
+        }
+
+        private void CancelDatabaseNameEdit()
+        {
+            DatabaseNameTextBox.Text = ActiveProfile?.DatabaseName ?? string.Empty;
+            SetDatabaseEditingState(false);
+        }
+
+        private async Task ApplyDatabaseNameChangeAsync()
+        {
+            if (ActiveProfile == null)
+                return;
+
+            var newDbString = (DatabaseNameTextBox.Text ?? string.Empty).Trim();
+            if (newDbString.SameAs(ActiveProfile.DatabaseName))
+            {
+                MessageLogger.Info("Database name unchanged");
+                SetDatabaseEditingState(false);
+                return;
+            }
+
+            if (newDbString.IsNullOrEmpty())
+            {
+                MessageLogger.Warning("Database name cannot be empty");
+                DatabaseNameTextBox.Text = ActiveProfile.DatabaseName;
+                return;
+            }
+
+            var dialog = new ContentDialog
+            {
+                Title = "Apply database change?",
+                Content = $"Change database for profile '{ActiveProfile.ProfileName}' to:\n\n“{newDbString}”\n\nApply now?",
+                PrimaryButtonText = "Yes",
+                CloseButtonText = "No",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result != ContentDialogResult.Primary)
+            {
+                CancelDatabaseNameEdit();
+                MessageLogger.Info("Database change cancelled");
+                return;
+            }
+
+            await RunOperationAsync(() =>
+            {
+                _profileService.SetDatabaseName(ActiveProfile.ProfileName, newDbString);
+            }, "Apply database name");
+
+            ActiveProfile.DatabaseName = newDbString;
+            SetDatabaseEditingState(false);
+        }
+
+        private void DatabaseNameEditButton_Click(object sender, RoutedEventArgs e)
+        {
+            BeginDatabaseNameEdit();
+        }
+
+        private void DatabaseNameCancelButton_Click(object sender, RoutedEventArgs e)
+        {
+            CancelDatabaseNameEdit();
+            MessageLogger.Info("Database change cancelled");
+        }
+
+        private async void DatabaseNameApplyButton_Click(object sender, RoutedEventArgs e)
+        {
+            await ApplyDatabaseNameChangeAsync();
         }
 
         private async void DatabaseNameTextBox_KeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
         {
-            if (e.Key != VirtualKey.Enter) return;
+            if (e.Key == VirtualKey.Escape)
+            {
+                CancelDatabaseNameEdit();
+                MessageLogger.Info("Database change cancelled");
+                return;
+            }
+
+            if (e.Key != VirtualKey.Enter)
+                return;
+
+            await ApplyDatabaseNameChangeAsync();
+            return;
 
             if (ActiveProfile == null) return;
 
@@ -1272,13 +1580,13 @@ namespace FODevManager.WinUI
             if (newDbString.SameAs(ActiveProfile.DatabaseName))
             {
                 // nothing changed—do nothing
-                MessageLogger.Info("Database name unchanged.");
+                MessageLogger.Info("Database name unchanged");
                 return;
             }
 
             if (newDbString.IsNullOrEmpty())
             {
-                MessageLogger.Warning("Database name cannot be empty.");
+                MessageLogger.Warning("Database name cannot be empty");
                 DatabaseNameTextBox.Text = ActiveProfile.DatabaseName;
                 return;
             }
@@ -1299,7 +1607,7 @@ namespace FODevManager.WinUI
                 // revert if user says No
                 DatabaseNameTextBox.Text = ActiveProfile.DatabaseName;
                 DatabaseNameTextBox.IsReadOnly = true;
-                MessageLogger.Info("Database change cancelled.");
+                MessageLogger.Info("Database change cancelled");
                 return;
             }
 
@@ -1412,7 +1720,7 @@ namespace FODevManager.WinUI
                     var profile = LoadProfileByName(profileName);
                     if (profile == null)
                     {
-                        MessageLogger.Error($"✖ Profile '{profileName}' could not be loaded.");
+                        MessageLogger.Error($"✖ Profile '{profileName}' could not be loaded");
                         return;
                     }
                 }
@@ -1420,7 +1728,7 @@ namespace FODevManager.WinUI
                 var dlg = new ContentDialog
                 {
                     Title = "Delete profile?",
-                    Content = $"This will permanently delete the profile '{selectedProfileName}'\n\nThis cannot be undone.",
+                    Content = $"This will permanently delete the profile '{selectedProfileName}'\n\nThis cannot be undone",
                     PrimaryButtonText = "Delete",
                     CloseButtonText = "Cancel",
                     DefaultButton = ContentDialogButton.Close,
@@ -1430,7 +1738,7 @@ namespace FODevManager.WinUI
                 var result = await dlg.ShowAsync();
                 if (result != ContentDialogResult.Primary)
                 {
-                    MessageLogger.Info("ℹ Delete profile cancelled.");
+                    MessageLogger.Info("ℹ Delete profile cancelled");
                     return;
                 }
 
@@ -1445,6 +1753,7 @@ namespace FODevManager.WinUI
 
                     ProfilesDropdown.SelectedItem = null;
                     DatabaseNameTextBox.Text = string.Empty;
+                    SetDatabaseEditingState(false);
                     IsActiveCheckBox.IsChecked = false;
 
                     LoadProfiles();
@@ -1495,6 +1804,40 @@ namespace FODevManager.WinUI
 
             flyout.Items.Add(propertiesMenuItem);
 
+            if (clickedItem is ProfileEnvironmentViewModel nugetViewModel
+                && nugetViewModel.Model.ModelType == ModelType.CompiledNuget
+                && !nugetViewModel.Model.PackageUrl.IsNullOrEmpty())
+            {
+                var openPackageMenuItem = new MenuFlyoutItem
+                {
+                    Text = "Open Package"
+                };
+
+                openPackageMenuItem.Click += (_, _) =>
+                {
+                    ServiceHelper.OpenUrl(nugetViewModel.Model.PackageUrl);
+                };
+
+                flyout.Items.Add(openPackageMenuItem);
+            }
+
+            if (clickedItem is ProfileEnvironmentViewModel packageViewModel
+                && packageViewModel.Model.ModelType == ModelType.Source)
+            {
+                var buildPackageMenuItem = new MenuFlyoutItem
+                {
+                    Text = "Build Compiled Nuget…"
+                };
+
+                buildPackageMenuItem.Click += async (_, _) =>
+                {
+                    await BuildDeployablePackageForModel(packageViewModel.ProfileName, packageViewModel.ModelName)
+                        .ConfigureAwait(true);
+                };
+
+                flyout.Items.Add(buildPackageMenuItem);
+            }
+
             flyout.ShowAt(listView, eventArgs.GetPosition(listView));
             eventArgs.Handled = true;
         }
@@ -1502,6 +1845,8 @@ namespace FODevManager.WinUI
         private async Task ShowRepositoryPropertiesAsync(RepoGroupViewModel repoGroupViewModel)
         {
             RepositoryModel repositoryModel = repoGroupViewModel.Repository;
+            var maxDialogBodyWidth = Math.Max(440, Math.Min(620, this.Bounds.Width - 220));
+            var availableDialogBodyHeight = Math.Max(560, this.Bounds.Height - 80);
 
             var displayNameTextBox = new TextBox { Text = repositoryModel.DisplayName ?? string.Empty };
             var preferredBranchTextBox = new TextBox { Text = repositoryModel.PreferredBranch ?? string.Empty };
@@ -1521,36 +1866,149 @@ namespace FODevManager.WinUI
             var taskTextBox = new TextBox { Text = repositoryModel.Task ?? string.Empty };
             var taskCommentTextBox = new TextBox { Text = repositoryModel.TaskComment ?? string.Empty };
 
+            static TextBlock CreateFieldLabel(string text) => new()
+            {
+                Text = text,
+                Opacity = 0.72,
+                FontSize = 12
+            };
+
+            static Border CreateValueContainer(UIElement content) => new()
+            {
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(10, 7, 10, 7),
+                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(45, 255, 255, 255)),
+                BorderBrush = new SolidColorBrush(Colors.LightGray),
+                BorderThickness = new Thickness(1),
+                Child = content
+            };
+
+            static StackPanel CreateEditableField(string label, Control input) => new()
+            {
+                Spacing = 4,
+                Children =
+                {
+                    CreateFieldLabel(label),
+                    CreateValueContainer(input)
+                }
+            };
+
+            static StackPanel CreateReadOnlyField(string label, string value) => new()
+            {
+                Spacing = 4,
+                Children =
+                {
+                    CreateFieldLabel(label),
+                    CreateValueContainer(new TextBlock
+                    {
+                        Text = value.IsNullOrEmpty() ? "(empty)" : value,
+                        TextWrapping = TextWrapping.Wrap,
+                        FontWeight = FontWeights.SemiBold
+                    })
+                }
+            };
+
+            static Border CreateSectionWithContent(string title, string description, params UIElement[] content)
+            {
+                var sectionBody = new StackPanel
+                {
+                    Spacing = 10
+                };
+
+                sectionBody.Children.Add(new TextBlock
+                {
+                    Text = title,
+                    FontSize = 15,
+                    FontWeight = FontWeights.SemiBold
+                });
+
+                sectionBody.Children.Add(new TextBlock
+                {
+                    Text = description,
+                    Opacity = 0.72,
+                    TextWrapping = TextWrapping.Wrap
+                });
+
+                foreach (var element in content)
+                {
+                    sectionBody.Children.Add(element);
+                }
+
+                return new Border
+                {
+                    CornerRadius = new CornerRadius(10),
+                    Padding = new Thickness(14),
+                    Background = new SolidColorBrush(Windows.UI.Color.FromArgb(20, 255, 255, 255)),
+                    BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(28, 255, 255, 255)),
+                    BorderThickness = new Thickness(1),
+                    Child = sectionBody
+                };
+            }
+
+            var behaviorPanel = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    CreateValueContainer(autoCheckoutToggle),
+                    CreateValueContainer(autoStashToggle)
+                }
+            };
+
             var contentPanel = new StackPanel
             {
-                MinWidth = 400,
-                Spacing = 10,
+                MaxWidth = maxDialogBodyWidth,
+                Spacing = 12,
                 Children =
+                {
+                    new TextBlock
+                    {
+                        Text = repositoryModel.RepoId,
+                        FontSize = 18,
+                        FontWeight = FontWeights.SemiBold
+                    },
+                    CreateSectionWithContent(
+                        "Repository Details",
+                        "Reference information for this repository",
+                        CreateReadOnlyField("Repository", repositoryModel.RepoId),
+                        CreateReadOnlyField("Root", repositoryModel.RepoRootFolder)),
+                    CreateSectionWithContent(
+                        "General",
+                        "Repository naming and branch preferences",
+                        CreateEditableField("Display name", displayNameTextBox),
+                        CreateEditableField("Preferred branch", preferredBranchTextBox)),
+                    CreateSectionWithContent(
+                        "Git Behavior",
+                        "Control what should happen when the profile loads or the branch is dirty",
+                        behaviorPanel),
+                    CreateSectionWithContent(
+                        "Task information",
+                        "Current task information for this repository",
+                        CreateEditableField("Task", taskTextBox),
+                        CreateEditableField("Task comment", taskCommentTextBox))
+                }
+            };
+
+            var dialogContent = new Grid
             {
-                new TextBlock { Text = $"Repo: {repositoryModel.RepoId}" },
-                new TextBlock { Text = $"Root: {repositoryModel.RepoRootFolder}" },
-
-                new TextBlock { Text = "Display name" },
-                displayNameTextBox,
-
-                new TextBlock { Text = "Preferred branch" },
-                preferredBranchTextBox,
-
-                autoCheckoutToggle,
-                autoStashToggle,
-
-                new TextBlock { Text = "Task" },
-                taskTextBox,
-
-                new TextBlock { Text = "Task comment" },
-                taskCommentTextBox
-            }
+                MaxWidth = maxDialogBodyWidth,
+                Padding = new Thickness(4, 0, 18, 0),
+                Children =
+                {
+                    new ScrollViewer
+                    {
+                        Content = contentPanel,
+                        MaxHeight = availableDialogBodyHeight,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+                    }
+                }
             };
 
             var dialog = new ContentDialog
             {
                 Title = "Repository properties",
-                Content = contentPanel,
+                Content = dialogContent,
                 PrimaryButtonText = "Save",
                 CloseButtonText = "Cancel",
                 XamlRoot = this.Content.XamlRoot
@@ -1574,49 +2032,312 @@ namespace FODevManager.WinUI
         private async Task ShowModelPropertiesAsync(ProfileEnvironmentViewModel environmentViewModel)
         {
             ProfileEnvironmentModel environmentModel = environmentViewModel.Model;
+            var canEditVersion = environmentModel.ModelType == ModelType.Source;
+            var canSelectNugetVersion = environmentModel.ModelType == ModelType.CompiledNuget;
+            var canChooseMainFoModel = environmentModel.ModelType == ModelType.Source;
+            var maxDialogBodyWidth = Math.Max(440, Math.Min(620, this.Bounds.Width - 220));
+            var availableDialogBodyHeight = Math.Max(560, this.Bounds.Height - 80);
+            var availablePackageVersions = new List<string>();
+
+            _modelVersionService.TryGetVersion(environmentModel, out var currentVersion);
 
             var mainFoToggle = new ToggleSwitch
             {
                 IsOn = environmentModel.IsMainFOModel,
-                Header = "Main FO model (solution root)"
+                Header = "Main FO model (solution root)",
+                IsEnabled = canChooseMainFoModel
             };
+
+            var versionMajorTextBox = new TextBox
+            {
+                Text = currentVersion.Major.ToString(CultureInfo.InvariantCulture),
+                Width = 72
+            };
+
+            var versionMinorTextBox = new TextBox
+            {
+                Text = currentVersion.Minor.ToString(CultureInfo.InvariantCulture),
+                Width = 72
+            };
+
+            var versionRevisionTextBox = new TextBox
+            {
+                Text = currentVersion.Revision.ToString(CultureInfo.InvariantCulture),
+                Width = 72
+            };
+
+            var readOnlyVersionText = new TextBlock
+            {
+                Text = environmentViewModel.HasVersion ? environmentViewModel.VersionText : "Unavailable",
+                FontWeight = FontWeights.SemiBold
+            };
+
+            if (canSelectNugetVersion && !environmentModel.PackageVersion.IsNullOrEmpty())
+                availablePackageVersions.Add(environmentModel.PackageVersion);
+
+            var packageVersionComboBox = new ComboBox
+            {
+                MinWidth = 260,
+                PlaceholderText = "Select package version",
+                ItemsSource = availablePackageVersions
+            };
+
+            if (canSelectNugetVersion && !environmentModel.PackageVersion.IsNullOrEmpty())
+            {
+                packageVersionComboBox.SelectedItem = environmentModel.PackageVersion;
+            }
+
+            static TextBlock CreateFieldLabel(string text) => new()
+            {
+                Text = text,
+                Opacity = 0.72,
+                FontSize = 12
+            };
+
+            static Border CreateValueContainer(UIElement content) => new()
+            {
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(10, 7, 10, 7),
+                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(45, 255, 255, 255)),
+                BorderBrush = new SolidColorBrush(Colors.LightGray),
+                BorderThickness = new Thickness(1),
+                Child = content
+            };
+
+            static StackPanel CreateReadOnlyField(string label, string value) => new()
+            {
+                Spacing = 4,
+                Children =
+                {
+                    CreateFieldLabel(label),
+                    CreateValueContainer(new TextBlock
+                    {
+                        Text = value.IsNullOrEmpty() ? "(empty)" : value,
+                        TextWrapping = TextWrapping.Wrap,
+                        FontWeight = FontWeights.SemiBold
+                    })
+                }
+            };
+
+            static Border CreateSectionWithContent(string title, string description, params UIElement[] content)
+            {
+                var sectionBody = new StackPanel
+                {
+                    Spacing = 10
+                };
+
+                sectionBody.Children.Add(new TextBlock
+                {
+                        Text = title,
+                        FontSize = 15,
+                        FontWeight = FontWeights.SemiBold
+                    });
+
+                sectionBody.Children.Add(new TextBlock
+                {
+                    Text = description,
+                    Opacity = 0.72,
+                    TextWrapping = TextWrapping.Wrap
+                });
+
+                foreach (var element in content)
+                {
+                    sectionBody.Children.Add(element);
+                }
+
+                return new Border
+                {
+                    CornerRadius = new CornerRadius(10),
+                    Padding = new Thickness(14),
+                    Background = new SolidColorBrush(Windows.UI.Color.FromArgb(20, 255, 255, 255)),
+                    BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(28, 255, 255, 255)),
+                    BorderThickness = new Thickness(1),
+                    Child = sectionBody
+                };
+            }
+
+            UIElement versionEditorOrValue = canEditVersion
+                ? CreateValueContainer(new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 6,
+                    Children =
+                    {
+                        versionMajorTextBox,
+                        new TextBlock { Text = "", VerticalAlignment = VerticalAlignment.Center, Opacity = 0.72 },
+                        versionMinorTextBox,
+                        new TextBlock { Text = "", VerticalAlignment = VerticalAlignment.Center, Opacity = 0.72 },
+                        versionRevisionTextBox
+                    }
+                })
+                : canSelectNugetVersion
+                    ? CreateValueContainer(packageVersionComboBox)
+                    : CreateValueContainer(readOnlyVersionText);
+
+            var versionSection = CreateSectionWithContent(
+                "Version",
+                canEditVersion
+                    ? "Source model version can be edited here"
+                    : canSelectNugetVersion
+                        ? "Select a package version available from the configured NuGet feed"
+                        : "Compiled model details are read-only",
+                versionEditorOrValue);
+
+            var modelDetailsSectionContent = new List<UIElement>
+            {
+                CreateReadOnlyField("Type", environmentModel.ModelType.ToString()),
+                CreateReadOnlyField("Root", environmentModel.ModelRootFolder)
+            };
+
+            if (environmentModel.ModelType == ModelType.Source)
+            {
+                modelDetailsSectionContent.Add(CreateReadOnlyField("Project", environmentModel.ProjectFilePath));
+                modelDetailsSectionContent.Add(CreateReadOnlyField("Metadata", environmentModel.MetadataFolder));
+            }
+            else
+            {
+                modelDetailsSectionContent.Add(CreateReadOnlyField("Compiled", environmentModel.CompiledModelFolder));
+                if (canSelectNugetVersion)
+                {
+                    modelDetailsSectionContent.Add(CreateReadOnlyField("Package", environmentModel.PackageId));
+                    modelDetailsSectionContent.Add(CreateReadOnlyField("Package URL", environmentModel.PackageUrl));
+                }
+            }
 
             var contentPanel = new StackPanel
             {
-                MinWidth = 400,
-                Spacing = 10,
+                MaxWidth = maxDialogBodyWidth,
+                Spacing = 12,
                 Children =
                 {
-                    new TextBlock { Text = $"Model: {environmentModel.ModelName}" },
-                    mainFoToggle,
+                    new TextBlock
+                    {
+                        Text = environmentModel.ModelName,
+                        FontSize = 18,
+                        FontWeight = FontWeights.SemiBold
+                    },
+                    versionSection
+                }
+            };
 
-                    new TextBlock { Text = $"Type: {environmentModel.ModelType}" },
-                    new TextBlock { Text = $"Root: {environmentModel.ModelRootFolder}" },
-                    new TextBlock { Text = $"Project: {environmentModel.ProjectFilePath}" },
-                    new TextBlock { Text = $"Metadata: {environmentModel.MetadataFolder}" },
-                    new TextBlock { Text = $"Compiled: {environmentModel.CompiledModelFolder}" }
+            if (canChooseMainFoModel)
+            {
+                contentPanel.Children.Add(
+                    CreateSectionWithContent(
+                        "Solution role",
+                        "Control whether this source model should be treated as the main solution root",
+                        CreateValueContainer(mainFoToggle)));
+            }
 
+            contentPanel.Children.Add(
+                CreateSectionWithContent(
+                    "Model Details",
+                    "Reference information for this model",
+                    modelDetailsSectionContent.ToArray()));
 
+            UIElement dialogContent = new Grid
+            {
+                MaxWidth = maxDialogBodyWidth,
+                Padding = new Thickness(4, 0, 18, 0),
+                Children =
+                {
+                    new ScrollViewer
+                    {
+                        Content = contentPanel,
+                        MaxHeight = availableDialogBodyHeight,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+                    }
                 }
             };
 
             var dialog = new ContentDialog
             {
                 Title = "Model properties",
-                Content = contentPanel,
+                Content = dialogContent,
                 PrimaryButtonText = "Save",
                 CloseButtonText = "Cancel",
                 XamlRoot = this.Content.XamlRoot
 
             };
 
+            if (canSelectNugetVersion)
+            {
+                packageVersionComboBox.IsEnabled = false;
+
+                _ = Task.Run(() => _profileService.GetAvailablePackageVersions(environmentViewModel.ProfileName, environmentViewModel.ModelName))
+                    .ContinueWith(task =>
+                    {
+                        var loadedVersions = task.Status == TaskStatus.RanToCompletion
+                            ? task.Result
+                            : new List<string>();
+
+                        DispatcherQueue.TryEnqueue(() =>
+                        {
+                            var selectedVersion = environmentModel.PackageVersion;
+                            packageVersionComboBox.ItemsSource = null;
+
+                            var mergedVersions = new List<string>();
+                            if (!selectedVersion.IsNullOrEmpty())
+                                mergedVersions.Add(selectedVersion);
+
+                            foreach (var version in loadedVersions)
+                            {
+                                if (!mergedVersions.Any(existing => existing.SameAs(version)))
+                                    mergedVersions.Add(version);
+                            }
+
+                            packageVersionComboBox.ItemsSource = mergedVersions;
+                            if (!selectedVersion.IsNullOrEmpty())
+                                packageVersionComboBox.SelectedItem = mergedVersions.FirstOrDefault(version => version.SameAs(selectedVersion));
+
+                            packageVersionComboBox.IsEnabled = mergedVersions.Count > 0;
+                            if (mergedVersions.Count == 0)
+                                packageVersionComboBox.PlaceholderText = "No versions found";
+                        });
+                    }, TaskScheduler.Default);
+            }
+
             var dialogResult = await dialog.ShowAsync();
             if (dialogResult != ContentDialogResult.Primary)
                 return;
 
-            environmentModel.IsMainFOModel = mainFoToggle.IsOn;
+            ModelVersion? sourceVersion = null;
+            if (canEditVersion)
+            {
+                if (!int.TryParse(versionMajorTextBox.Text?.Trim(), out var major) || major < 0
+                    || !int.TryParse(versionMinorTextBox.Text?.Trim(), out var minor) || minor < 0
+                    || !int.TryParse(versionRevisionTextBox.Text?.Trim(), out var revision) || revision < 0)
+                {
+                    await new ContentDialog
+                    {
+                        Title = "Invalid version",
+                        Content = "Version must use non-negative integers in the format major.minor.revision",
+                        CloseButtonText = "OK",
+                        XamlRoot = this.Content.XamlRoot
+                    }.ShowAsync();
 
-            _profileService.UpdateModelProperties(environmentViewModel.ProfileName, environmentModel);
+                    return;
+                }
+
+                sourceVersion = new ModelVersion(major, minor, revision);
+            }
+
+            environmentModel.IsMainFOModel = canChooseMainFoModel && mainFoToggle.IsOn;
+            if (canSelectNugetVersion && packageVersionComboBox.SelectedItem is string selectedPackageVersion)
+                environmentModel.PackageVersion = selectedPackageVersion;
+
+            var operationName = canSelectNugetVersion
+                ? $"Update NuGet package version for {environmentViewModel.ModelName}"
+                : $"Update model properties for {environmentViewModel.ModelName}";
+
+            var updated = await RunOperationAsync(
+                () => _profileService.UpdateModelProperties(environmentViewModel.ProfileName, environmentModel, sourceVersion),
+                operationName,
+                shutdownServer: false);
+
+            if (!updated)
+                return;
 
             UIRefresh(environmentViewModel.ProfileName);
         }

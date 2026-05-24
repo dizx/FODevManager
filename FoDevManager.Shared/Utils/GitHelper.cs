@@ -62,11 +62,11 @@ namespace FODevManager.Utils
                     // git prints "No local changes to save" when nothing to stash
                     if (result.IndexOf("No local changes", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        MessageLogger.Info("ℹ️ Nothing to stash.");
+                        MessageLogger.Info("ℹ️ Nothing to stash");
                         return true;
                     }
 
-                    MessageLogger.Highlight("✅ Changes stashed.");
+                    MessageLogger.Highlight("✅ Changes stashed");
                     return true;
                 }
             }
@@ -87,9 +87,9 @@ namespace FODevManager.Utils
                 {
                     // Conflicts can still yield exit code 0 sometimes, so be conservative:
                     if (result.IndexOf("CONFLICT", StringComparison.OrdinalIgnoreCase) >= 0)
-                        MessageLogger.Warning("⚠️ Stash applied with conflicts. Manual resolution may be required.");
+                        MessageLogger.Warning("⚠️ Stash applied with conflicts. Manual resolution may be required");
                     else
-                        MessageLogger.Highlight("✅ Stash applied.");
+                        MessageLogger.Highlight("✅ Stash applied");
 
                     return true;
                 }
@@ -148,7 +148,7 @@ namespace FODevManager.Utils
         {
             if (repoPath.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Repository path is null or empty.");
+                MessageLogger.Error("❌ Repository path is null or empty");
                 return;
             }
 
@@ -156,14 +156,14 @@ namespace FODevManager.Utils
 
             if (!File.Exists(configPath))
             {
-                MessageLogger.Error("❌ .git/config not found.");
+                MessageLogger.Error("❌ .git/config not found");
                 return;
             }
 
             string? remoteUrl = GetGitRemoteUrl(configPath);
             if (remoteUrl.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Could not find remote URL in .git/config.");
+                MessageLogger.Error("❌ Could not find remote URL in .git/config");
                 return;
             }
 
@@ -176,7 +176,7 @@ namespace FODevManager.Utils
         {
             if (repoPath.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Repository path is null or empty.");
+                MessageLogger.Error("❌ Repository path is null or empty");
                 return string.Empty;
             }
 
@@ -302,14 +302,14 @@ namespace FODevManager.Utils
 
             if (shouldFetch)
             {
-                MessageLogger.LogOnly($"🔄 Fetching updates for repository at {repositoryRootFolder}...");
+                MessageLogger.LogOnly($"🔄 Fetching updates for repository at {repositoryRootFolder}..");
                 var fetchOk = await FetchAllAsync(repositoryRootFolder, cancellationToken).ConfigureAwait(false);
                 if (!fetchOk)
                     return false;
             }
             else
             {
-                MessageLogger.LogOnly($"ℹ️ Skipping fetch for repository at {repositoryRootFolder} (recently fetched).");
+                MessageLogger.LogOnly($"ℹ️ Skipping fetch for repository at {repositoryRootFolder} (recently fetched)");
             }
 
 
@@ -343,17 +343,27 @@ namespace FODevManager.Utils
 
         public static bool MergeMainIntoCurrentBranch(string repositoryRootFolder, string mainBranchName = "main")
         {
+            var safeMainBranchName = mainBranchName.IsNullOrEmpty() ? "main" : mainBranchName.Trim();
             var currentBranch = GetActiveBranch(repositoryRootFolder);
 
             if (currentBranch.IsNullOrEmpty())
-                throw new Exception("Unable to determine current branch.");
+                throw new Exception("Unable to determine current branch");
 
-            if (currentBranch.SameAs(mainBranchName))
-                throw new Exception("Already on main branch.");
+            if (!AsyncHelpers.RunSync(() => FetchAllAsync(repositoryRootFolder)))
+            {
+                MessageLogger.Warning($"⚠️ Failed to fetch before updating '{safeMainBranchName}'");
+                return false;
+            }
+
+            if (currentBranch.SameAs(safeMainBranchName))
+            {
+                MessageLogger.Info($"ℹ️ Already on '{safeMainBranchName}'. Updating local branch from origin");
+                return Pull(repositoryRootFolder, "origin", safeMainBranchName);
+            }
 
             return RunGitCommand(
                 repositoryRootFolder,
-                $"merge origin/{mainBranchName}",
+                $"merge origin/{safeMainBranchName}",
                 out _,
                 logOnSuccess: true,
                 logOnFailure: true);
@@ -382,14 +392,14 @@ namespace FODevManager.Utils
         {
             if (!IsGitRepository(repoPath))
             {
-                MessageLogger.Error("❌ Not a valid Git repository.");
+                MessageLogger.Error("❌ Not a valid Git repository");
                 return false;
             }
 
             branchName = branchName?.Trim() ?? string.Empty;
             if (branchName.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Branch name is empty.");
+                MessageLogger.Error("❌ Branch name is empty");
                 return false;
             }
 
@@ -405,7 +415,7 @@ namespace FODevManager.Utils
             {
                 if (!autoStashIfDirty)
                 {
-                    MessageLogger.Warning($"⚠️ Repo has uncommitted changes. Skipping checkout to '{branchName}'.");
+                    MessageLogger.Warning($"⚠️ Repo has uncommitted changes. Skipping checkout to '{branchName}'");
                     return false;
                 }
 
@@ -413,17 +423,17 @@ namespace FODevManager.Utils
                     ? $"FO Dev Manager: auto-stash before switching to {branchName}"
                     : stashMessage;
 
-                MessageLogger.Warning($"⚠️ Repo is dirty. Stashing changes before switching to '{branchName}'.");
+                MessageLogger.Warning($"⚠️ Repo is dirty. Stashing changes before switching to '{branchName}'");
                 if (!Stash(repoPath, message, includeUntracked: true))
                 {
-                    MessageLogger.Error("❌ Stash failed. Cannot switch branch.");
+                    MessageLogger.Error("❌ Stash failed. Cannot switch branch");
                     return false;
                 }
             }
 
             // Fetch first so origin/<branch> is known (best effort)
             if (!AsyncHelpers.RunSync(() => FetchAllAsync(repoPath)))
-                MessageLogger.Warning("⚠️ Fetch failed (continuing anyway).");
+                MessageLogger.Warning("⚠️ Fetch failed (continuing anyway)");
 
             if (LocalBranchExists(repoPath, branchName))
                 return Checkout(repoPath, branchName);
@@ -433,12 +443,12 @@ namespace FODevManager.Utils
 
             if (!createIfMissing)
             {
-                MessageLogger.Error($"❌ Branch '{branchName}' not found locally or on origin.");
+                MessageLogger.Error($"❌ Branch '{branchName}' not found locally or on origin");
                 return false;
             }
 
             // Create new local branch from current HEAD and switch to it
-            MessageLogger.Info($"🆕 Creating new local branch '{branchName}' from current HEAD...");
+            MessageLogger.Info($"🆕 Creating new local branch '{branchName}' from current HEAD..");
             return Checkout(repoPath, $"-b {branchName}");
         }
 
@@ -446,7 +456,7 @@ namespace FODevManager.Utils
         {
             if (repoPath.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Pull: repoPath is empty.");
+                MessageLogger.Error("❌ Pull: repoPath is empty");
                 return false;
             }
 
@@ -457,7 +467,7 @@ namespace FODevManager.Utils
             branchName = branchName?.Trim() ?? "";
             if (branchName.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Pull: branchName is empty.");
+                MessageLogger.Error("❌ Pull: branchName is empty");
                 return false;
             }
 
@@ -468,11 +478,11 @@ namespace FODevManager.Utils
                 // ff-only = safe default; no accidental merge commits.
                 if (RunGitCommand(repoPath, $"pull --ff-only {remoteName} {branchName}", out result))
                 {
-                    MessageLogger.Highlight($"✅ Pull completed ({remoteName}/{branchName}).");
+                    MessageLogger.Highlight($"✅ Pull completed ({remoteName}/{branchName})");
                     return true;
                 }
 
-                MessageLogger.Error($"❌ Pull failed ({remoteName}/{branchName}).");
+                MessageLogger.Error($"❌ Pull failed ({remoteName}/{branchName})");
                 return false;
             }
             catch (Exception ex)
@@ -486,7 +496,7 @@ namespace FODevManager.Utils
         {
             if (!IsGitRepository(repoPath))
             {
-                MessageLogger.Warning("⚠️ ResetToMainAndUpdate: Not a Git repository.");
+                MessageLogger.Warning("⚠️ ResetToMainAndUpdate: Not a Git repository");
                 return false;
             }
 
@@ -496,10 +506,10 @@ namespace FODevManager.Utils
             if (HasUncommittedChanges(repoPath))
             {
                 var stashMessage = $"FO Dev Manager: profile git reset ({DateTime.Now:yyyy-MM-dd HH:mm:ss})";
-                MessageLogger.Warning("⚠️ Repo has uncommitted changes. Stashing before reset.");
+                MessageLogger.Warning("⚠️ Repo has uncommitted changes. Stashing before reset");
                 if (!Stash(repoPath, stashMessage, includeUntracked: true))
                 {
-                    MessageLogger.Error("❌ Stash failed. Skipping repo.");
+                    MessageLogger.Error("❌ Stash failed. Skipping repo");
                     return false;
                 }
             }
@@ -510,7 +520,7 @@ namespace FODevManager.Utils
             // Fetch + Pull
             if (!AsyncHelpers.RunSync(() => FetchAllAsync(repoPath)))
             {
-                MessageLogger.Warning("⚠️ Fetch failed. Skipping pull.");
+                MessageLogger.Warning("⚠️ Fetch failed. Skipping pull");
                 return false;
             }
 
@@ -539,17 +549,100 @@ namespace FODevManager.Utils
             }
         }
 
+        public static IReadOnlyList<string> GetTags(string repoPath, string? pattern = null)
+        {
+            if (!IsGitRepository(repoPath))
+                return Array.Empty<string>();
+
+            var safePattern = pattern?.Trim() ?? string.Empty;
+            var arguments = safePattern.IsNullOrEmpty()
+                ? "tag --list --sort=-creatordate"
+                : $"tag --list {EscapeGitArg(safePattern)} --sort=-creatordate";
+
+            try
+            {
+                string result;
+                if (!RunGitCommand(repoPath, arguments, out result, logOnSuccess: false, logOnFailure: false))
+                    return Array.Empty<string>();
+
+                return result
+                    .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(line => line.Trim())
+                    .Where(line => !line.IsNullOrEmpty())
+                    .ToList();
+            }
+            catch
+            {
+                return Array.Empty<string>();
+            }
+        }
+
+        public static bool HasCommittedChangesInPath(string repoPath, string relativePath)
+        {
+            if (!IsGitRepository(repoPath) || relativePath.IsNullOrEmpty())
+                return false;
+
+            try
+            {
+                string result;
+                if (!RunGitCommand(
+                        repoPath,
+                        $"log -n 1 --format=%H -- {EscapeGitArg(relativePath)}",
+                        out result,
+                        logOnSuccess: false,
+                        logOnFailure: false))
+                {
+                    return false;
+                }
+
+                return !result.Trim().IsNullOrEmpty();
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static bool HasChangesInPathSinceTag(string repoPath, string relativePath, string? tagName)
+        {
+            if (!IsGitRepository(repoPath) || relativePath.IsNullOrEmpty())
+                return false;
+
+            if (tagName.IsNullOrEmpty())
+                return HasCommittedChangesInPath(repoPath, relativePath);
+
+            try
+            {
+                string result;
+                if (!RunGitCommand(
+                        repoPath,
+                        $"diff --name-only {EscapeGitArg(tagName)}..HEAD -- {EscapeGitArg(relativePath)}",
+                        out result,
+                        logOnSuccess: false,
+                        logOnFailure: false))
+                {
+                    return false;
+                }
+
+                return !result.Trim().IsNullOrEmpty();
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static bool CreateTag(string repoPath, string tagName, IReadOnlyCollection<string> messageLines)
         {
             if (!IsGitRepository(repoPath))
             {
-                MessageLogger.Warning("⚠️ Create Tag: Not a Git repository.");
+                MessageLogger.Warning("⚠️ Create Tag: Not a Git repository");
                 return false;
             }
 
             if (tagName.IsNullOrEmpty())
             {
-                MessageLogger.Error("❌ Create Tag: tagName is empty.");
+                MessageLogger.Error("❌ Create Tag: tagName is empty");
                 return false;
             }
 
@@ -590,6 +683,70 @@ namespace FODevManager.Utils
             }
         }
 
+        public static bool CommitFiles(string repoPath, IReadOnlyCollection<string> filePaths, string message)
+        {
+            if (!IsGitRepository(repoPath))
+            {
+                MessageLogger.Warning("Commit Files: Not a Git repository");
+                return false;
+            }
+
+            var files = (filePaths ?? Array.Empty<string>())
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (files.Count == 0)
+            {
+                MessageLogger.Warning("Commit Files: no files specified");
+                return false;
+            }
+
+            if (message.IsNullOrEmpty())
+            {
+                MessageLogger.Error("Commit Files: message is empty");
+                return false;
+            }
+
+            try
+            {
+                var fileArguments = string.Join(" ", files.Select(EscapeGitArg));
+                string result;
+
+                if (!RunGitCommand(repoPath, $"add -- {fileArguments}", out result))
+                {
+                    MessageLogger.Error("Failed to stage files for commit");
+                    return false;
+                }
+
+                if (RunGitCommand(
+                        repoPath,
+                        "diff --cached --quiet --exit-code",
+                        out result,
+                        logOnSuccess: false,
+                        logOnFailure: false))
+                {
+                    MessageLogger.Info("No staged changes to commit");
+                    return true;
+                }
+
+                if (RunGitCommand(repoPath, $"commit -m {EscapeGitArg(message)}", out result))
+                {
+                    MessageLogger.Highlight($"Created commit: {message}");
+                    return true;
+                }
+
+                MessageLogger.Error($"Failed to commit files: {message}");
+                return false;
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"Error committing files: {exception.Message}");
+                return false;
+            }
+        }
+
         public static bool PushTag(string repoPath, string tagName, string remoteName = "origin")
         {
             if (!IsGitRepository(repoPath))
@@ -607,11 +764,11 @@ namespace FODevManager.Utils
                 string result;
                 if (RunGitCommand(repoPath, $"push {EscapeGitArg(remoteName)} {EscapeGitArg(tagName)}", out result))
                 {
-                    MessageLogger.Info($"⬆️ Pushed tag '{tagName}' to {remoteName}.");
+                    MessageLogger.Info($"⬆️ Pushed tag '{tagName}' to {remoteName}");
                     return true;
                 }
 
-                MessageLogger.Error($"❌ Failed to push tag '{tagName}' to {remoteName}.");
+                MessageLogger.Error($"❌ Failed to push tag '{tagName}' to {remoteName}");
                 return false;
             }
             catch (Exception exception)
@@ -730,20 +887,20 @@ namespace FODevManager.Utils
         }
 
 
-        public static bool CloneRepository(string gitUrl, string targetPath)
+        public static bool CloneRepository(string gitUrl, string targetPath, bool allowCredentialPrompt = false)
         {
             try
             {
                 if (Directory.Exists(Path.Combine(targetPath, ".git")))
                 {
-                    MessageLogger.Warning($"⚠️ Git repository already exists at {targetPath}. Skipping clone.");
+                    MessageLogger.Warning($"⚠️ Git repository already exists at {targetPath}. Skipping clone");
                     return false;
                 }
 
                 string result;
-                MessageLogger.Info($"🌀 Cloning '{gitUrl}' into '{targetPath}'...");
+                MessageLogger.Info($"🌀 Cloning '{gitUrl}' into '{targetPath}'..");
 
-                if (RunGitCommand(Directory.GetParent(targetPath).FullName, $"clone {gitUrl} \"{targetPath}\"", out result))
+                if (RunGitCommand(Directory.GetParent(targetPath).FullName, $"clone {gitUrl} \"{targetPath}\"", out result, allowCredentialPrompt: allowCredentialPrompt))
                 {
                     MessageLogger.Highlight($"✅ Successfully cloned {gitUrl}");
                     return true;
@@ -913,13 +1070,13 @@ namespace FODevManager.Utils
             }
         }
 
-        private static bool RunGitCommand(string workingDirectory, string arguments, bool logOnSuccess = false, bool logOnFailure = true)
+        private static bool RunGitCommand(string workingDirectory, string arguments, bool logOnSuccess = false, bool logOnFailure = true, bool allowCredentialPrompt = true)
         {
             var result = string.Empty;
-            return RunGitCommand(workingDirectory, arguments, out result, logOnSuccess, logOnFailure);
+            return RunGitCommand(workingDirectory, arguments, out result, logOnSuccess, logOnFailure, allowCredentialPrompt);
         }
 
-        private static bool RunGitCommand(string workingDirectory, string arguments, out string combinedOutput, bool logOnSuccess = false, bool logOnFailure = true)
+        private static bool RunGitCommand(string workingDirectory, string arguments, out string combinedOutput, bool logOnSuccess = false, bool logOnFailure = true, bool allowCredentialPrompt = true)
         {
             var (ok, output) = RunGitCommandAsync(
                     workingDirectory,
@@ -927,7 +1084,8 @@ namespace FODevManager.Utils
                     timeout: TimeSpan.FromSeconds(60),
                     cancellationToken: CancellationToken.None,
                     logOnSuccess: logOnSuccess,
-                    logOnFailure: logOnFailure)
+                    logOnFailure: logOnFailure,
+                    allowCredentialPrompt: allowCredentialPrompt)
                 .GetAwaiter()
                 .GetResult();
 
@@ -936,10 +1094,10 @@ namespace FODevManager.Utils
         }
 
         private static async Task<(bool Ok, string Output)> RunGitCommandAsync(string workingDirectory, string arguments, TimeSpan timeout, 
-            CancellationToken cancellationToken, bool logOnSuccess = false, bool logOnFailure = true)
+            CancellationToken cancellationToken, bool logOnSuccess = false, bool logOnFailure = true, bool allowCredentialPrompt = true)
         {
             if (workingDirectory.IsNullOrEmpty())
-                return (false, "Working directory is null or empty.");
+                return (false, "Working directory is null or empty");
 
             var processStartInfo = new ProcessStartInfo
             {
@@ -952,9 +1110,12 @@ namespace FODevManager.Utils
                 WorkingDirectory = workingDirectory
             };
 
-            // Prevent Git from prompting for credentials in a non-interactive process.
-            processStartInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
-            processStartInfo.Environment["GCM_INTERACTIVE"] = "Never";
+            if (!allowCredentialPrompt)
+            {
+                // Prevent Git from prompting for credentials in a non-interactive process.
+                processStartInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+                processStartInfo.Environment["GCM_INTERACTIVE"] = "Never";
+            }
 
             try
             {

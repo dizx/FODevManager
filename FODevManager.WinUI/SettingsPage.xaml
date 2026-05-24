@@ -3,22 +3,157 @@
     x:Class="FODevManager.WinUI.SettingsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:FODevManager.WinUI"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d">
+    mc:Ignorable="d"
+    Loaded="OnPageLoaded">
 
-    <StackPanel Spacing="16" Padding="16">
-        <ToggleSwitch
-            Header="Check uncommitted changes on profile switch"
-            IsOn="{Binding CheckUncommittedBeforeSwitch, Mode=TwoWay}"/>
+    <Page.Resources>
+        <Style x:Key="SectionCardStyle" TargetType="Border">
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Padding" Value="20" />
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
 
-        <TextBlock Text="Default source folder" Style="{StaticResource BodyStrongTextBlockStyle}"/>
-        <StackPanel Orientation="Horizontal" Spacing="8">
-            <TextBox Width="480" Text="{Binding DefaultSourceDirectory, Mode=TwoWay}" />
-            <Button Content="Browse…" Click="OnBrowseClick"/>
-        </StackPanel>
+        <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
 
-        <Button Content="Save" Click="OnSaveClick" />
-    </StackPanel>
+        <Style x:Key="FieldHintStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Opacity" Value="0.72" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid HorizontalAlignment="Stretch">
+            <StackPanel Spacing="18"
+                        Padding="20,12,20,20"
+                        HorizontalAlignment="Stretch"
+                        MaxWidth="760">
+            <StackPanel Spacing="6">
+                <TextBlock Text="App behavior and package feed access live here" Style="{StaticResource FieldHintStyle}" />
+            </StackPanel>
+
+            <Border Style="{StaticResource SectionCardStyle}">
+                <StackPanel Spacing="16">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Workflow" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="Control how careful the app should be when switching profiles and where new source work starts" Style="{StaticResource FieldHintStyle}" />
+                    </StackPanel>
+
+                    <Border CornerRadius="10" Padding="14" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Profile switching safety" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBlock Text="Warn when repositories have uncommitted changes before a profile switch continues" Style="{StaticResource FieldHintStyle}" />
+                            <ToggleSwitch
+                                Header="Check uncommitted changes on profile switch"
+                                IsOn="{Binding CheckUncommittedBeforeSwitch, Mode=TwoWay}" />
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Default source folder" Style="{StaticResource FieldLabelStyle}" />
+                        <TextBlock Text="Used as the suggested starting location when creating or importing development assets" Style="{StaticResource FieldHintStyle}" />
+                        <Grid ColumnSpacing="10" HorizontalAlignment="Stretch">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBox Grid.Column="0"
+                                     HorizontalAlignment="Stretch"
+                                     Text="{Binding DefaultSourceDirectory, Mode=TwoWay}"
+                                     PlaceholderText="Choose a default working folder" />
+                            <Button Grid.Column="1" Content="Browse.." Click="OnBrowseClick" />
+                        </Grid>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource SectionCardStyle}">
+                <StackPanel Spacing="16">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Azure Artifacts" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="These credentials are used when private package feeds require authentication during NuGet package download" Style="{StaticResource FieldHintStyle}" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Username" Style="{StaticResource FieldLabelStyle}" />
+                        <TextBlock Text="Optional. If you use a PAT, this can be a friendly service account name" Style="{StaticResource FieldHintStyle}" />
+                        <TextBox Text="{Binding AzureArtifactsUsername, Mode=TwoWay}" PlaceholderText="For example: FODevManager" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="16">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Personal access token" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBlock Text="Recommended for Azure DevOps package feeds. Stored in app settings" Style="{StaticResource FieldHintStyle}" />
+                            <PasswordBox x:Name="AzureArtifactsPatBox"
+                                         PasswordChanged="AzureArtifactsPatBox_PasswordChanged"
+                                         PlaceholderText="Paste PAT" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="API key" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBlock Text="Use this if your feed expects an API key instead of a PAT" Style="{StaticResource FieldHintStyle}" />
+                            <PasswordBox x:Name="AzureArtifactsApiKeyBox"
+                                         PasswordChanged="AzureArtifactsApiKeyBox_PasswordChanged"
+                                         PlaceholderText="Paste API key" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="NuGet executable" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBlock Text="Optional. Set this if nuget.exe is not available on PATH or different machines keep resolving different versions" Style="{StaticResource FieldHintStyle}" />
+                            <Grid ColumnSpacing="10" HorizontalAlignment="Stretch">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBox Grid.Column="0"
+                                         HorizontalAlignment="Stretch"
+                                         Text="{Binding NuGetExecutablePath, Mode=TwoWay}"
+                                         PlaceholderText="For example: C:\Tools\nuget.exe" />
+                                <Button Grid.Column="1" Content="Browse.." Click="OnBrowseNuGetExecutableClick" />
+                            </Grid>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource SectionCardStyle}">
+                <StackPanel Spacing="16">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Package publishing" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="Control what happens after a Compiled Nuget is created" Style="{StaticResource FieldHintStyle}" />
+                    </StackPanel>
+
+                    <Border CornerRadius="10" Padding="14" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Push after package build" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBlock Text="When enabled, NugetUtil will push the generated package immediately after fopack completes" Style="{StaticResource FieldHintStyle}" />
+                            <ToggleSwitch
+                                Header="Push Compiled Nuget right away"
+                                IsOn="{Binding PushDeployablePackageOnBuild, Mode=TwoWay}" />
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="NuGet source name" Style="{StaticResource FieldLabelStyle}" />
+                        <TextBlock Text="Optional. Passed to NugetUtil as -source. Leave empty if the default configured source should be used" Style="{StaticResource FieldHintStyle}" />
+                        <TextBox Text="{Binding PushDeployablePackageSource, Mode=TwoWay}" PlaceholderText="For example: MyFeed" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Save settings" Click="OnSaveClick" Style="{StaticResource AccentButtonStyle}" />
+            </StackPanel>
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
 </Page>

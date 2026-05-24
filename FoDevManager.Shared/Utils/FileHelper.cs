@@ -181,10 +181,10 @@ namespace FODevManager.Utils
         public static string GetLibsFolder(string modelName, string modelPath)
         {
             if (modelName.IsNullOrEmpty())
-                throw new ArgumentException("Model name is required.", nameof(modelName));
+                throw new ArgumentException("Model name is required", nameof(modelName));
 
             if (modelPath.IsNullOrEmpty())
-                throw new ArgumentException("Model path is required.", nameof(modelPath));
+                throw new ArgumentException("Model path is required", nameof(modelPath));
 
             string? currentPath = Path.HasExtension(modelPath)
                 ? Path.GetDirectoryName(modelPath)

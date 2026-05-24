@@ -25,6 +25,12 @@ namespace FODevManager.WinUI
             DataContext = _vm; // Page supports DataContext in WinUI 3
         }
 
+        private void OnPageLoaded(object sender, RoutedEventArgs e)
+        {
+            AzureArtifactsPatBox.Password = _vm.AzureArtifactsPat ?? string.Empty;
+            AzureArtifactsApiKeyBox.Password = _vm.AzureArtifactsApiKey ?? string.Empty;
+        }
+
         private async void OnBrowseClick(object sender, RoutedEventArgs e)
         {
             var picker = new FolderPicker();
@@ -32,7 +38,7 @@ namespace FODevManager.WinUI
 
             if (App.MainWindow == null)
             {
-                MessageLogger.Warning("Window handle not available for folder picker.");
+                MessageLogger.Warning("Window handle not available for folder picker");
                 return;
             }
 
@@ -47,9 +53,41 @@ namespace FODevManager.WinUI
             }
         }
 
+        private async void OnBrowseNuGetExecutableClick(object sender, RoutedEventArgs e)
+        {
+            var picker = new FileOpenPicker();
+            picker.FileTypeFilter.Add(".exe");
+
+            if (App.MainWindow == null)
+            {
+                MessageLogger.Warning("Window handle not available for file picker");
+                return;
+            }
+
+            var hWnd = WindowNative.GetWindowHandle(App.MainWindow);
+            InitializeWithWindow.Initialize(picker, hWnd);
+
+            var file = await picker.PickSingleFileAsync();
+            if (file != null)
+            {
+                _vm.NuGetExecutablePath = file.Path;
+                MessageLogger.Highlight($"NuGet executable set to: {file.Path}");
+            }
+        }
+
         private void OnSaveClick(object sender, RoutedEventArgs e)
         {
             _vm.Save();
+        }
+
+        private void AzureArtifactsPatBox_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            _vm.AzureArtifactsPat = AzureArtifactsPatBox.Password ?? string.Empty;
+        }
+
+        private void AzureArtifactsApiKeyBox_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            _vm.AzureArtifactsApiKey = AzureArtifactsApiKeyBox.Password ?? string.Empty;
         }
     }
 }

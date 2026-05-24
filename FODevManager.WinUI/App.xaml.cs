@@ -40,6 +40,13 @@ namespace FODevManager.WinUI
     {
         public static IServiceProvider? Services { get; set; }
         public static Window MainWindow { get; private set; } = null!;
+        private static readonly string StartupDiagnosticsDirectory = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "FODevManager",
+            "Logs");
+        private static readonly string StartupCrashLogPath = System.IO.Path.Combine(
+            StartupDiagnosticsDirectory,
+            "startup-crash.log");
 
         /// <summary>
         /// Initializes the singleton application object.  This is the first line of authored code
@@ -47,17 +54,25 @@ namespace FODevManager.WinUI
         /// </summary>
         public App()
         {
-            this.InitializeComponent();
+            try
+            {
+                this.InitializeComponent();
 
-            AppSettingsMigration.RunOnStartup();
+                AppSettingsMigration.RunOnStartup();
 
+                ConfigureLogger();
+                RegisterGlobalExceptionHandlers();
 
-            ConfigureLogger();
-            RegisterGlobalExceptionHandlers();
-
-
-            UnhandledException += App_UnhandledException;
-            Services = ConfigureServices();
+                UnhandledException += App_UnhandledException;
+                Log.Information("Configuring services");
+                Services = ConfigureServices();
+                Log.Information("Services configured");
+            }
+            catch (Exception ex)
+            {
+                WriteStartupCrashLog("App constructor failed", ex);
+                throw;
+            }
         }
 
         private void RegisterGlobalExceptionHandlers()
@@ -90,22 +105,18 @@ namespace FODevManager.WinUI
 
         private void ConfigureLogger()
         {
-            string logDirectory = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "FODevManager", "Logs");
-
-            Directory.CreateDirectory(logDirectory);
+            Directory.CreateDirectory(StartupDiagnosticsDirectory);
 
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Information()
                 .WriteTo.File(
-                    path: System.IO.Path.Combine(logDirectory, "fodev-.log"),
+                    path: System.IO.Path.Combine(StartupDiagnosticsDirectory, "fodev-.log"),
                     rollingInterval: RollingInterval.Day,
                     retainedFileCountLimit: 14,
                     outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss}] [{Level:u3}] {Message:lj}{NewLine}{Exception}")
                 .CreateLogger();
 
-            Log.Information("Logger initialized.");
+            Log.Information("Logger initialized");
         }
        
 
@@ -116,6 +127,7 @@ namespace FODevManager.WinUI
                 // Full exception (ToString includes inner exceptions + stack)
                 MessageLogger.Error($"Unhandled exception occurred:{Environment.NewLine}{e.Exception}");
                 Log.Error(e.Exception, "Unhandled exception occurred");
+                WriteStartupCrashLog("WinUI unhandled exception", e.Exception);
             }
             finally
             {
@@ -130,13 +142,22 @@ namespace FODevManager.WinUI
             var services = new ServiceCollection();
 
 
-            var config = new AppConfig(new ConfigurationBuilder().AddJsonFile("appsettings.json").Build());
+            var environmentName = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? "Production";
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .AddJsonFile($"appsettings.{environmentName}.json", optional: true, reloadOnChange: true)
+                .Build();
+
+            var config = new AppConfig(configuration);
 
             services.AddSingleton(config);
             services.AddSingleton<ProfileService>();
             services.AddSingleton<ProfilesContainer>();
             services.AddSingleton<FileService>();
             services.AddSingleton<ModelDeploymentService>();
+            services.AddSingleton<DeployablePackageService>();
+            services.AddSingleton<ModelVersionService>();
             services.AddSingleton<VisualStudioSolutionService>();
             services.AddSingleton<AppConfigWriter>();
             return services.BuildServiceProvider();
@@ -149,30 +170,54 @@ namespace FODevManager.WinUI
         /// <param name="args">Details about the launch request and process.</param>
         protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
-            if(Services == null)
-            {
-                throw new InvalidOperationException("Service provider is not initialized.");
-            }
-
-            var profileService = Services.GetRequiredService<ProfileService>();
-            var fileService = Services.GetRequiredService<FileService>();
-            var deploymentService = Services.GetRequiredService<ModelDeploymentService>();
-            var appConfig = Services.GetRequiredService<AppConfig>();
-
-            InitializeW3CState();
-
             try
             {
-                var mainWindow = new MainWindow(profileService, fileService, deploymentService, appConfig);
+                Log.Information("OnLaunched start");
+
+                if (Services == null)
+                {
+                    throw new InvalidOperationException("Service provider is not initialized");
+                }
+
+                var profileService = Services.GetRequiredService<ProfileService>();
+                var fileService = Services.GetRequiredService<FileService>();
+                var deploymentService = Services.GetRequiredService<ModelDeploymentService>();
+                var modelVersionService = Services.GetRequiredService<ModelVersionService>();
+                var appConfig = Services.GetRequiredService<AppConfig>();
+
+                Log.Information("Services resolved");
+
+                InitializeW3CState();
+                Log.Information("W3C state initialized");
+
+                var mainWindow = new MainWindow(profileService, fileService, deploymentService, modelVersionService, appConfig);
                 MainWindow = mainWindow;
+                Log.Information("Main window created");
                 mainWindow.Activate();
+                Log.Information("Main window activated");
             }
             catch (Exception ex)
             {
-                File.WriteAllText("startup-crash.log", ex.ToString());
+                WriteStartupCrashLog("OnLaunched failed", ex);
+                Log.Fatal(ex, "Application startup failed");
                 throw;
             }
 
+        }
+
+        internal static void WriteStartupCrashLog(string stage, Exception ex)
+        {
+            try
+            {
+                Directory.CreateDirectory(StartupDiagnosticsDirectory);
+
+                var content = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}] {stage}{Environment.NewLine}{ex}";
+                File.WriteAllText(StartupCrashLogPath, content);
+            }
+            catch
+            {
+                // Never throw while trying to record a crash
+            }
         }
 
         public static void InitializeW3CState()
@@ -202,3 +247,4 @@ namespace FODevManager.WinUI
 
     }
 }
+

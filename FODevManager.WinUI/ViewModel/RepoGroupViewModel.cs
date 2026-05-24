@@ -68,7 +68,6 @@ namespace FODevManager.WinUI.ViewModel
                 OnPropertyChanged(nameof(HasMainUpdates));
             }
         }
-      
 
         public ReadOnlyCollection<ProfileEnvironmentViewModel> Models { get; }
 

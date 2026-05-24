@@ -36,7 +36,7 @@ namespace FODevManager.Utils
                     return;
                 }
             }
-            MessageLogger.Info("⏳ Stopping World Wide Web Publishing Service (W3SVC)...");
+            MessageLogger.Info("⏳ Stopping World Wide Web Publishing Service (W3SVC)..");
 
             try
             {
@@ -59,7 +59,7 @@ namespace FODevManager.Utils
                 lock (w3cServiceState.SyncRoot)
                     w3cServiceState.IsRunning = false;
 
-                MessageLogger.Info("✅ W3SVC stopped.");
+                MessageLogger.Info("✅ W3SVC stopped");
             }
             catch (Exception ex)
             {
@@ -83,7 +83,7 @@ namespace FODevManager.Utils
                     return;
                 }
             }
-            MessageLogger.Info("🔄 Restarting World Wide Web Publishing Service (W3SVC)...");
+            MessageLogger.Info("🔄 Restarting World Wide Web Publishing Service (W3SVC)..");
 
             try
             {
@@ -106,7 +106,7 @@ namespace FODevManager.Utils
                 lock (w3cServiceState.SyncRoot)
                     w3cServiceState.IsRunning = true;
 
-                MessageLogger.Info("✅ W3SVC restarted.");
+                MessageLogger.Info("✅ W3SVC restarted");
             }
             catch (Exception ex)
             {
@@ -121,7 +121,7 @@ namespace FODevManager.Utils
             {
                 if (url.IsNullOrEmpty())
                 {
-                    MessageLogger.Warning("⚠ No URL specified.");
+                    MessageLogger.Warning("⚠ No URL specified");
                     return;
                 }
 

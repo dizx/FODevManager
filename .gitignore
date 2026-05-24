@@ -288,3 +288,7 @@ Metadata/PTSProductTest/BuildProjectResult.err.xml
 Metadata/PTSProductTest/BuildProjectResult.xml
 
 Output/
+.dotnet
+FODevManager.WinUI/appsettings.Development.json
+
+FODevManager/appsettings.Development.json
