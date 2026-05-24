@@ -176,9 +176,6 @@ namespace FODevManager.Services
             if (!TryEnsureFoBuildPackages(buildPackagesRoot, appNugetConfigPath, out var packageRoots))
                 return false;
 
-            if (!TryBuildMsBuildContext(packageRoots, out var buildContext))
-                return false;
-
             var artifactsRoot = GetModelArtifactsRoot(profile, model);
             var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
             var runRoot = Path.Combine(artifactsRoot, "BuildPackages", model.ModelName, timestamp);
@@ -189,9 +186,22 @@ namespace FODevManager.Services
             Directory.CreateDirectory(buildOutputRoot);
             Directory.CreateDirectory(nugetOutputRoot);
 
+            if (!TryResolveReferencedCompiledNugetModels(profile, model, out var compiledNugetModels))
+                return false;
+
+            var compiledNugetReferenceFolders = new List<string>();
+            if (compiledNugetModels.Count > 0)
+                compiledNugetReferenceFolders.Add(PrepareCompiledNugetReferenceRoot(runRoot, compiledNugetModels));
+
+            compiledNugetReferenceFolders.AddRange(ResolveProjectReferenceOutputFolders(model.ProjectFilePath));
+
+            var buildMetadataDirectory = ResolveBuildMetadataDirectory(model, _deploymentBasePath);
+            if (!TryBuildMsBuildContext(packageRoots, compiledNugetReferenceFolders, buildMetadataDirectory, out var buildContext))
+                return false;
+
             MessageLogger.Highlight($"📦 Building package for '{model.ModelName}'.");
 
-            if (!RunMsBuild(solutionFilePath, buildContext, buildOutputRoot, runRoot))
+            if (!RunMsBuild(solutionFilePath, model.ProjectFilePath, model.ModelName, buildContext, buildOutputRoot, runRoot))
                 return false;
 
             if (!TryResolveBuiltPayloadRoot(buildOutputRoot, model.ModelName, out var payloadRoot))
@@ -1257,7 +1267,11 @@ namespace FODevManager.Services
             return string.Empty;
         }
 
-        private bool TryBuildMsBuildContext(IReadOnlyDictionary<string, string> packageRoots, out MsBuildContext context)
+        private bool TryBuildMsBuildContext(
+            IReadOnlyDictionary<string, string> packageRoots,
+            IReadOnlyCollection<string> compiledNugetReferenceFolders,
+            string metadataDirectory,
+            out MsBuildContext context)
         {
             context = null!;
 
@@ -1284,15 +1298,301 @@ namespace FODevManager.Services
             if (!missingReferenceFolder.IsNullOrEmpty())
                 return false;
 
+            foreach (var referenceFolder in compiledNugetReferenceFolders)
+            {
+                if (!referenceFolder.IsNullOrEmpty() && !referenceFolders.Any(existing => AreSameDirectoryPath(existing, referenceFolder)))
+                    referenceFolders.Add(referenceFolder);
+            }
+
             context = new MsBuildContext(
                 compilerPackageRoot,
                 buildTasksDirectory,
+                metadataDirectory,
                 string.Join(";", referenceFolders));
 
             return true;
         }
 
-        private bool RunMsBuild(string solutionFilePath, MsBuildContext buildContext, string buildOutputRoot, string runRoot)
+        private static string ResolveBuildMetadataDirectory(ProfileEnvironmentModel model, string fallbackMetadataDirectory)
+        {
+            if (!model.MetadataFolder.IsNullOrEmpty() && Directory.Exists(model.MetadataFolder))
+            {
+                var metadataDirectory = Directory.GetParent(Path.GetFullPath(model.MetadataFolder))?.FullName ?? string.Empty;
+                if (!metadataDirectory.IsNullOrEmpty())
+                    return metadataDirectory;
+            }
+
+            return fallbackMetadataDirectory;
+        }
+
+        private bool TryResolveReferencedCompiledNugetReferenceFolders(
+            ProfileModel profile,
+            ProfileEnvironmentModel model,
+            out IReadOnlyList<string> referenceFolders)
+        {
+            referenceFolders = [];
+
+            if (!TryResolveReferencedCompiledNugetModels(profile, model, out var compiledModels))
+                return false;
+
+            var resolvedFolders = new List<string>();
+            foreach (var compiledModel in compiledModels)
+            {
+                AddReferenceFolder(resolvedFolders, compiledModel.CompiledModelFolder);
+
+                var binFolder = Path.Combine(compiledModel.CompiledModelFolder, "bin");
+                if (Directory.Exists(binFolder))
+                    AddReferenceFolder(resolvedFolders, binFolder);
+            }
+
+            referenceFolders = resolvedFolders;
+            return true;
+        }
+
+        private bool TryResolveReferencedCompiledNugetModels(
+            ProfileModel profile,
+            ProfileEnvironmentModel model,
+            out IReadOnlyList<ProfileEnvironmentModel> compiledModels)
+        {
+            compiledModels = [];
+
+            var descriptorPath = ResolveModelDescriptorPath(model);
+            if (descriptorPath.IsNullOrEmpty() || !File.Exists(descriptorPath))
+            {
+                MessageLogger.LogOnly($"No model descriptor found for '{model.ModelName}'. No compiled NuGet references were added to the build");
+                return true;
+            }
+
+            IReadOnlyCollection<string> moduleReferences;
+            try
+            {
+                moduleReferences = LoadModuleReferences(descriptorPath);
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"❌ Could not read module references from '{descriptorPath}'. {exception.Message}");
+                return false;
+            }
+
+            if (moduleReferences.Count == 0)
+            {
+                MessageLogger.LogOnly($"Model descriptor '{descriptorPath}' contains no module references");
+                return true;
+            }
+
+            var repository = profile.FindRepositoryForModel(model);
+            var repositoryRoot = repository?.RepoRootFolder ?? profile.TryGetRepoRootFolder(model) ?? string.Empty;
+            var isvConfigPath = repositoryRoot.IsNullOrEmpty()
+                ? string.Empty
+                : FindRepositoryConfigFile(repositoryRoot, "isv.config") ?? string.Empty;
+
+            if (isvConfigPath.IsNullOrEmpty() || !File.Exists(isvConfigPath))
+            {
+                MessageLogger.LogOnly($"No Build\\isv.config found for '{model.ModelName}'. No compiled NuGet references were added to the build");
+                return true;
+            }
+
+            List<PackageReference> isvPackageReferences;
+            try
+            {
+                isvPackageReferences = LoadIsvPackageReferences(isvConfigPath);
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"❌ Could not read package references from '{isvConfigPath}'. {exception.Message}");
+                return false;
+            }
+
+            var referencedPackages = isvPackageReferences
+                .Where(packageReference => moduleReferences.Any(moduleReference => moduleReference.SameAs(packageReference.Id)))
+                .ToList();
+
+            if (referencedPackages.Count == 0)
+                return true;
+
+            var resolvedModels = new List<ProfileEnvironmentModel>();
+            foreach (var packageReference in referencedPackages)
+            {
+                var compiledModel = profile.AllModels.FirstOrDefault(candidate => IsMatchingCompiledNugetModel(candidate, packageReference));
+                if (compiledModel == null)
+                {
+                    MessageLogger.Error($"❌ Model '{model.ModelName}' references NuGet package '{packageReference.Id}' version '{packageReference.Version}', but the profile does not contain that compiled NuGet model");
+                    return false;
+                }
+
+                var compiledModelFolder = compiledModel.CompiledModelFolder ?? string.Empty;
+                if (compiledModelFolder.IsNullOrEmpty() || !Directory.Exists(compiledModelFolder))
+                {
+                    MessageLogger.Error($"❌ Compiled NuGet model '{compiledModel.ModelName}' folder was not found: {compiledModelFolder}");
+                    return false;
+                }
+
+                resolvedModels.Add(compiledModel);
+                MessageLogger.Info($"Added compiled NuGet build reference '{packageReference.Id}' version '{packageReference.Version}' from '{compiledModelFolder}'");
+            }
+
+            compiledModels = resolvedModels;
+            return true;
+        }
+
+        private static string PrepareCompiledNugetReferenceRoot(string runRoot, IReadOnlyCollection<ProfileEnvironmentModel> compiledModels)
+        {
+            var referenceRoot = Path.Combine(runRoot, "CompiledNugetReferences");
+            EnsureCleanDirectory(referenceRoot);
+
+            foreach (var compiledModel in compiledModels)
+            {
+                var moduleName = GetUnversionedModelName(compiledModel);
+                var targetFolder = Path.Combine(referenceRoot, moduleName);
+                EnsureCleanDirectory(targetFolder);
+                FileHelper.CopyDirectory(compiledModel.CompiledModelFolder, targetFolder);
+            }
+
+            return referenceRoot;
+        }
+
+        private static IReadOnlyList<string> ResolveProjectReferenceOutputFolders(string projectFilePath)
+        {
+            var outputFolders = new List<string>();
+
+            foreach (var referencedProjectPath in ResolveProjectReferencePaths(projectFilePath))
+            {
+                foreach (var outputFolder in ResolveProjectOutputFolders(referencedProjectPath))
+                    AddReferenceFolder(outputFolders, outputFolder);
+            }
+
+            return outputFolders;
+        }
+
+        private static IReadOnlyList<string> ResolveProjectReferencePaths(string projectFilePath)
+        {
+            if (projectFilePath.IsNullOrEmpty() || !File.Exists(projectFilePath))
+                return [];
+
+            var projectDirectory = Path.GetDirectoryName(Path.GetFullPath(projectFilePath)) ?? string.Empty;
+            if (projectDirectory.IsNullOrEmpty())
+                return [];
+
+            var document = XDocument.Load(projectFilePath);
+
+            return document.Descendants()
+                .Where(element => element.Name.LocalName.SameAs("ProjectReference"))
+                .Select(element => element.Attribute("Include")?.Value?.Trim() ?? string.Empty)
+                .Where(include => !include.IsNullOrEmpty())
+                .Select(include => Path.GetFullPath(Path.Combine(projectDirectory, include)))
+                .Where(File.Exists)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static IReadOnlyList<string> ResolveProjectOutputFolders(string referencedProjectPath)
+        {
+            return ResolveProjectTargetFrameworks(referencedProjectPath)
+                .Select(targetFramework => Path.Combine(
+                    Path.GetDirectoryName(referencedProjectPath) ?? string.Empty,
+                    "bin",
+                    "Debug",
+                    targetFramework))
+                .ToList();
+        }
+
+        private static IReadOnlyList<string> ResolveProjectTargetFrameworks(string projectFilePath)
+        {
+            var document = XDocument.Load(projectFilePath);
+            var targetFramework = document.Descendants()
+                .FirstOrDefault(element => element.Name.LocalName.SameAs("TargetFramework"))
+                ?.Value
+                ?.Trim() ?? string.Empty;
+
+            if (!targetFramework.IsNullOrEmpty())
+                return [targetFramework];
+
+            var targetFrameworks = document.Descendants()
+                .FirstOrDefault(element => element.Name.LocalName.SameAs("TargetFrameworks"))
+                ?.Value ?? string.Empty;
+
+            return targetFrameworks
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(framework => !framework.IsNullOrEmpty())
+                .DefaultIfEmpty("net48")
+                .ToList();
+        }
+
+        private static string ResolveModelDescriptorPath(ProfileEnvironmentModel model)
+        {
+            if (model.MetadataFolder.IsNullOrEmpty() || model.ModelName.IsNullOrEmpty())
+                return string.Empty;
+
+            return Path.Combine(model.MetadataFolder, "Descriptor", $"{model.ModelName}.xml");
+        }
+
+        private static IReadOnlyCollection<string> LoadModuleReferences(string descriptorPath)
+        {
+            var document = XDocument.Load(descriptorPath);
+            var moduleReferencesElement = document.Descendants()
+                .FirstOrDefault(element => element.Name.LocalName.SameAs("ModuleReferences"));
+
+            if (moduleReferencesElement == null)
+                return [];
+
+            var isNil = moduleReferencesElement.Attributes()
+                .Any(attribute => attribute.Name.LocalName.SameAs("nil") && attribute.Value.SameAs("true"));
+            if (isNil)
+                return [];
+
+            return moduleReferencesElement.Descendants()
+                .Where(element => element.Name.LocalName.SameAs("string"))
+                .Select(element => element.Value.Trim())
+                .Where(reference => !reference.IsNullOrEmpty())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static bool IsMatchingCompiledNugetModel(ProfileEnvironmentModel candidate, PackageReference packageReference)
+        {
+            if (candidate == null || candidate.ModelType != ModelType.CompiledNuget)
+                return false;
+
+            if (!candidate.PackageVersion.SameAs(packageReference.Version))
+                return false;
+
+            return candidate.PackageId.SameAs(packageReference.Id)
+                || candidate.ModelName.SameAs(packageReference.Id)
+                || GetUnversionedModelName(candidate).SameAs(packageReference.Id);
+        }
+
+        private static string GetUnversionedModelName(ProfileEnvironmentModel model)
+        {
+            var modelName = model.ModelName ?? string.Empty;
+            var packageVersion = model.PackageVersion ?? string.Empty;
+            var versionSuffix = $"-{packageVersion}";
+
+            if (!modelName.IsNullOrEmpty()
+                && !packageVersion.IsNullOrEmpty()
+                && modelName.EndsWith(versionSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return modelName[..^versionSuffix.Length];
+            }
+
+            return modelName;
+        }
+
+        private static void AddReferenceFolder(List<string> referenceFolders, string referenceFolder)
+        {
+            if (referenceFolder.IsNullOrEmpty())
+                return;
+
+            if (!referenceFolders.Any(existing => AreSameDirectoryPath(existing, referenceFolder)))
+                referenceFolders.Add(referenceFolder);
+        }
+
+        private bool RunMsBuild(
+            string solutionFilePath,
+            string sourceProjectFilePath,
+            string modelName,
+            MsBuildContext buildContext,
+            string buildOutputRoot,
+            string runRoot)
         {
             var msbuildExecutable = ResolveMsBuildExecutable();
             if (msbuildExecutable.IsNullOrEmpty())
@@ -1304,17 +1604,13 @@ namespace FODevManager.Services
             var buildBinPath = Path.Combine(buildOutputRoot, "Bin");
             Directory.CreateDirectory(buildBinPath);
 
+            if (!PrepareProjectReferenceAssemblies(msbuildExecutable, sourceProjectFilePath, buildOutputRoot, modelName))
+                return false;
+
             var processStartInfo = new ProcessStartInfo
             {
                 FileName = msbuildExecutable,
-                Arguments =
-                    $"\"{solutionFilePath}\" " +
-                    $"/p:BuildTasksDirectory=\"{buildContext.BuildTasksDirectory}\" " +
-                    $"/p:MetadataDirectory=\"{_deploymentBasePath}\" " +
-                    $"/p:FrameworkDirectory=\"{buildContext.CompilerPackageRoot}\" " +
-                    $"/p:ReferenceFolder=\"{buildContext.ReferenceFolder};{buildBinPath}\" " +
-                    $"/p:ReferencePath=\"{buildContext.CompilerPackageRoot}\" " +
-                    $"/p:OutputDirectory=\"{buildBinPath}\"",
+                Arguments = BuildMsBuildArguments(solutionFilePath, buildContext, buildOutputRoot),
                 WorkingDirectory = Path.GetDirectoryName(solutionFilePath) ?? Directory.GetCurrentDirectory(),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -1341,6 +1637,78 @@ namespace FODevManager.Services
 
             MessageLogger.Info($"✅ MSBuild completed for '{Path.GetFileName(solutionFilePath)}'");
             return true;
+        }
+
+        private static bool PrepareProjectReferenceAssemblies(
+            string msbuildExecutable,
+            string sourceProjectFilePath,
+            string buildOutputRoot,
+            string modelName)
+        {
+            var projectReferences = ResolveProjectReferencePaths(sourceProjectFilePath);
+            if (projectReferences.Count == 0)
+                return true;
+
+            foreach (var projectReference in projectReferences)
+            {
+                var processStartInfo = new ProcessStartInfo
+                {
+                    FileName = msbuildExecutable,
+                    Arguments = $"\"{projectReference}\" /restore /p:Configuration=Debug",
+                    WorkingDirectory = Path.GetDirectoryName(projectReference) ?? Directory.GetCurrentDirectory(),
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                ApplyDotNetSdkEnvironmentIfNeeded(processStartInfo, msbuildExecutable);
+
+                if (!RunProcess(processStartInfo, out var output))
+                {
+                    MessageLogger.Error($"❌ MSBuild failed for project reference '{projectReference}'. {output}".Trim());
+                    return false;
+                }
+            }
+
+            var targetBinFolder = Path.Combine(buildOutputRoot, "Bin", modelName, "bin");
+            Directory.CreateDirectory(targetBinFolder);
+
+            foreach (var outputFolder in projectReferences.SelectMany(ResolveProjectOutputFolders))
+            {
+                if (!Directory.Exists(outputFolder))
+                    continue;
+
+                foreach (var filePath in Directory.GetFiles(outputFolder, "*.*", SearchOption.TopDirectoryOnly)
+                             .Where(path => IsReferenceAssemblyOutput(Path.GetExtension(path))))
+                {
+                    File.Copy(filePath, Path.Combine(targetBinFolder, Path.GetFileName(filePath)), overwrite: true);
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsReferenceAssemblyOutput(string extension)
+        {
+            return extension.Equals(".dll", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".pdb", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".xml", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string BuildMsBuildArguments(string solutionFilePath, MsBuildContext buildContext, string buildOutputRoot)
+        {
+            var buildBinPath = Path.Combine(buildOutputRoot, "Bin");
+
+            return
+                $"\"{solutionFilePath}\" " +
+                "/restore " +
+                $"/p:BuildTasksDirectory=\"{buildContext.BuildTasksDirectory}\" " +
+                $"/p:MetadataDirectory=\"{buildContext.MetadataDirectory}\" " +
+                $"/p:FrameworkDirectory=\"{buildContext.CompilerPackageRoot}\" " +
+                $"/p:ReferenceFolder=\"{buildContext.ReferenceFolder};{buildBinPath}\" " +
+                $"/p:ReferencePath=\"{buildContext.CompilerPackageRoot}\" " +
+                $"/p:OutputDirectory=\"{buildBinPath}\"";
         }
 
         private void PersistBuildDiagnostics(string solutionFilePath, string compilerLogsRoot, string buildOutput)
@@ -1969,7 +2337,7 @@ namespace FODevManager.Services
             public string GetKey() => $"{Id}|{Version}";
         }
 
-        private sealed record MsBuildContext(string CompilerPackageRoot, string BuildTasksDirectory, string ReferenceFolder);
+        private sealed record MsBuildContext(string CompilerPackageRoot, string BuildTasksDirectory, string MetadataDirectory, string ReferenceFolder);
         private sealed record ResolvedModelDescriptor(PackageReference PackageReference, string ModelName, string ModelFolder);
     }
 }
