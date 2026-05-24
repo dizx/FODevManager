@@ -1,5 +1,77 @@
 # FO Dev Manager Changelog
 
+## [1.1.5] - 2026-05-24
+
+### Added
+- Compiled NuGet model dependencies are now resolved during source model package builds.
+- Source model descriptors are read from `Metadata\<ModelName>\Descriptor\<ModelName>.xml` to determine `ModuleReferences`.
+- Repository `Build\isv.config` entries are used to match descriptor references to exact compiled NuGet package IDs and versions.
+- Package builds now stage referenced compiled NuGet models under a dedicated build reference root and include their `bin` folders when present.
+
+### Changed
+- Package builds include only compiled NuGet models that are explicitly referenced by the source model descriptor and repository `isv.config`.
+- Standard FO build references continue to be resolved through the existing FO build package workflow.
+- Build diagnostics now clearly identify missing descriptors, missing `isv.config`, unresolved package references, and missing compiled model folders.
+
+### Fixed
+- Fixed source model package builds that failed when a model referenced a compiled NuGet dependency such as `CarModel`.
+- Prevented unrelated compiled NuGet models in the profile from being added to every package build.
+
+## [1.1.4] - 2026-05-24
+
+### Added
+- Added stronger package build diagnostics around NuGet restore, compiler package resolution, and MSBuild reference folders.
+- Added tests for package build reference resolution and compiled NuGet dependency selection.
+
+### Changed
+- Improved deployable package build reliability by preparing model-specific build folders more deterministically.
+- Improved NuGet restore failure messages so authentication, feed connectivity, rejected arguments, and missing tools are easier to diagnose.
+
+## [1.1.3] - 2026-05-24
+
+### Added
+- Added package build solution support for source model builds.
+- Added a default WinUI `nuget.config` to support package restore behavior.
+- Added configurable NuGet executable discovery through app settings.
+
+### Changed
+- Visual Studio solution management now creates package build solutions for source models that need compiled NuGet artifacts.
+- Project discovery and solution generation now handle model build projects more reliably.
+
+## [1.1.2] - 2026-05-24
+
+### Added
+- Enabled Windows long path support in the application manifest.
+
+### Changed
+- Promoted the WinUI app and installer version to `1.1.2`.
+
+## [1.1.1] - 2026-05-24
+
+### Added
+- Added `NuGetExecutablePath` configuration so users can point FO Dev Manager at a specific `nuget.exe`.
+- Added settings for automatic compiled NuGet package push behavior after a successful build.
+
+### Changed
+- NuGet discovery now checks the configured executable path before searching common install locations and `PATH`.
+
+## [1.1.0] - 2026-05-24
+
+### Added
+- Added first-class compiled NuGet model handling.
+- Added package URL tracking and navigation for compiled NuGet model references.
+- Added Azure Artifacts credential settings for private package feeds.
+- Added app settings migration support for new configuration keys.
+
+### Changed
+- Renamed user-facing deployable package terminology toward **Compiled Nuget** terminology.
+- Profile import and startup now prepare compiled NuGet model folders when needed.
+- Installer upgrades now preserve existing `appsettings.json` while refreshing installed application files.
+
+### Fixed
+- Improved startup diagnostics when configuration values are missing or invalid.
+- Reduced package install failures caused by stale or missing local compiled NuGet folders.
+
 ## [1.0.0] – 2025-12-XX
 
 🎉 First stable release
