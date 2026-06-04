@@ -73,9 +73,7 @@ namespace FODevManager.Services
 
                 foreach (var model in profile.AllModels)
                 {
-                    string linkPath = Path.Combine(_deploymentBasePath, model.ModelName);
-
-                    if (!Directory.Exists(linkPath))
+                    if (!IsModelActuallyDeployed(model))
                     {
                         MessageLogger.Info($"🔄 Deploying model: {model.ModelName}..");
                         
@@ -105,6 +103,52 @@ namespace FODevManager.Services
                 
             }
             return true;
+        }
+
+        public bool DeployOutdatedDeployedModels(string profileName)
+        {
+            var profile = _fileService.LoadProfile(profileName);
+            var outdatedModels = profile.AllModels
+                .Where(model => model.IsDeployed && !IsModelActuallyDeployed(model) && CanAutomaticallyReplaceDeploymentPath(model))
+                .ToList();
+
+            if (outdatedModels.Count == 0)
+                return false;
+
+            ServiceHelper.StopW3SVC();
+
+            try
+            {
+                var anyDeployed = false;
+
+                foreach (var model in outdatedModels)
+                {
+                    MessageLogger.Info($"🔄 Updating deployment for model: {model.ModelName}..");
+
+                    if (DeploySingleModel(profile, model.ModelName))
+                    {
+                        model.IsDeployed = true;
+                        anyDeployed = true;
+                    }
+                }
+
+                if (anyDeployed)
+                {
+                    _fileService.SaveProfile(profile);
+                    MessageLogger.Info($"✅ Outdated deployments updated for profile '{profileName}'");
+                }
+
+                return anyDeployed;
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Error updating deployed models: {ex.Message}");
+                return false;
+            }
+            finally
+            {
+                ServiceHelper.StartW3SVC();
+            }
         }
 
         public void UnDeployModel(string profileName, string modelName)
@@ -246,7 +290,7 @@ namespace FODevManager.Services
                     _deployablePackageService.EnsureCompiledNugetModel(profile, model);
 
                 string linkPath = targetDir;
-                string sourcePath = model.ModelType == ModelType.Source ? model.MetadataFolder : model.CompiledModelFolder;
+                string sourcePath = GetDeploymentSourcePath(model);
 
                 if (!Directory.Exists(sourcePath))
                 {
@@ -303,7 +347,7 @@ namespace FODevManager.Services
 
             string linkPath = Path.Combine(_deploymentBasePath, modelName);
 
-            if (Directory.Exists(linkPath))
+            if (IsModelActuallyDeployed(model))
             {
                 MessageLogger.Info($"✅ Model '{modelName}' is deployed at {linkPath}");
                 
@@ -336,7 +380,70 @@ namespace FODevManager.Services
                 return false;
 
             var deploymentLinkPath = Path.Combine(_deploymentBasePath, environmentModel.ModelName);
-            return Directory.Exists(deploymentLinkPath);
+            if (!Directory.Exists(deploymentLinkPath))
+                return false;
+
+            var sourcePath = GetDeploymentSourcePath(environmentModel);
+            if (sourcePath.IsNullOrEmpty())
+                return true;
+
+            if (!Directory.Exists(sourcePath))
+                return false;
+
+            return DeploymentPathTargetsSource(deploymentLinkPath, sourcePath);
+        }
+
+        private static string GetDeploymentSourcePath(ProfileEnvironmentModel model)
+        {
+            return model.ModelType == ModelType.Source ? model.MetadataFolder : model.CompiledModelFolder;
+        }
+
+        private static bool DeploymentPathTargetsSource(string deploymentLinkPath, string sourcePath)
+        {
+            if (AreSameDirectoryPath(deploymentLinkPath, sourcePath))
+                return true;
+
+            try
+            {
+                var deploymentInfo = new DirectoryInfo(deploymentLinkPath);
+                var targetInfo = deploymentInfo.ResolveLinkTarget(returnFinalTarget: true);
+                if (targetInfo == null)
+                    return false;
+
+                return AreSameDirectoryPath(targetInfo.FullName, sourcePath);
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Warning($"⚠️ Could not resolve deployment link '{deploymentLinkPath}': {exception.Message}");
+                return false;
+            }
+        }
+
+        private static bool AreSameDirectoryPath(string left, string right)
+        {
+            if (left.IsNullOrEmpty() || right.IsNullOrEmpty())
+                return false;
+
+            var normalizedLeft = Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var normalizedRight = Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return normalizedLeft.SameAs(normalizedRight);
+        }
+
+        private bool CanAutomaticallyReplaceDeploymentPath(ProfileEnvironmentModel model)
+        {
+            var deploymentLinkPath = Path.Combine(_deploymentBasePath, model.ModelName);
+            if (!Directory.Exists(deploymentLinkPath))
+                return true;
+
+            try
+            {
+                return File.GetAttributes(deploymentLinkPath).HasFlag(FileAttributes.ReparsePoint);
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Warning($"⚠️ Could not inspect deployment path '{deploymentLinkPath}': {exception.Message}");
+                return false;
+            }
         }
 
 
