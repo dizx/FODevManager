@@ -2,6 +2,7 @@ using FODevManager.Services;
 using FODevManager.Models;
 using FODevManager.Utils;
 using System.Reflection;
+using System.Xml.Linq;
 
 namespace FODevManager.Tests
 {
@@ -258,6 +259,56 @@ namespace FODevManager.Tests
             Assert.That(arguments, Does.Contain("/p:MetadataDirectory=\"C:\\Dev\\FO\\Repo\\Metadata\""));
         }
 
+        [Test]
+        public void IsNuGetNoPackagesFoundOutput_Should_Ignore_List_Deprecation_Warning()
+        {
+            var output = """
+                WARNING: 'NuGet list' is deprecated. Use 'NuGet search' instead.
+                No packages found.
+                """;
+
+            Assert.That(IsNuGetNoPackagesFoundOutput(output), Is.True);
+        }
+
+        [Test]
+        public void CreateCredentialedNugetConfig_Should_Add_Azure_Artifacts_Source_Credentials()
+        {
+            var nugetConfigPath = Path.Combine(_baseDir, "nuget.config");
+            File.WriteAllText(nugetConfigPath, """
+                <?xml version="1.0" encoding="utf-8"?>
+                <configuration>
+                  <packageSources>
+                    <add key="PeritusPackages" value="https://peritus-no.pkgs.visualstudio.com/_packaging/PeritusPackages/nuget/v3/index.json" />
+                  </packageSources>
+                </configuration>
+                """);
+
+            var service = new DeployablePackageService(new AppConfig
+            {
+                DeployablePackages = Path.Combine(_baseDir, "DeployablePackages"),
+                DeploymentBasePath = Path.Combine(_baseDir, "Metadata"),
+                AzureArtifactsUsername = "FODevManager",
+                AzureArtifactsPat = "pat-token"
+            });
+
+            var created = CreateCredentialedNugetConfig(service, nugetConfigPath, out var credentialedConfigPath);
+
+            Assert.That(created, Is.True);
+            Assert.That(credentialedConfigPath, Is.Not.EqualTo(nugetConfigPath));
+
+            var document = XDocument.Load(credentialedConfigPath);
+            var credentials = document
+                .Descendants("packageSourceCredentials")
+                .Elements("PeritusPackages")
+                .Elements("add")
+                .ToDictionary(
+                    element => element.Attribute("key")!.Value,
+                    element => element.Attribute("value")!.Value);
+
+            Assert.That(credentials["Username"], Is.EqualTo("FODevManager"));
+            Assert.That(credentials["ClearTextPassword"], Is.EqualTo("pat-token"));
+        }
+
         private static string ResolveCompiledModelName(string modelFolder, string packageId, string packageVersion)
         {
             var serviceType = typeof(DeployablePackageService);
@@ -322,6 +373,25 @@ namespace FODevManager.Tests
             Assert.That(contextType, Is.Not.Null);
 
             return Activator.CreateInstance(contextType!, compilerPackageRoot, buildTasksDirectory, metadataDirectory, referenceFolder)!;
+        }
+
+        private static bool IsNuGetNoPackagesFoundOutput(string output)
+        {
+            var method = typeof(DeployablePackageService).GetMethod("IsNuGetNoPackagesFoundOutput", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.That(method, Is.Not.Null);
+
+            return (bool)method!.Invoke(null, [output])!;
+        }
+
+        private static bool CreateCredentialedNugetConfig(DeployablePackageService service, string nugetConfigPath, out string credentialedConfigPath)
+        {
+            var method = typeof(DeployablePackageService).GetMethod("CreateCredentialedNugetConfig", BindingFlags.NonPublic | BindingFlags.Instance);
+            Assert.That(method, Is.Not.Null);
+
+            object?[] parameters = [nugetConfigPath, null];
+            var created = (bool)method!.Invoke(service, parameters)!;
+            credentialedConfigPath = (string?)parameters[1] ?? string.Empty;
+            return created;
         }
 
         private static string BuildMsBuildArguments(string solutionFilePath, object buildContext, string buildOutputRoot)
