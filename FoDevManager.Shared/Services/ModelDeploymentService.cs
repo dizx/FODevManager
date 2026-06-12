@@ -21,13 +21,25 @@ namespace FODevManager.Services
         private readonly string _deploymentBasePath;
         private readonly string _defaultSourceDirectory;
         private readonly DeployablePackageService _deployablePackageService;
+        private readonly IDeploymentLedgerService _deploymentLedgerService;
+        private readonly ModelVersionService _modelVersionService;
+        private readonly IDirectoryLinkService _directoryLinkService;
         private readonly int _modelIdBegin;
         private readonly int _modelIdEnd;
 
-        public ModelDeploymentService(AppConfig config, FileService fileService, DeployablePackageService deployablePackageService)
+        public ModelDeploymentService(
+            AppConfig config,
+            FileService fileService,
+            DeployablePackageService deployablePackageService,
+            IDeploymentLedgerService deploymentLedgerService,
+            ModelVersionService modelVersionService,
+            IDirectoryLinkService directoryLinkService)
         {
             _fileService = fileService;
             _deployablePackageService = deployablePackageService;
+            _deploymentLedgerService = deploymentLedgerService;
+            _modelVersionService = modelVersionService;
+            _directoryLinkService = directoryLinkService;
             _deploymentBasePath = config.DeploymentBasePath;
             _defaultSourceDirectory = config.DefaultSourceDirectory;
             _modelIdBegin = config.ModelIdBegin;
@@ -105,6 +117,45 @@ namespace FODevManager.Services
             return true;
         }
 
+        public bool DeployAllModelsForProfileSwitch(string profileName)
+        {
+            ServiceHelper.StopW3SVC();
+
+            try
+            {
+                var profile = _fileService.LoadProfile(profileName);
+                var anyDeployed = false;
+
+                foreach (var model in profile.AllModels)
+                {
+                    MessageLogger.Info($"🔄 Deploying model for profile switch: {model.ModelName}..");
+
+                    if (DeploySingleModel(profile, model.ModelName, forceReplaceExistingDeployment: true))
+                    {
+                        model.IsDeployed = true;
+                        anyDeployed = true;
+                    }
+                }
+
+                if (anyDeployed)
+                {
+                    _fileService.SaveProfile(profile);
+                    MessageLogger.Info($"✅ Switch deployment complete. Updated profile '{profileName}'");
+                }
+
+                return anyDeployed;
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Error deploying models for profile switch: {ex.Message}");
+                return false;
+            }
+            finally
+            {
+                ServiceHelper.StartW3SVC();
+            }
+        }
+
         public bool DeployOutdatedDeployedModels(string profileName)
         {
             var profile = _fileService.LoadProfile(profileName);
@@ -166,7 +217,7 @@ namespace FODevManager.Services
                 }
                 string linkPath = Path.Combine(_deploymentBasePath, modelName);
 
-                if (!Directory.Exists(linkPath))
+                if (!_directoryLinkService.Exists(linkPath))
                 {
                     MessageLogger.Error($"❌ Model '{modelName}' is NOT deployed");
                     return;
@@ -175,7 +226,8 @@ namespace FODevManager.Services
                 try
                 {
                     MessageLogger.Info($"🔄 Removing deployment link for model '{modelName}'..");
-                    Directory.Delete(linkPath, true);
+                    _directoryLinkService.Delete(linkPath, true);
+                    _deploymentLedgerService.RemoveDeployment(model.ModelName);
                     MessageLogger.Highlight($"✅ Model '{modelName}' successfully undeployed");
 
                     // Update profile status
@@ -205,10 +257,11 @@ namespace FODevManager.Services
                 {
                     string linkPath = Path.Combine(_deploymentBasePath, model.ModelName);
 
-                    if (Directory.Exists(linkPath))
+                    if (_directoryLinkService.Exists(linkPath))
                     {
                         MessageLogger.Info($"🔄 Removing deployment link for model '{model.ModelName}'..");
-                        Directory.Delete(linkPath, true);
+                        _directoryLinkService.Delete(linkPath, true);
+                        _deploymentLedgerService.RemoveDeployment(model.ModelName);
                         model.IsDeployed = false;
                         anyDeployed = true;
                     }
@@ -246,10 +299,11 @@ namespace FODevManager.Services
                 {
                     string linkPath = Path.Combine(_deploymentBasePath, model.ModelName);
 
-                    if (Directory.Exists(linkPath))
+                    if (_directoryLinkService.Exists(linkPath))
                     {
                         MessageLogger.Info($"🔄 Removing deployment link for model '{model.ModelName}'..");
-                        Directory.Delete(linkPath, true);
+                        _directoryLinkService.Delete(linkPath, true);
+                        _deploymentLedgerService.RemoveDeployment(model.ModelName);
                         model.IsDeployed = false;
                         anyDeployed = true;
                     }
@@ -274,7 +328,7 @@ namespace FODevManager.Services
             }
         }
 
-        private bool DeploySingleModel(ProfileModel profile, string modelName)
+        private bool DeploySingleModel(ProfileModel profile, string modelName, bool forceReplaceExistingDeployment = false)
         {
             try
             {
@@ -298,13 +352,31 @@ namespace FODevManager.Services
                     return false;
                 }
 
-                if (Directory.Exists(linkPath))
+                if (!forceReplaceExistingDeployment && !CanDeployFromSource(profile.ProfileName, modelName, sourcePath))
+                    return false;
+
+                if (_directoryLinkService.Exists(linkPath))
                 {
                     MessageLogger.Highlight($"Removing existing link: {linkPath}");
-                    Directory.Delete(linkPath, recursive: true);
+                    _directoryLinkService.Delete(linkPath, recursive: true);
                 }
 
-                Directory.CreateSymbolicLink(linkPath, sourcePath);
+                _directoryLinkService.CreateSymbolicLink(linkPath, sourcePath);
+
+                try
+                {
+                    _deploymentLedgerService.RecordDeployment(CreateDeploymentRecord(profile, model, sourcePath));
+                }
+                catch (Exception ledgerException)
+                {
+                    MessageLogger.Error($"❌ Deployment ledger could not be updated for model '{modelName}': {ledgerException.Message}");
+
+                    if (_directoryLinkService.Exists(linkPath))
+                        _directoryLinkService.Delete(linkPath, recursive: true);
+
+                    return false;
+                }
+
                 MessageLogger.Info($"✅ Model '{modelName}' deployed successfully");
 
                 return true;
@@ -380,7 +452,7 @@ namespace FODevManager.Services
                 return false;
 
             var deploymentLinkPath = Path.Combine(_deploymentBasePath, environmentModel.ModelName);
-            if (!Directory.Exists(deploymentLinkPath))
+            if (!_directoryLinkService.Exists(deploymentLinkPath))
                 return false;
 
             var sourcePath = GetDeploymentSourcePath(environmentModel);
@@ -398,19 +470,58 @@ namespace FODevManager.Services
             return model.ModelType == ModelType.Source ? model.MetadataFolder : model.CompiledModelFolder;
         }
 
-        private static bool DeploymentPathTargetsSource(string deploymentLinkPath, string sourcePath)
+        private DeployedModelRecord CreateDeploymentRecord(ProfileModel profile, ProfileEnvironmentModel model, string sourcePath)
+        {
+            var version = string.Empty;
+            if (_modelVersionService.TryGetVersionText(model, out var resolvedVersion))
+                version = resolvedVersion;
+
+            return new DeployedModelRecord
+            {
+                ModelName = model.ModelName,
+                ProfileName = profile.ProfileName,
+                ModelType = model.ModelType,
+                SourcePath = sourcePath,
+                Version = version,
+                PackageId = model.PackageId ?? string.Empty,
+                PackageVersion = model.PackageVersion ?? string.Empty,
+                DeployedAtUtc = DateTime.UtcNow,
+                IsUnmanaged = false
+            };
+        }
+
+        private bool CanDeployFromSource(string profileName, string modelName, string sourcePath)
+        {
+            _deploymentLedgerService.SelfHeal();
+
+            if (_deploymentLedgerService.CanDeploy(profileName, modelName, sourcePath, out var blocker))
+                return true;
+
+            if (blocker == null)
+                return true;
+
+            if (blocker.IsUnmanaged)
+            {
+                MessageLogger.Error($"❌ Model '{modelName}' is already deployed from unmanaged path '{blocker.SourcePath}'. Undeploy or switch profile before deploying a different source");
+                return false;
+            }
+
+            MessageLogger.Error($"❌ Model '{modelName}' is already deployed from profile '{blocker.ProfileName}' at '{blocker.SourcePath}'. Deploy from '{sourcePath}' is blocked");
+            return false;
+        }
+
+        private bool DeploymentPathTargetsSource(string deploymentLinkPath, string sourcePath)
         {
             if (AreSameDirectoryPath(deploymentLinkPath, sourcePath))
                 return true;
 
             try
             {
-                var deploymentInfo = new DirectoryInfo(deploymentLinkPath);
-                var targetInfo = deploymentInfo.ResolveLinkTarget(returnFinalTarget: true);
-                if (targetInfo == null)
+                var targetPath = _directoryLinkService.ResolveLinkTarget(deploymentLinkPath);
+                if (targetPath == null)
                     return false;
 
-                return AreSameDirectoryPath(targetInfo.FullName, sourcePath);
+                return AreSameDirectoryPath(targetPath, sourcePath);
             }
             catch (Exception exception)
             {

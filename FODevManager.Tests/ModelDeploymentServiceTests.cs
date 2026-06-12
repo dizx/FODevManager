@@ -1,6 +1,7 @@
 using FODevManager.Models;
 using FODevManager.Messages;
 using FODevManager.Services;
+using FODevManager.Shared.Models;
 using FODevManager.Utils;
 
 namespace FODevManager.Tests
@@ -126,6 +127,352 @@ namespace FODevManager.Tests
             Assert.That(messages, Has.Some.EqualTo($"❌ Model '{modelName}' already exists in profile '{profileName}'. Skipping add"));
         }
 
+        [Test]
+        public void DeploymentLedger_Should_Write_To_Profile_Storage_File()
+        {
+            var config = CreateAppConfig(Path.Combine(_baseDir, "Deployment"));
+            var service = new DeploymentLedgerService(config, new FileService(config));
+
+            service.RecordDeployment(new DeployedModelRecord
+            {
+                ModelName = "CarModel",
+                ProfileName = "ProfileA",
+                ModelType = ModelType.Source,
+                SourcePath = Path.Combine(_baseDir, "Source", "Metadata", "CarModel"),
+                Version = "1.0.0",
+                DeployedAtUtc = DateTime.UtcNow
+            });
+
+            var ledgerPath = Path.Combine(config.ProfileStoragePath, "deployed-models.json");
+            Assert.That(File.Exists(ledgerPath), Is.True);
+
+            var json = File.ReadAllText(ledgerPath);
+            Assert.That(json, Does.Contain("CarModel"));
+            Assert.That(json, Does.Contain("ProfileA"));
+        }
+
+        [Test]
+        public void FileService_Should_Not_Treat_Deployment_Ledger_As_Profile()
+        {
+            var config = CreateAppConfig(Path.Combine(_baseDir, "Deployment"));
+            var fileService = new FileService(config);
+
+            fileService.SaveProfile(new ProfileModel { ProfileName = "ProfileA" }, skipExistCheck: true);
+            File.WriteAllText(Path.Combine(config.ProfileStoragePath, "deployed-models.json"), "[]");
+
+            var profileNames = fileService.GetAllProfileNames();
+
+            Assert.That(profileNames, Is.EqualTo(new[] { "ProfileA" }));
+        }
+
+        [Test]
+        public void DeploymentLedger_Should_Allow_Same_Model_From_Same_Source_Path()
+        {
+            var config = CreateAppConfig(Path.Combine(_baseDir, "Deployment"));
+            var service = new DeploymentLedgerService(config, new FileService(config));
+            var sourcePath = Path.Combine(_baseDir, "Source", "Metadata", "CarModel");
+
+            service.RecordDeployment(new DeployedModelRecord
+            {
+                ModelName = "CarModel",
+                ProfileName = "ProfileA",
+                ModelType = ModelType.Source,
+                SourcePath = sourcePath
+            });
+
+            var allowed = service.CanDeploy("ProfileB", "CarModel", sourcePath, out var blocker);
+
+            Assert.That(allowed, Is.True);
+            Assert.That(blocker, Is.Null);
+        }
+
+        [Test]
+        public void DeploymentLedger_Should_Block_Same_Model_From_Different_Source_Path()
+        {
+            var config = CreateAppConfig(Path.Combine(_baseDir, "Deployment"));
+            var service = new DeploymentLedgerService(config, new FileService(config));
+            var firstSourcePath = Path.Combine(_baseDir, "SourceA", "Metadata", "CarModel");
+            var secondSourcePath = Path.Combine(_baseDir, "SourceB", "Metadata", "CarModel");
+
+            service.RecordDeployment(new DeployedModelRecord
+            {
+                ModelName = "CarModel",
+                ProfileName = "ProfileA",
+                ModelType = ModelType.Source,
+                SourcePath = firstSourcePath
+            });
+
+            var allowed = service.CanDeploy("ProfileB", "CarModel", secondSourcePath, out var blocker);
+
+            Assert.That(allowed, Is.False);
+            Assert.That(blocker, Is.Not.Null);
+            Assert.That(blocker!.ProfileName, Is.EqualTo("ProfileA"));
+            Assert.That(blocker.SourcePath, Is.EqualTo(DeploymentLedgerService.NormalizePath(firstSourcePath)));
+        }
+
+        [Test]
+        public void DeployModel_Should_Record_Successful_Deployment_In_Ledger()
+        {
+            var profileName = "DeployProfile";
+            var modelName = "CarModel";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var sourcePath = Path.Combine(_baseDir, "Source", "Metadata", modelName);
+            Directory.CreateDirectory(sourcePath);
+
+            SaveProfile(new ProfileModel
+            {
+                ProfileName = profileName,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelType = ModelType.Source,
+                        MetadataFolder = sourcePath
+                    }
+                ]
+            });
+
+            var service = CreateModelDeploymentService(deploymentBasePath);
+
+            service.DeployModel(profileName, modelName);
+
+            var config = CreateAppConfig(deploymentBasePath);
+            var ledger = new DeploymentLedgerService(config, new FileService(config));
+            var record = ledger.LoadRecords().Single(record => record.ModelName == modelName);
+
+            Assert.That(record.ProfileName, Is.EqualTo(profileName));
+            Assert.That(record.SourcePath, Is.EqualTo(DeploymentLedgerService.NormalizePath(sourcePath)));
+            Assert.That(record.ModelType, Is.EqualTo(ModelType.Source));
+        }
+
+        [Test]
+        public void DeployModel_Should_Block_When_Ledger_Has_Different_Source_Path()
+        {
+            var profileName = "CurrentProfile";
+            var modelName = "CarModel";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var firstSourcePath = Path.Combine(_baseDir, "SourceA", "Metadata", modelName);
+            var secondSourcePath = Path.Combine(_baseDir, "SourceB", "Metadata", modelName);
+            Directory.CreateDirectory(firstSourcePath);
+            Directory.CreateDirectory(secondSourcePath);
+
+            var service = CreateModelDeploymentService(deploymentBasePath, out var linkService);
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, modelName), firstSourcePath);
+
+            var config = CreateAppConfig(deploymentBasePath);
+            var fileService = new FileService(config);
+            var ledger = new DeploymentLedgerService(config, fileService);
+            ledger.RecordDeployment(new DeployedModelRecord
+            {
+                ModelName = modelName,
+                ProfileName = "OtherProfile",
+                ModelType = ModelType.Source,
+                SourcePath = firstSourcePath
+            });
+
+            SaveProfile(new ProfileModel
+            {
+                ProfileName = profileName,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelType = ModelType.Source,
+                        MetadataFolder = secondSourcePath
+                    }
+                ]
+            });
+
+            var messages = new List<string>();
+            using var subscription = MessageBus.Subscribe(message => messages.Add(message.Content));
+
+            service.DeployModel(profileName, modelName);
+
+            Assert.That(linkService.ResolveLinkTarget(Path.Combine(deploymentBasePath, modelName)), Is.EqualTo(firstSourcePath));
+            Assert.That(messages, Has.Some.Contains("is already deployed from profile 'OtherProfile'"));
+        }
+
+        [Test]
+        public void DeployAllUndeployedModels_Should_Block_When_Ledger_Has_Different_Source_Path()
+        {
+            var profileName = "CurrentProfile";
+            var modelName = "CarModel";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var firstSourcePath = Path.Combine(_baseDir, "SourceA", "Metadata", modelName);
+            var secondSourcePath = Path.Combine(_baseDir, "SourceB", "Metadata", modelName);
+            Directory.CreateDirectory(firstSourcePath);
+            Directory.CreateDirectory(secondSourcePath);
+
+            var service = CreateModelDeploymentService(deploymentBasePath, out var linkService);
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, modelName), firstSourcePath);
+
+            var config = CreateAppConfig(deploymentBasePath);
+            var fileService = new FileService(config);
+            var ledger = new DeploymentLedgerService(config, fileService);
+            ledger.RecordDeployment(new DeployedModelRecord
+            {
+                ModelName = modelName,
+                ProfileName = "OtherProfile",
+                ModelType = ModelType.Source,
+                SourcePath = firstSourcePath
+            });
+
+            SaveProfile(new ProfileModel
+            {
+                ProfileName = profileName,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelType = ModelType.Source,
+                        MetadataFolder = secondSourcePath
+                    }
+                ]
+            });
+
+            service.DeployAllUndeployedModels(profileName);
+
+            Assert.That(linkService.ResolveLinkTarget(Path.Combine(deploymentBasePath, modelName)), Is.EqualTo(firstSourcePath));
+        }
+
+        [Test]
+        public void UnDeployModel_Should_Remove_Ledger_Record()
+        {
+            var profileName = "DeployProfile";
+            var modelName = "CarModel";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var sourcePath = Path.Combine(_baseDir, "Source", "Metadata", modelName);
+            Directory.CreateDirectory(sourcePath);
+
+            var service = CreateModelDeploymentService(deploymentBasePath, out var linkService);
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, modelName), sourcePath);
+
+            SaveProfile(new ProfileModel
+            {
+                ProfileName = profileName,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelType = ModelType.Source,
+                        MetadataFolder = sourcePath,
+                        IsDeployed = true
+                    }
+                ]
+            });
+
+            var config = CreateAppConfig(deploymentBasePath);
+            var ledger = new DeploymentLedgerService(config, new FileService(config));
+            ledger.RecordDeployment(new DeployedModelRecord
+            {
+                ModelName = modelName,
+                ProfileName = profileName,
+                ModelType = ModelType.Source,
+                SourcePath = sourcePath
+            });
+
+            service.UnDeployModel(profileName, modelName);
+
+            Assert.That(ledger.LoadRecords().Any(record => record.ModelName == modelName), Is.False);
+        }
+
+        [Test]
+        public void DeploymentLedger_Should_SelfHeal_Existing_Link_To_Known_Profile_Model()
+        {
+            var profileName = "ProfileA";
+            var modelName = "CarModel";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var sourcePath = Path.Combine(_baseDir, "Source", "Metadata", modelName);
+            Directory.CreateDirectory(sourcePath);
+
+            var linkService = new FakeDirectoryLinkService();
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, modelName), sourcePath);
+
+            SaveProfile(new ProfileModel
+            {
+                ProfileName = profileName,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelType = ModelType.Source,
+                        MetadataFolder = sourcePath
+                    }
+                ]
+            });
+
+            var config = CreateAppConfig(deploymentBasePath);
+            var ledger = new DeploymentLedgerService(config, new FileService(config), linkService);
+
+            ledger.SelfHeal();
+
+            var record = ledger.LoadRecords().Single();
+            Assert.That(record.ModelName, Is.EqualTo(modelName));
+            Assert.That(record.ProfileName, Is.EqualTo(profileName));
+            Assert.That(record.IsUnmanaged, Is.False);
+            Assert.That(record.SourcePath, Is.EqualTo(DeploymentLedgerService.NormalizePath(sourcePath)));
+        }
+
+        [Test]
+        public void DeploymentLedger_Should_SelfHeal_Unmatched_Deployment_As_Unmanaged()
+        {
+            var modelName = "CarModel";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var sourcePath = Path.Combine(_baseDir, "External", modelName);
+            Directory.CreateDirectory(sourcePath);
+
+            var linkService = new FakeDirectoryLinkService();
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, modelName), sourcePath);
+
+            var config = CreateAppConfig(deploymentBasePath);
+            var ledger = new DeploymentLedgerService(config, new FileService(config), linkService);
+
+            ledger.SelfHeal();
+
+            var record = ledger.LoadRecords().Single();
+            Assert.That(record.ModelName, Is.EqualTo(modelName));
+            Assert.That(record.IsUnmanaged, Is.True);
+            Assert.That(record.SourcePath, Is.EqualTo(DeploymentLedgerService.NormalizePath(sourcePath)));
+        }
+
+        [Test]
+        public void DeployModel_Should_Remove_New_Link_When_Ledger_Save_Fails()
+        {
+            var profileName = "DeployProfile";
+            var modelName = "CarModel";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var sourcePath = Path.Combine(_baseDir, "Source", "Metadata", modelName);
+            Directory.CreateDirectory(sourcePath);
+
+            SaveProfile(new ProfileModel
+            {
+                ProfileName = profileName,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelType = ModelType.Source,
+                        MetadataFolder = sourcePath
+                    }
+                ]
+            });
+
+            var service = CreateModelDeploymentService(deploymentBasePath, out var linkService);
+            var config = CreateAppConfig(deploymentBasePath);
+            var ledgerPath = Path.Combine(config.ProfileStoragePath, "deployed-models.json");
+            service = CreateModelDeploymentService(deploymentBasePath, out linkService, new ThrowingDeploymentLedgerService());
+
+            service.DeployModel(profileName, modelName);
+
+            Assert.That(linkService.ResolveLinkTarget(Path.Combine(deploymentBasePath, modelName)), Is.Null);
+        }
+
         private ModelDeploymentService CreateModelDeploymentService()
             => CreateModelDeploymentService(Path.Combine(_baseDir, "Deployment"));
 
@@ -145,11 +492,22 @@ namespace FODevManager.Tests
 
         private ModelDeploymentService CreateModelDeploymentService(string deploymentBasePath)
         {
+            return CreateModelDeploymentService(deploymentBasePath, out _);
+        }
+
+        private ModelDeploymentService CreateModelDeploymentService(string deploymentBasePath, out FakeDirectoryLinkService linkService)
+            => CreateModelDeploymentService(deploymentBasePath, out linkService, null);
+
+        private ModelDeploymentService CreateModelDeploymentService(string deploymentBasePath, out FakeDirectoryLinkService linkService, IDeploymentLedgerService? deploymentLedgerService)
+        {
             var config = CreateAppConfig(deploymentBasePath);
 
             var fileService = new FileService(config);
             var deployablePackageService = new DeployablePackageService(config);
-            return new ModelDeploymentService(config, fileService, deployablePackageService);
+            var modelVersionService = new ModelVersionService();
+            linkService = new FakeDirectoryLinkService();
+            deploymentLedgerService ??= new DeploymentLedgerService(config, fileService, linkService);
+            return new ModelDeploymentService(config, fileService, deployablePackageService, deploymentLedgerService, modelVersionService, linkService);
         }
 
         private AppConfig CreateAppConfig(string deploymentBasePath)
@@ -164,6 +522,64 @@ namespace FODevManager.Tests
                 ModelIdBegin = 1,
                 ModelIdEnd = 999
             };
+        }
+
+        private sealed class FakeDirectoryLinkService : IDirectoryLinkService
+        {
+            private readonly Dictionary<string, string> _links = new(StringComparer.OrdinalIgnoreCase);
+
+            public Action? AfterCreate { get; set; }
+
+            public bool Exists(string path)
+                => _links.ContainsKey(Normalize(path)) || Directory.Exists(path);
+
+            public void CreateSymbolicLink(string linkPath, string targetPath)
+            {
+                Directory.CreateDirectory(linkPath);
+                _links[Normalize(linkPath)] = Path.GetFullPath(targetPath);
+                AfterCreate?.Invoke();
+            }
+
+            public void Delete(string path, bool recursive = true)
+            {
+                _links.Remove(Normalize(path));
+
+                if (Directory.Exists(path))
+                    Directory.Delete(path, recursive);
+            }
+
+            public string? ResolveLinkTarget(string linkPath)
+                => _links.TryGetValue(Normalize(linkPath), out var targetPath) ? targetPath : null;
+
+            private static string Normalize(string path)
+                => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        private sealed class ThrowingDeploymentLedgerService : IDeploymentLedgerService
+        {
+            public IReadOnlyList<DeployedModelRecord> LoadRecords()
+                => [];
+
+            public bool CanDeploy(string profileName, string modelName, string sourcePath, out DeployedModelRecord? blocker)
+            {
+                blocker = null;
+                return true;
+            }
+
+            public void RecordDeployment(DeployedModelRecord record)
+                => throw new IOException("Ledger write failed");
+
+            public void RemoveDeployment(string modelName)
+            {
+            }
+
+            public void Clear()
+            {
+            }
+
+            public void SelfHeal()
+            {
+            }
         }
     }
 }

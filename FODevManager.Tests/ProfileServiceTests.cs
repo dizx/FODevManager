@@ -1,5 +1,6 @@
 using FODevManager.Services;
 using FODevManager.Models;
+using FODevManager.Shared.Models;
 using FODevManager.Utils;
 using System;
 using System.IO;
@@ -81,24 +82,74 @@ namespace FODevManager.Tests
             Assert.That(savedProfile.DatabaseName, Is.EqualTo("RepoDb"));
         }
 
-        private ProfileService CreateProfileService()
+        [Test]
+        public void SwitchProfile_Should_Replace_Different_Source_Deployment_And_Update_Ledger()
         {
-            var config = new AppConfig
+            var service = CreateProfileService(out var linkService);
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var firstSourcePath = Path.Combine(_baseDir, "SourceA", "Metadata", "CarModel");
+            var secondSourcePath = Path.Combine(_baseDir, "SourceB", "Metadata", "CarModel");
+            Directory.CreateDirectory(firstSourcePath);
+            Directory.CreateDirectory(secondSourcePath);
+
+            var oldProfile = new ProfileModel
             {
-                ProfileStoragePath = Path.Combine(_baseDir, "Profiles"),
-                DefaultSourceDirectory = Path.Combine(_baseDir, "Source"),
-                DeploymentBasePath = Path.Combine(_baseDir, "Deployment"),
-                DeployablePackages = string.Empty,
-                TaskUrl = string.Empty,
-                ModelIdBegin = 1,
-                ModelIdEnd = 999
+                ProfileName = "OldProfile",
+                IsActive = true
             };
+
+            var newProfile = new ProfileModel
+            {
+                ProfileName = "NewProfile",
+                IsActive = false,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = "CarModel",
+                        ModelType = ModelType.Source,
+                        MetadataFolder = secondSourcePath
+                    }
+                ]
+            };
+
+            var config = CreateAppConfig();
+            var fileService = new FileService(config);
+            fileService.SaveProfile(oldProfile, skipExistCheck: true);
+            fileService.SaveProfile(newProfile, skipExistCheck: true);
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, "CarModel"), firstSourcePath);
+
+            var ledger = new DeploymentLedgerService(config, fileService);
+            ledger.RecordDeployment(new DeployedModelRecord
+            {
+                ModelName = "CarModel",
+                ProfileName = "ThirdProfile",
+                ModelType = ModelType.Source,
+                SourcePath = firstSourcePath
+            });
+
+            var switched = service.SwitchProfile("NewProfile");
+
+            Assert.That(switched, Is.True);
+            Assert.That(linkService.ResolveLinkTarget(Path.Combine(deploymentBasePath, "CarModel")), Is.EqualTo(secondSourcePath));
+            Assert.That(ledger.LoadRecords().Single().ProfileName, Is.EqualTo("NewProfile"));
+            Assert.That(ledger.LoadRecords().Single().SourcePath, Is.EqualTo(DeploymentLedgerService.NormalizePath(secondSourcePath)));
+        }
+
+        private ProfileService CreateProfileService()
+            => CreateProfileService(out _);
+
+        private ProfileService CreateProfileService(out FakeDirectoryLinkService linkService)
+        {
+            var config = CreateAppConfig();
 
             var fileService = new FileService(config);
             var solutionService = new VisualStudioSolutionService(config);
             var deployablePackageService = new DeployablePackageService(config);
             var modelVersionService = new ModelVersionService();
-            var modelDeploymentService = new ModelDeploymentService(config, fileService, deployablePackageService);
+            linkService = new FakeDirectoryLinkService();
+            var deploymentLedgerService = new DeploymentLedgerService(config, fileService, linkService);
+            var modelDeploymentService = new ModelDeploymentService(config, fileService, deployablePackageService, deploymentLedgerService, modelVersionService, linkService);
             var profilesContainer = new ProfilesContainer(fileService);
 
             return new ProfileService(
@@ -109,6 +160,21 @@ namespace FODevManager.Tests
                 deployablePackageService,
                 modelVersionService,
                 profilesContainer);
+        }
+
+        private AppConfig CreateAppConfig()
+        {
+            return new AppConfig
+            {
+                ProfileStoragePath = Path.Combine(_baseDir, "Profiles"),
+                DefaultSourceDirectory = Path.Combine(_baseDir, "Source"),
+                DeploymentBasePath = Path.Combine(_baseDir, "Deployment"),
+                DeployablePackages = Path.Combine(_baseDir, "DeployablePackages"),
+                TaskUrl = string.Empty,
+                ModelIdBegin = 1,
+                ModelIdEnd = 999,
+                CheckUncommittedBeforeSwitch = false
+            };
         }
 
         private string CreateExportProfile(string profileName, string databaseName, string path)
@@ -125,6 +191,26 @@ namespace FODevManager.Tests
             var json = JsonSerializer.Serialize(exportProfile);
             File.WriteAllText(path, json);
             return path;
+        }
+
+        private sealed class FakeDirectoryLinkService : IDirectoryLinkService
+        {
+            private readonly Dictionary<string, string> _links = new(StringComparer.OrdinalIgnoreCase);
+
+            public bool Exists(string path)
+                => _links.ContainsKey(Normalize(path)) || Directory.Exists(path);
+
+            public void CreateSymbolicLink(string linkPath, string targetPath)
+                => _links[Normalize(linkPath)] = Path.GetFullPath(targetPath);
+
+            public void Delete(string path, bool recursive = true)
+                => _links.Remove(Normalize(path));
+
+            public string? ResolveLinkTarget(string linkPath)
+                => _links.TryGetValue(Normalize(linkPath), out var targetPath) ? targetPath : null;
+
+            private static string Normalize(string path)
+                => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
     }
 }

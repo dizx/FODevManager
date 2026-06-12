@@ -16,6 +16,8 @@ namespace FODevManager.Services
     public class FileService
     {
         private readonly string _appDataPath;
+        private const string DeploymentLedgerFileName = "deployed-models.json";
+
         public FileService(AppConfig config)
         {
             _appDataPath = config.ProfileStoragePath;
@@ -45,7 +47,8 @@ namespace FODevManager.Services
             if (!Directory.Exists(_appDataPath))
                 return profiles;
 
-            var files = Directory.GetFiles(_appDataPath, "*.json");
+            var files = Directory.GetFiles(_appDataPath, "*.json")
+                .Where(fileName => !Path.GetFileName(fileName).SameAs(DeploymentLedgerFileName));
 
             foreach (var fileName in files)
             {
@@ -70,7 +73,8 @@ namespace FODevManager.Services
             if (!Directory.Exists(_appDataPath))
                 return profileNames;
 
-            var files = Directory.GetFiles(_appDataPath, "*.json");
+            var files = Directory.GetFiles(_appDataPath, "*.json")
+                .Where(fileName => !Path.GetFileName(fileName).SameAs(DeploymentLedgerFileName));
 
             foreach (var fileName in files)
             {

@@ -123,7 +123,7 @@ namespace FODevManager.Services
 
             if (_deployablePackageService.EnsureCompiledNugetModels(newProfile))
                 _fileService.SaveProfile(newProfile, updateExternal: true);
-            _modelDeploymentService.DeployAllUndeployedModels(newProfileName);
+            _modelDeploymentService.DeployAllModelsForProfileSwitch(newProfileName);
             ApplyDatabase(newProfileName);
             SetActiveProfile(newProfileName);
             MessageLogger.Highlight($"✅ Successfully switched to profile '{newProfileName}'");
