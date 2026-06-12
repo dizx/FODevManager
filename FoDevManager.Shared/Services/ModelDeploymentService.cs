@@ -337,6 +337,50 @@ namespace FODevManager.Services
             }
         }
 
+        public void UnDeployManagedDeployments()
+        {
+            ServiceHelper.StopW3SVC();
+
+            try
+            {
+                _deploymentLedgerService.SelfHeal();
+                var records = _deploymentLedgerService.LoadRecords()
+                    .Where(record => !record.IsUnmanaged)
+                    .GroupBy(record => record.ModelName, StringComparer.OrdinalIgnoreCase)
+                    .Select(group => group.First())
+                    .ToList();
+
+                if (records.Count == 0)
+                {
+                    MessageLogger.Info("✅ All managed models are already undeployed");
+                    return;
+                }
+
+                foreach (var record in records)
+                {
+                    var linkPath = Path.Combine(_deploymentBasePath, record.ModelName);
+
+                    if (_directoryLinkService.Exists(linkPath))
+                    {
+                        MessageLogger.Info($"🔄 Removing deployment link for model '{record.ModelName}'..");
+                        _directoryLinkService.Delete(linkPath, true);
+                    }
+
+                    _deploymentLedgerService.RemoveDeployment(record.ModelName);
+                }
+
+                MessageLogger.Info("✅ Managed deployment cleanup complete");
+            }
+            catch (Exception ex)
+            {
+                MessageLogger.Error($"❌ Error undeploying managed models: {ex.Message}");
+            }
+            finally
+            {
+                ServiceHelper.StartW3SVC();
+            }
+        }
+
         private bool DeploySingleModel(ProfileModel profile, string modelName, bool forceReplaceExistingDeployment = false)
         {
             try

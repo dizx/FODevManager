@@ -137,6 +137,96 @@ namespace FODevManager.Tests
         }
 
         [Test]
+        public void SwitchProfile_Should_Remove_Managed_Deployments_From_NonActive_Profiles()
+        {
+            var service = CreateProfileService(out var linkService);
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var activeSourcePath = Path.Combine(_baseDir, "SourceA", "Metadata", "ActiveModel");
+            var otherSourcePath = Path.Combine(_baseDir, "SourceB", "Metadata", "OtherModel");
+            var newSourcePath = Path.Combine(_baseDir, "SourceC", "Metadata", "NewModel");
+            Directory.CreateDirectory(activeSourcePath);
+            Directory.CreateDirectory(otherSourcePath);
+            Directory.CreateDirectory(newSourcePath);
+
+            var activeProfile = new ProfileModel
+            {
+                ProfileName = "ActiveProfile",
+                IsActive = true,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = "ActiveModel",
+                        ModelType = ModelType.Source,
+                        MetadataFolder = activeSourcePath,
+                        IsDeployed = true
+                    }
+                ]
+            };
+
+            var otherProfile = new ProfileModel
+            {
+                ProfileName = "OtherProfile",
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = "OtherModel",
+                        ModelType = ModelType.Source,
+                        MetadataFolder = otherSourcePath,
+                        IsDeployed = true
+                    }
+                ]
+            };
+
+            var newProfile = new ProfileModel
+            {
+                ProfileName = "NewProfile",
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = "NewModel",
+                        ModelType = ModelType.Source,
+                        MetadataFolder = newSourcePath
+                    }
+                ]
+            };
+
+            var config = CreateAppConfig();
+            var fileService = new FileService(config);
+            fileService.SaveProfile(activeProfile, skipExistCheck: true);
+            fileService.SaveProfile(otherProfile, skipExistCheck: true);
+            fileService.SaveProfile(newProfile, skipExistCheck: true);
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, "ActiveModel"), activeSourcePath);
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, "OtherModel"), otherSourcePath);
+
+            var ledger = new DeploymentLedgerService(config, fileService);
+            ledger.RecordDeployment(new DeployedModelRecord
+            {
+                ModelName = "ActiveModel",
+                ProfileName = "ActiveProfile",
+                ModelType = ModelType.Source,
+                SourcePath = activeSourcePath
+            });
+            ledger.RecordDeployment(new DeployedModelRecord
+            {
+                ModelName = "OtherModel",
+                ProfileName = "OtherProfile",
+                ModelType = ModelType.Source,
+                SourcePath = otherSourcePath
+            });
+
+            var switched = service.SwitchProfile("NewProfile");
+
+            Assert.That(switched, Is.True);
+            Assert.That(linkService.ResolveLinkTarget(Path.Combine(deploymentBasePath, "ActiveModel")), Is.Null);
+            Assert.That(linkService.ResolveLinkTarget(Path.Combine(deploymentBasePath, "OtherModel")), Is.Null);
+            Assert.That(linkService.ResolveLinkTarget(Path.Combine(deploymentBasePath, "NewModel")), Is.EqualTo(newSourcePath));
+            Assert.That(ledger.LoadRecords().Select(record => record.ModelName), Is.EquivalentTo(new[] { "NewModel" }));
+        }
+
+        [Test]
         public void UpdateDeploymentStatus_Should_Use_Deployment_Ledger_Not_Filesystem_Link()
         {
             var service = CreateProfileService();

@@ -108,8 +108,8 @@ namespace FODevManager.Services
                     }
                 }
 
-                MessageLogger.Info($"📦 Undeploying models from '{currentProfileName}'.");
-                _modelDeploymentService.UnDeployAllModels(currentProfileName);
+                MessageLogger.Info("📦 Cleaning up managed model deployments before profile switch");
+                _modelDeploymentService.UnDeployManagedDeployments();
             }
 
             MessageLogger.Info($"🔄 Switching to profile '{newProfileName}'.");
