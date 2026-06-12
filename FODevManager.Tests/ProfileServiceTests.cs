@@ -136,6 +136,76 @@ namespace FODevManager.Tests
             Assert.That(ledger.LoadRecords().Single().SourcePath, Is.EqualTo(DeploymentLedgerService.NormalizePath(secondSourcePath)));
         }
 
+        [Test]
+        public void UpdateDeploymentStatus_Should_Use_Deployment_Ledger_Not_Filesystem_Link()
+        {
+            var service = CreateProfileService();
+            var profileName = "ProfileA";
+            var modelName = "CarModel";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var sourcePath = Path.Combine(_baseDir, "Source", "Metadata", modelName);
+            Directory.CreateDirectory(sourcePath);
+            Directory.CreateDirectory(Path.Combine(deploymentBasePath, modelName));
+
+            var profile = new ProfileModel
+            {
+                ProfileName = profileName,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelType = ModelType.Source,
+                        MetadataFolder = sourcePath,
+                        IsDeployed = true
+                    }
+                ]
+            };
+
+            var fileService = new FileService(CreateAppConfig());
+            fileService.SaveProfile(profile, skipExistCheck: true);
+
+            service.UpdateDeploymentStatus(profileName);
+
+            var savedProfile = fileService.LoadProfile(profileName);
+            Assert.That(savedProfile.AllModels.Single().IsDeployed, Is.False);
+        }
+
+        [Test]
+        public void UpdateDeploymentStatus_Should_SelfHeal_Existing_Known_Link_Before_Updating_Profile()
+        {
+            var service = CreateProfileService(out var linkService);
+            var profileName = "ProfileA";
+            var modelName = "CarModel";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var sourcePath = Path.Combine(_baseDir, "Source", "Metadata", modelName);
+            Directory.CreateDirectory(sourcePath);
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, modelName), sourcePath);
+
+            var profile = new ProfileModel
+            {
+                ProfileName = profileName,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelType = ModelType.Source,
+                        MetadataFolder = sourcePath,
+                        IsDeployed = false
+                    }
+                ]
+            };
+
+            var fileService = new FileService(CreateAppConfig());
+            fileService.SaveProfile(profile, skipExistCheck: true);
+
+            service.UpdateDeploymentStatus(profileName);
+
+            var savedProfile = fileService.LoadProfile(profileName);
+            Assert.That(savedProfile.AllModels.Single().IsDeployed, Is.True);
+        }
+
         private ProfileService CreateProfileService()
             => CreateProfileService(out _);
 
@@ -159,7 +229,8 @@ namespace FODevManager.Tests
                 modelDeploymentService,
                 deployablePackageService,
                 modelVersionService,
-                profilesContainer);
+                profilesContainer,
+                deploymentLedgerService);
         }
 
         private AppConfig CreateAppConfig()
@@ -201,7 +272,10 @@ namespace FODevManager.Tests
                 => _links.ContainsKey(Normalize(path)) || Directory.Exists(path);
 
             public void CreateSymbolicLink(string linkPath, string targetPath)
-                => _links[Normalize(linkPath)] = Path.GetFullPath(targetPath);
+            {
+                Directory.CreateDirectory(linkPath);
+                _links[Normalize(linkPath)] = Path.GetFullPath(targetPath);
+            }
 
             public void Delete(string path, bool recursive = true)
                 => _links.Remove(Normalize(path));

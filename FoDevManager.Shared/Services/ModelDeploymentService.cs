@@ -51,7 +51,7 @@ namespace FODevManager.Services
         }
 
 
-        public void DeployModel(string profileName, string modelName)
+        public bool DeployModel(string profileName, string modelName)
         {
             
             ServiceHelper.StopW3SVC();
@@ -63,9 +63,11 @@ namespace FODevManager.Services
                 if(DeploySingleModel(profile, modelName))
                 {
                     profile.FindModel(modelName)!.IsDeployed = true;
-                    _fileService.SaveProfile(profile);                    
+                    _fileService.SaveProfile(profile);
+                    return true;
                 }
-                
+
+                return false;
             }
             finally
             {
@@ -82,6 +84,7 @@ namespace FODevManager.Services
                 var profile = _fileService.LoadProfile(profileName);
 
                 bool anyUndeployed = false;
+                bool anyDeployed = false;
 
                 foreach (var model in profile.AllModels)
                 {
@@ -90,7 +93,10 @@ namespace FODevManager.Services
                         MessageLogger.Info($"🔄 Deploying model: {model.ModelName}..");
                         
                         if(DeploySingleModel(profile, model.ModelName))
+                        {
                             model.IsDeployed = true;
+                            anyDeployed = true;
+                        }
                         anyUndeployed = true;
                     }
                 }
@@ -100,6 +106,9 @@ namespace FODevManager.Services
                     MessageLogger.Info($"✅ All models in profile '{profileName}' are already deployed");
                     return false;
                 }
+
+                if (!anyDeployed)
+                    return false;
 
                 _fileService.SaveProfile(profile);
 

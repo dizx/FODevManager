@@ -60,6 +60,21 @@ namespace FODevManager.Services
             return false;
         }
 
+        public bool IsModelDeployed(ProfileEnvironmentModel model)
+        {
+            if (model == null || model.ModelName.IsNullOrEmpty())
+                return false;
+
+            var sourcePath = GetDeploymentSourcePath(model);
+            if (sourcePath.IsNullOrEmpty())
+                return false;
+
+            var normalizedSourcePath = NormalizePath(sourcePath);
+            return LoadRecords().Any(record =>
+                record.ModelName.SameAs(model.ModelName)
+                && NormalizePath(record.SourcePath).SameAs(normalizedSourcePath));
+        }
+
         public void RecordDeployment(DeployedModelRecord record)
         {
             if (record.ModelName.IsNullOrEmpty())
@@ -109,19 +124,9 @@ namespace FODevManager.Services
                     var existingRecord = existingRecords.FirstOrDefault(record =>
                         record.ModelName.SameAs(modelName)
                         && NormalizePath(record.SourcePath).SameAs(NormalizePath(sourcePath)));
-                    if (existingRecord != null)
-                    {
+                    if (existingRecord is { IsUnmanaged: false })
                         records.Add(existingRecord);
-                        continue;
-                    }
 
-                    records.Add(new DeployedModelRecord
-                    {
-                        ModelName = modelName,
-                        SourcePath = sourcePath,
-                        IsUnmanaged = true,
-                        DeployedAtUtc = DateTime.UtcNow
-                    });
                     continue;
                 }
 
@@ -178,6 +183,9 @@ namespace FODevManager.Services
 
             return null;
         }
+
+        private static string GetDeploymentSourcePath(ProfileEnvironmentModel model)
+            => model.ModelType == ModelType.Source ? model.MetadataFolder : model.CompiledModelFolder;
 
         private void SaveRecords(IReadOnlyCollection<DeployedModelRecord> records)
         {

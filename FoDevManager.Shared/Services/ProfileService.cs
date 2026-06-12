@@ -26,9 +26,10 @@ namespace FODevManager.Services
         private readonly ModelDeploymentService _modelDeploymentService;
         private readonly DeployablePackageService _deployablePackageService;
         private readonly ModelVersionService _modelVersionService;
+        private readonly IDeploymentLedgerService _deploymentLedgerService;
         private readonly ProfilesContainer _profilesContainer;
 
-        public ProfileService(AppConfig config, FileService fileService, VisualStudioSolutionService solutionService, ModelDeploymentService modelDeploymentService, DeployablePackageService deployablePackageService, ModelVersionService modelVersionService, ProfilesContainer profilesContainer)
+        public ProfileService(AppConfig config, FileService fileService, VisualStudioSolutionService solutionService, ModelDeploymentService modelDeploymentService, DeployablePackageService deployablePackageService, ModelVersionService modelVersionService, ProfilesContainer profilesContainer, IDeploymentLedgerService deploymentLedgerService)
         {
             _defaultSourceDirectory = config.DefaultSourceDirectory;
             _deploymentBasePath = config.DeploymentBasePath;
@@ -39,6 +40,7 @@ namespace FODevManager.Services
             _modelDeploymentService = modelDeploymentService;
             _deployablePackageService = deployablePackageService;
             _modelVersionService = modelVersionService;
+            _deploymentLedgerService = deploymentLedgerService;
             _profilesContainer = profilesContainer;
             FileHelper.EnsureDirectoryExists(_defaultSourceDirectory);
             
@@ -1794,13 +1796,15 @@ namespace FODevManager.Services
        
         public void UpdateDeploymentStatus(string profileName)
         {
+            _deploymentLedgerService.SelfHeal();
+
             var profile = LoadProfile(profileName);
 
             var updated = false;
 
             foreach (var model in profile.AllModels)
             {
-                var shouldBeMarkedAsDeployed = _modelDeploymentService.IsModelActuallyDeployed(model);
+                var shouldBeMarkedAsDeployed = _deploymentLedgerService.IsModelDeployed(model);
                 if (model.IsDeployed != shouldBeMarkedAsDeployed)
                 {
                     model.IsDeployed = shouldBeMarkedAsDeployed;

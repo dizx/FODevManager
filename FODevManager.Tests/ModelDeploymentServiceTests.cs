@@ -247,6 +247,69 @@ namespace FODevManager.Tests
         }
 
         [Test]
+        public void DeployModel_Should_Return_False_When_Link_Creation_Fails()
+        {
+            var profileName = "DeployProfile";
+            var modelName = "CarModel";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var sourcePath = Path.Combine(_baseDir, "Source", "Metadata", modelName);
+            Directory.CreateDirectory(sourcePath);
+
+            SaveProfile(new ProfileModel
+            {
+                ProfileName = profileName,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelType = ModelType.Source,
+                        MetadataFolder = sourcePath
+                    }
+                ]
+            });
+
+            var service = CreateModelDeploymentService(deploymentBasePath, out var linkService);
+            linkService.CreateException = new UnauthorizedAccessException("A required privilege is not held by the client");
+
+            var deployed = service.DeployModel(profileName, modelName);
+
+            Assert.That(deployed, Is.False);
+        }
+
+        [Test]
+        public void DeployAllUndeployedModels_Should_Return_False_When_Link_Creation_Fails()
+        {
+            var profileName = "DeployProfile";
+            var modelName = "CarModel";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var sourcePath = Path.Combine(_baseDir, "Source", "Metadata", modelName);
+            Directory.CreateDirectory(sourcePath);
+
+            SaveProfile(new ProfileModel
+            {
+                ProfileName = profileName,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelType = ModelType.Source,
+                        MetadataFolder = sourcePath
+                    }
+                ]
+            });
+
+            var service = CreateModelDeploymentService(deploymentBasePath, out var linkService);
+            linkService.CreateException = new UnauthorizedAccessException("A required privilege is not held by the client");
+
+            var deployed = service.DeployAllUndeployedModels(profileName);
+
+            Assert.That(deployed, Is.False);
+            Assert.That(LoadProfile(profileName).AllModels.Single().IsDeployed, Is.False);
+        }
+
+        [Test]
         public void DeployModel_Should_Block_When_Ledger_Has_Different_Source_Path()
         {
             var profileName = "CurrentProfile";
@@ -419,7 +482,7 @@ namespace FODevManager.Tests
         }
 
         [Test]
-        public void DeploymentLedger_Should_SelfHeal_Unmatched_Deployment_As_Unmanaged()
+        public void DeploymentLedger_Should_Ignore_Unmatched_Aos_Deployment_Folders()
         {
             var modelName = "CarModel";
             var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
@@ -434,10 +497,32 @@ namespace FODevManager.Tests
 
             ledger.SelfHeal();
 
-            var record = ledger.LoadRecords().Single();
-            Assert.That(record.ModelName, Is.EqualTo(modelName));
-            Assert.That(record.IsUnmanaged, Is.True);
-            Assert.That(record.SourcePath, Is.EqualTo(DeploymentLedgerService.NormalizePath(sourcePath)));
+            Assert.That(ledger.LoadRecords(), Is.Empty);
+        }
+
+        [Test]
+        public void DeploymentLedger_Should_Remove_Stale_Unmatched_Unmanaged_Records()
+        {
+            var modelName = "CarModel";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var sourcePath = Path.Combine(_baseDir, "External", modelName);
+            Directory.CreateDirectory(sourcePath);
+
+            var linkService = new FakeDirectoryLinkService();
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, modelName), sourcePath);
+
+            var config = CreateAppConfig(deploymentBasePath);
+            var ledger = new DeploymentLedgerService(config, new FileService(config), linkService);
+            ledger.RecordDeployment(new DeployedModelRecord
+            {
+                ModelName = modelName,
+                SourcePath = sourcePath,
+                IsUnmanaged = true
+            });
+
+            ledger.SelfHeal();
+
+            Assert.That(ledger.LoadRecords(), Is.Empty);
         }
 
         [Test]
@@ -530,11 +615,16 @@ namespace FODevManager.Tests
 
             public Action? AfterCreate { get; set; }
 
+            public Exception? CreateException { get; set; }
+
             public bool Exists(string path)
                 => _links.ContainsKey(Normalize(path)) || Directory.Exists(path);
 
             public void CreateSymbolicLink(string linkPath, string targetPath)
             {
+                if (CreateException != null)
+                    throw CreateException;
+
                 Directory.CreateDirectory(linkPath);
                 _links[Normalize(linkPath)] = Path.GetFullPath(targetPath);
                 AfterCreate?.Invoke();
@@ -565,6 +655,9 @@ namespace FODevManager.Tests
                 blocker = null;
                 return true;
             }
+
+            public bool IsModelDeployed(ProfileEnvironmentModel model)
+                => false;
 
             public void RecordDeployment(DeployedModelRecord record)
                 => throw new IOException("Ledger write failed");

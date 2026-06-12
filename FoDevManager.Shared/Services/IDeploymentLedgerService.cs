@@ -1,4 +1,5 @@
 using FODevManager.Shared.Models;
+using FODevManager.Models;
 
 namespace FODevManager.Services
 {
@@ -7,6 +8,8 @@ namespace FODevManager.Services
         IReadOnlyList<DeployedModelRecord> LoadRecords();
 
         bool CanDeploy(string profileName, string modelName, string sourcePath, out DeployedModelRecord? blocker);
+
+        bool IsModelDeployed(ProfileEnvironmentModel model);
 
         void RecordDeployment(DeployedModelRecord record);
 

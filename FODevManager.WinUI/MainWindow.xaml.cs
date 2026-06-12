@@ -295,6 +295,8 @@ namespace FODevManager.WinUI
 
         private ProfileLoadResult? BuildProfileLoadResult(string profileName)
         {
+            _profileService.UpdateDeploymentStatus(profileName);
+
             var profile = _profileService.LoadProfile(profileName);
             if (profile == null)
                 return null;
@@ -1421,7 +1423,8 @@ namespace FODevManager.WinUI
 
         private async Task<bool> DeployModel(string profileName, string modelName)
         {
-            return await RunOperationAsync(() => _deploymentService.DeployModel(profileName, modelName), "Deploy model");
+            var (ok, success) = await BusyOps.TrySyncAsAsync(() => _deploymentService.DeployModel(profileName, modelName), "Deploy model");
+            return ok && success;
         }
 
         private async Task<bool> UnDeployModel(string profileName, string modelName)
