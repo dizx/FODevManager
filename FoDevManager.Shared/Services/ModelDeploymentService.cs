@@ -691,6 +691,11 @@ namespace FODevManager.Services
             var projectFilePath = string.Empty;
             var metaDataFolder = string.Empty;
             var compiledModelFolder = string.Empty;
+            var profile = _fileService.LoadProfile(profileName);
+
+            if (!modelName.IsNullOrEmpty() && TryBlockDuplicateModel(profile, modelName))
+                return;
+
             var modelRootPath = FileHelper.GetModelRootFolder(environmentPath);
             if (!Directory.Exists(modelRootPath))
             {
@@ -708,6 +713,9 @@ namespace FODevManager.Services
                         throw new Exception("❌ Unable to find model name from Metadata folder");
                     }
                 }
+
+                if (TryBlockDuplicateModel(profile, modelName))
+                    return;
 
                 projectFilePath = GetProjectFilePath(modelName, modelRootPath);
                 if (!File.Exists(projectFilePath))
@@ -730,14 +738,6 @@ namespace FODevManager.Services
                 compiledModelFolder = environmentPath;
                 projectFilePath = string.Empty;
                 metaDataFolder = string.Empty;
-            }
-
-            var profile = _fileService.LoadProfile(profileName);
-
-            if (profile.AllModels.Any(e => e.ModelName.SameAs(modelName)))
-            {
-                MessageLogger.Warning($"⚠️ Model '{modelName}' is already in the profile '{profileName}'. Skipping add");
-                return;
             }
 
             string deploymentLinkPath = Path.Combine(_deploymentBasePath, modelName);
@@ -766,6 +766,23 @@ namespace FODevManager.Services
             {
                 MessageLogger.Info($"✅ Compiled Model '{modelName}' added to profile");
             }
+        }
+
+        public static bool HasModelName(ProfileModel profile, string modelName)
+        {
+            if (profile == null || modelName.IsNullOrEmpty())
+                return false;
+
+            return profile.AllModels.Any(model => model.ModelName.SameAs(modelName));
+        }
+
+        public static bool TryBlockDuplicateModel(ProfileModel profile, string modelName)
+        {
+            if (!HasModelName(profile, modelName))
+                return false;
+
+            MessageLogger.Error($"❌ Model '{modelName}' already exists in profile '{profile.ProfileName}'. Skipping add");
+            return true;
         }
 
         private string GetProjectFilePath(string modelName, string projectFilePath)

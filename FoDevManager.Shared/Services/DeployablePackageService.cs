@@ -90,8 +90,15 @@ namespace FODevManager.Services
                 return false;
             }
 
+            var packageReferences = packageContext.Packages
+                .Where(packageReference => !HasNonNugetModelName(profile, packageReference.Id))
+                .ToList();
+
+            if (packageReferences.Count == 0)
+                return SyncRepositoryNugetModels(profile, repository, []);
+
             var extractedPackages = new List<PackageReference>();
-            foreach (var packageReference in packageContext.Packages)
+            foreach (var packageReference in packageReferences)
             {
                 if (EnsurePackageExtracted(packageReference, packageContext))
                     extractedPackages.Add(packageReference);
@@ -422,6 +429,22 @@ namespace FODevManager.Services
             }
 
             repository.Models ??= new List<ProfileEnvironmentModel>();
+
+            var blockedDescriptors = descriptors
+                .Where(descriptor => HasNonNugetModelName(profile, descriptor.ModelName))
+                .ToList();
+
+            foreach (var blockedDescriptor in blockedDescriptors)
+            {
+                ModelDeploymentService.TryBlockDuplicateModel(profile, blockedDescriptor.ModelName);
+            }
+
+            if (blockedDescriptors.Count > 0)
+            {
+                descriptors = descriptors
+                    .Where(descriptor => !blockedDescriptors.Contains(descriptor))
+                    .ToList();
+            }
 
             var existingNugetModels = repository.Models
                 .Where(model => model.ModelType == ModelType.CompiledNuget)
@@ -1537,6 +1560,7 @@ namespace FODevManager.Services
 
             var referencedPackages = isvPackageReferences
                 .Where(packageReference => moduleReferences.Any(moduleReference => moduleReference.SameAs(packageReference.Id)))
+                .Where(packageReference => !HasNonNugetModelName(profile, packageReference.Id))
                 .ToList();
 
             if (referencedPackages.Count == 0)
@@ -1691,6 +1715,16 @@ namespace FODevManager.Services
             return candidate.PackageId.SameAs(packageReference.Id)
                 || candidate.ModelName.SameAs(packageReference.Id)
                 || GetUnversionedModelName(candidate).SameAs(packageReference.Id);
+        }
+
+        private static bool HasNonNugetModelName(ProfileModel profile, string modelName)
+        {
+            if (profile == null || modelName.IsNullOrEmpty())
+                return false;
+
+            return profile.AllModels.Any(model =>
+                model.ModelType != ModelType.CompiledNuget
+                && model.ModelName.SameAs(modelName));
         }
 
         private static string GetUnversionedModelName(ProfileEnvironmentModel model)
