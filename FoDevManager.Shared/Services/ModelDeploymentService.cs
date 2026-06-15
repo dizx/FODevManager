@@ -165,7 +165,7 @@ namespace FODevManager.Services
             }
         }
 
-        public bool DeployOutdatedDeployedModels(string profileName)
+        public bool RedeployModelsWithChangedSource(string profileName)
         {
             var profile = _fileService.LoadProfile(profileName);
             var outdatedModels = profile.AllModels
@@ -185,7 +185,7 @@ namespace FODevManager.Services
                 {
                     MessageLogger.Info($"🔄 Updating deployment for model: {model.ModelName}..");
 
-                    if (DeploySingleModel(profile, model.ModelName))
+                    if (DeploySingleModel(profile, model.ModelName, forceReplaceExistingDeployment: true))
                     {
                         model.IsDeployed = true;
                         anyDeployed = true;
@@ -596,12 +596,12 @@ namespace FODevManager.Services
         private bool CanAutomaticallyReplaceDeploymentPath(ProfileEnvironmentModel model)
         {
             var deploymentLinkPath = Path.Combine(_deploymentBasePath, model.ModelName);
-            if (!Directory.Exists(deploymentLinkPath))
+            if (!_directoryLinkService.Exists(deploymentLinkPath))
                 return true;
 
             try
             {
-                return File.GetAttributes(deploymentLinkPath).HasFlag(FileAttributes.ReparsePoint);
+                return _directoryLinkService.ResolveLinkTarget(deploymentLinkPath) != null;
             }
             catch (Exception exception)
             {

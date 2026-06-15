@@ -1620,7 +1620,7 @@ namespace FODevManager.Services
                 return false;
 
             _fileService.SaveProfile(profile, updateExternal: true);
-            _modelDeploymentService.DeployOutdatedDeployedModels(profileName);
+            _modelDeploymentService.RedeployModelsWithChangedSource(profileName);
             return true;
         }
 
@@ -2032,7 +2032,7 @@ namespace FODevManager.Services
                         return;
 
                     _fileService.SaveProfile(profile, updateExternal: true);
-                    _modelDeploymentService.DeployOutdatedDeployedModels(profileName);
+                    _modelDeploymentService.RedeployModelsWithChangedSource(profileName);
                     MessageLogger.Info($"Model properties saved: {targetEnvironment.ModelName}");
                     return;
                 }

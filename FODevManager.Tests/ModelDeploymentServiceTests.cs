@@ -310,6 +310,58 @@ namespace FODevManager.Tests
         }
 
         [Test]
+        public void DeployOutdatedDeployedModels_Should_Replace_Old_CompiledNuget_Source_Path()
+        {
+            var profileName = "Motus";
+            var modelName = "BluestarMotus";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var oldPackagePath = Path.Combine(_baseDir, "DeployablePackages", "BluestarMotus-7.6.18");
+            var newPackagePath = Path.Combine(_baseDir, "DeployablePackages", "BluestarMotus-7.7.18");
+            Directory.CreateDirectory(oldPackagePath);
+            Directory.CreateDirectory(newPackagePath);
+
+            SaveProfile(new ProfileModel
+            {
+                ProfileName = profileName,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelType = ModelType.CompiledNuget,
+                        CompiledModelFolder = newPackagePath,
+                        PackageId = modelName,
+                        PackageVersion = "7.7.18",
+                        IsDeployed = true
+                    }
+                ]
+            });
+
+            var service = CreateModelDeploymentService(deploymentBasePath, out var linkService);
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, modelName), oldPackagePath);
+
+            var config = CreateAppConfig(deploymentBasePath);
+            var ledger = new DeploymentLedgerService(config, new FileService(config));
+            ledger.RecordDeployment(new DeployedModelRecord
+            {
+                ModelName = modelName,
+                ProfileName = "Motus-release",
+                ModelType = ModelType.CompiledNuget,
+                SourcePath = oldPackagePath,
+                PackageId = modelName,
+                PackageVersion = "7.6.18"
+            });
+
+            var deployed = service.RedeployModelsWithChangedSource(profileName);
+
+            Assert.That(deployed, Is.True);
+            Assert.That(linkService.ResolveLinkTarget(Path.Combine(deploymentBasePath, modelName)), Is.EqualTo(newPackagePath));
+            var record = ledger.LoadRecords().Single(record => record.ModelName == modelName);
+            Assert.That(record.SourcePath, Is.EqualTo(DeploymentLedgerService.NormalizePath(newPackagePath)));
+            Assert.That(record.PackageVersion, Is.EqualTo("7.7.18"));
+        }
+
+        [Test]
         public void DeployModel_Should_Block_When_Ledger_Has_Different_Source_Path()
         {
             var profileName = "CurrentProfile";
