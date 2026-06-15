@@ -4,6 +4,7 @@ using FODevManager.Shared.Utils;
 using FODevManager.Utils;
 using Microsoft.Win32;
 using System.Diagnostics;
+using System.Xml;
 using System.Xml.Linq;
 
 namespace FODevManager.Services
@@ -89,8 +90,15 @@ namespace FODevManager.Services
                 return false;
             }
 
+            var packageReferences = packageContext.Packages
+                .Where(packageReference => !HasNonNugetModelName(profile, packageReference.Id))
+                .ToList();
+
+            if (packageReferences.Count == 0)
+                return SyncRepositoryNugetModels(profile, repository, []);
+
             var extractedPackages = new List<PackageReference>();
-            foreach (var packageReference in packageContext.Packages)
+            foreach (var packageReference in packageReferences)
             {
                 if (EnsurePackageExtracted(packageReference, packageContext))
                     extractedPackages.Add(packageReference);
@@ -422,6 +430,22 @@ namespace FODevManager.Services
 
             repository.Models ??= new List<ProfileEnvironmentModel>();
 
+            var blockedDescriptors = descriptors
+                .Where(descriptor => HasNonNugetModelName(profile, descriptor.ModelName))
+                .ToList();
+
+            foreach (var blockedDescriptor in blockedDescriptors)
+            {
+                ModelDeploymentService.TryBlockDuplicateModel(profile, blockedDescriptor.ModelName);
+            }
+
+            if (blockedDescriptors.Count > 0)
+            {
+                descriptors = descriptors
+                    .Where(descriptor => !blockedDescriptors.Contains(descriptor))
+                    .ToList();
+            }
+
             var existingNugetModels = repository.Models
                 .Where(model => model.ModelType == ModelType.CompiledNuget)
                 .ToList();
@@ -670,21 +694,22 @@ namespace FODevManager.Services
                 return false;
             }
 
-            var processStartInfo = new ProcessStartInfo
-            {
-                FileName = nugetExecutable,
-                Arguments = $"install \"{packageReference.Id}\" -Version \"{packageReference.Version}\" -OutputDirectory \"{downloadedRoot}\" -ConfigFile \"{context.NugetConfigPath}\" -NonInteractive",
-                WorkingDirectory = context.RepositoryRoot,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            ApplyAzureArtifactsCredentials(processStartInfo, context.NugetConfigPath);
-
             try
             {
+                using var nugetConfig = CreateNugetConfigScope(context.NugetConfigPath);
+                var processStartInfo = new ProcessStartInfo
+                {
+                    FileName = nugetExecutable,
+                    Arguments = $"install \"{packageReference.Id}\" -Version \"{packageReference.Version}\" -OutputDirectory \"{downloadedRoot}\" -ConfigFile \"{nugetConfig.ConfigPath}\" -NonInteractive",
+                    WorkingDirectory = context.RepositoryRoot,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                ApplyAzureArtifactsCredentials(processStartInfo, context.NugetConfigPath);
+
                 RetryHelper.RetryOnException(
                     operation: () =>
                     {
@@ -1016,6 +1041,122 @@ namespace FODevManager.Services
                 $"{{\"endpointCredentials\":[{endpointCredentials}]}}";
         }
 
+        private NugetConfigScope CreateNugetConfigScope(string nugetConfigPath)
+        {
+            return CreateCredentialedNugetConfig(nugetConfigPath, out var credentialedNugetConfigPath)
+                ? new NugetConfigScope(credentialedNugetConfigPath, deleteOnDispose: true)
+                : new NugetConfigScope(nugetConfigPath, deleteOnDispose: false);
+        }
+
+        private bool CreateCredentialedNugetConfig(string nugetConfigPath, out string credentialedNugetConfigPath)
+        {
+            credentialedNugetConfigPath = nugetConfigPath;
+
+            var secret = ResolveAzureArtifactsSecret();
+            if (secret.IsNullOrEmpty() || nugetConfigPath.IsNullOrEmpty() || !File.Exists(nugetConfigPath))
+                return false;
+
+            try
+            {
+                var document = XDocument.Load(nugetConfigPath);
+                var sourceCredentials = ResolveAzureArtifactsSourceCredentials(document);
+                if (sourceCredentials.Count == 0)
+                    return false;
+
+                var configuration = document.Element("configuration");
+                if (configuration == null)
+                    return false;
+
+                var credentialsElement = configuration.Element("packageSourceCredentials");
+                if (credentialsElement == null)
+                {
+                    credentialsElement = new XElement("packageSourceCredentials");
+                    configuration.Add(credentialsElement);
+                }
+
+                var username = _config.AzureArtifactsUsername.IsNullOrEmpty() ? "FODevManager" : _config.AzureArtifactsUsername;
+                foreach (var source in sourceCredentials)
+                {
+                    var sourceElementName = XmlConvert.EncodeName(source.Key);
+                    credentialsElement.Elements(sourceElementName).Remove();
+                    credentialsElement.Add(new XElement(sourceElementName,
+                        new XElement("add",
+                            new XAttribute("key", "Username"),
+                            new XAttribute("value", username)),
+                        new XElement("add",
+                            new XAttribute("key", "ClearTextPassword"),
+                            new XAttribute("value", secret))));
+                }
+
+                var tempDirectory = Path.Combine(Path.GetTempPath(), "FODevManager", "NuGet", Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(tempDirectory);
+                credentialedNugetConfigPath = Path.Combine(tempDirectory, "nuget.config");
+                document.Save(credentialedNugetConfigPath);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Warning($"⚠️ Could not create credentialed NuGet config for '{nugetConfigPath}': {exception.Message}");
+                credentialedNugetConfigPath = nugetConfigPath;
+                return false;
+            }
+        }
+
+        private static Dictionary<string, string> ResolveAzureArtifactsSourceCredentials(XDocument document)
+        {
+            return document
+                .Descendants("packageSources")
+                .Elements("add")
+                .Select(element => new
+                {
+                    Key = element.Attribute("key")?.Value?.Trim() ?? string.Empty,
+                    Value = element.Attribute("value")?.Value?.Trim() ?? string.Empty
+                })
+                .Where(source => !source.Key.IsNullOrEmpty() && IsAzureArtifactsEndpoint(source.Value))
+                .GroupBy(source => source.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First().Value, StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static bool IsAzureArtifactsEndpoint(string value)
+        {
+            return !value.IsNullOrEmpty()
+                && (value.Contains("pkgs.dev.azure.com", StringComparison.OrdinalIgnoreCase)
+                    || value.Contains("visualstudio.com", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private sealed class NugetConfigScope : IDisposable
+        {
+            private readonly bool _deleteOnDispose;
+
+            public NugetConfigScope(string configPath, bool deleteOnDispose)
+            {
+                ConfigPath = configPath;
+                _deleteOnDispose = deleteOnDispose;
+            }
+
+            public string ConfigPath { get; }
+
+            public void Dispose()
+            {
+                if (!_deleteOnDispose || ConfigPath.IsNullOrEmpty())
+                    return;
+
+                try
+                {
+                    if (File.Exists(ConfigPath))
+                        File.Delete(ConfigPath);
+
+                    var directory = Path.GetDirectoryName(ConfigPath);
+                    if (!directory.IsNullOrEmpty() && Directory.Exists(directory))
+                        Directory.Delete(directory, recursive: true);
+                }
+                catch (Exception exception)
+                {
+                    MessageLogger.LogOnly($"Could not delete temporary NuGet config '{ConfigPath}': {exception.Message}");
+                }
+            }
+        }
+
         private bool ValidatePackageSettings(RepositoryModel repository, PackageContext context)
         {
             var azureFeedEndpoints = LoadAzureArtifactsFeedEndpoints(context.NugetConfigPath);
@@ -1122,10 +1263,11 @@ namespace FODevManager.Services
                 return false;
             }
 
+            using var nugetConfig = CreateNugetConfigScope(nugetConfigPath);
             var processStartInfo = new ProcessStartInfo
             {
                 FileName = nugetExecutable,
-                Arguments = $"list \"{packageId}\" -AllVersions -Prerelease -ConfigFile \"{nugetConfigPath}\" -NonInteractive",
+                Arguments = $"list \"{packageId}\" -AllVersions -Prerelease -ConfigFile \"{nugetConfig.ConfigPath}\" -NonInteractive",
                 WorkingDirectory = workingDirectory.IsNullOrEmpty() ? Directory.GetCurrentDirectory() : workingDirectory,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -1137,6 +1279,9 @@ namespace FODevManager.Services
 
             if (!RunProcess(processStartInfo, out var output))
             {
+                if (IsNuGetNoPackagesFoundOutput(output))
+                    return true;
+
                 errorMessage = output;
                 return false;
             }
@@ -1161,6 +1306,15 @@ namespace FODevManager.Services
                 .ToList();
 
             return true;
+        }
+
+        private static bool IsNuGetNoPackagesFoundOutput(string output)
+        {
+            return output
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(line => line.Trim())
+                .Where(line => !line.StartsWith("WARNING", StringComparison.OrdinalIgnoreCase))
+                .Any(line => line.Equals("No packages found.", StringComparison.OrdinalIgnoreCase));
         }
 
         private bool TryEnsureFoBuildPackages(string buildPackagesRoot, string nugetConfigPath, out Dictionary<string, string> packageRoots)
@@ -1199,21 +1353,22 @@ namespace FODevManager.Services
             MessageLogger.LogOnly($"Using nuget executable: {nugetExecutable}");
             MessageLogger.LogOnly($"Using nuget.config: {nugetConfigPath}");
 
-            var processStartInfo = new ProcessStartInfo
-            {
-                FileName = nugetExecutable,
-                Arguments = $"install \"{packageId}\" -OutputDirectory \"{buildPackagesRoot}\" -ConfigFile \"{nugetConfigPath}\" -NonInteractive",
-                WorkingDirectory = buildPackagesRoot,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            ApplyAzureArtifactsCredentials(processStartInfo, nugetConfigPath);
-
             try
             {
+                using var nugetConfig = CreateNugetConfigScope(nugetConfigPath);
+                var processStartInfo = new ProcessStartInfo
+                {
+                    FileName = nugetExecutable,
+                    Arguments = $"install \"{packageId}\" -OutputDirectory \"{buildPackagesRoot}\" -ConfigFile \"{nugetConfig.ConfigPath}\" -NonInteractive",
+                    WorkingDirectory = buildPackagesRoot,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                ApplyAzureArtifactsCredentials(processStartInfo, nugetConfigPath);
+
                 RetryHelper.RetryOnException(
                     operation: () =>
                     {
@@ -1405,6 +1560,7 @@ namespace FODevManager.Services
 
             var referencedPackages = isvPackageReferences
                 .Where(packageReference => moduleReferences.Any(moduleReference => moduleReference.SameAs(packageReference.Id)))
+                .Where(packageReference => !HasNonNugetModelName(profile, packageReference.Id))
                 .ToList();
 
             if (referencedPackages.Count == 0)
@@ -1561,6 +1717,16 @@ namespace FODevManager.Services
                 || GetUnversionedModelName(candidate).SameAs(packageReference.Id);
         }
 
+        private static bool HasNonNugetModelName(ProfileModel profile, string modelName)
+        {
+            if (profile == null || modelName.IsNullOrEmpty())
+                return false;
+
+            return profile.AllModels.Any(model =>
+                model.ModelType != ModelType.CompiledNuget
+                && model.ModelName.SameAs(modelName));
+        }
+
         private static string GetUnversionedModelName(ProfileEnvironmentModel model)
         {
             var modelName = model.ModelName ?? string.Empty;
@@ -1586,13 +1752,7 @@ namespace FODevManager.Services
                 referenceFolders.Add(referenceFolder);
         }
 
-        private bool RunMsBuild(
-            string solutionFilePath,
-            string sourceProjectFilePath,
-            string modelName,
-            MsBuildContext buildContext,
-            string buildOutputRoot,
-            string runRoot)
+        private bool RunMsBuild(string solutionFilePath, string sourceProjectFilePath, string modelName, MsBuildContext buildContext, string buildOutputRoot, string runRoot)
         {
             var msbuildExecutable = ResolveMsBuildExecutable();
             if (msbuildExecutable.IsNullOrEmpty())
@@ -1639,11 +1799,7 @@ namespace FODevManager.Services
             return true;
         }
 
-        private static bool PrepareProjectReferenceAssemblies(
-            string msbuildExecutable,
-            string sourceProjectFilePath,
-            string buildOutputRoot,
-            string modelName)
+        private static bool PrepareProjectReferenceAssemblies(string msbuildExecutable, string sourceProjectFilePath, string buildOutputRoot, string modelName)
         {
             var projectReferences = ResolveProjectReferencePaths(sourceProjectFilePath);
             if (projectReferences.Count == 0)

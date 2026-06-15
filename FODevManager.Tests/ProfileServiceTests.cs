@@ -1,5 +1,6 @@
 using FODevManager.Services;
 using FODevManager.Models;
+using FODevManager.Shared.Models;
 using FODevManager.Utils;
 using System;
 using System.IO;
@@ -81,24 +82,234 @@ namespace FODevManager.Tests
             Assert.That(savedProfile.DatabaseName, Is.EqualTo("RepoDb"));
         }
 
-        private ProfileService CreateProfileService()
+        [Test]
+        public void SwitchProfile_Should_Replace_Different_Source_Deployment_And_Update_Ledger()
         {
-            var config = new AppConfig
+            var service = CreateProfileService(out var linkService);
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var firstSourcePath = Path.Combine(_baseDir, "SourceA", "Metadata", "CarModel");
+            var secondSourcePath = Path.Combine(_baseDir, "SourceB", "Metadata", "CarModel");
+            Directory.CreateDirectory(firstSourcePath);
+            Directory.CreateDirectory(secondSourcePath);
+
+            var oldProfile = new ProfileModel
             {
-                ProfileStoragePath = Path.Combine(_baseDir, "Profiles"),
-                DefaultSourceDirectory = Path.Combine(_baseDir, "Source"),
-                DeploymentBasePath = Path.Combine(_baseDir, "Deployment"),
-                DeployablePackages = string.Empty,
-                TaskUrl = string.Empty,
-                ModelIdBegin = 1,
-                ModelIdEnd = 999
+                ProfileName = "OldProfile",
+                IsActive = true
             };
+
+            var newProfile = new ProfileModel
+            {
+                ProfileName = "NewProfile",
+                IsActive = false,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = "CarModel",
+                        ModelType = ModelType.Source,
+                        MetadataFolder = secondSourcePath
+                    }
+                ]
+            };
+
+            var config = CreateAppConfig();
+            var fileService = new FileService(config);
+            fileService.SaveProfile(oldProfile, skipExistCheck: true);
+            fileService.SaveProfile(newProfile, skipExistCheck: true);
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, "CarModel"), firstSourcePath);
+
+            var ledger = new DeploymentLedgerService(config, fileService);
+            ledger.RecordDeployment(new DeployedModelRecord
+            {
+                ModelName = "CarModel",
+                ProfileName = "ThirdProfile",
+                ModelType = ModelType.Source,
+                SourcePath = firstSourcePath
+            });
+
+            var switched = service.SwitchProfile("NewProfile");
+
+            Assert.That(switched, Is.True);
+            Assert.That(linkService.ResolveLinkTarget(Path.Combine(deploymentBasePath, "CarModel")), Is.EqualTo(secondSourcePath));
+            Assert.That(ledger.LoadRecords().Single().ProfileName, Is.EqualTo("NewProfile"));
+            Assert.That(ledger.LoadRecords().Single().SourcePath, Is.EqualTo(DeploymentLedgerService.NormalizePath(secondSourcePath)));
+        }
+
+        [Test]
+        public void SwitchProfile_Should_Remove_Managed_Deployments_From_NonActive_Profiles()
+        {
+            var service = CreateProfileService(out var linkService);
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var activeSourcePath = Path.Combine(_baseDir, "SourceA", "Metadata", "ActiveModel");
+            var otherSourcePath = Path.Combine(_baseDir, "SourceB", "Metadata", "OtherModel");
+            var newSourcePath = Path.Combine(_baseDir, "SourceC", "Metadata", "NewModel");
+            Directory.CreateDirectory(activeSourcePath);
+            Directory.CreateDirectory(otherSourcePath);
+            Directory.CreateDirectory(newSourcePath);
+
+            var activeProfile = new ProfileModel
+            {
+                ProfileName = "ActiveProfile",
+                IsActive = true,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = "ActiveModel",
+                        ModelType = ModelType.Source,
+                        MetadataFolder = activeSourcePath,
+                        IsDeployed = true
+                    }
+                ]
+            };
+
+            var otherProfile = new ProfileModel
+            {
+                ProfileName = "OtherProfile",
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = "OtherModel",
+                        ModelType = ModelType.Source,
+                        MetadataFolder = otherSourcePath,
+                        IsDeployed = true
+                    }
+                ]
+            };
+
+            var newProfile = new ProfileModel
+            {
+                ProfileName = "NewProfile",
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = "NewModel",
+                        ModelType = ModelType.Source,
+                        MetadataFolder = newSourcePath
+                    }
+                ]
+            };
+
+            var config = CreateAppConfig();
+            var fileService = new FileService(config);
+            fileService.SaveProfile(activeProfile, skipExistCheck: true);
+            fileService.SaveProfile(otherProfile, skipExistCheck: true);
+            fileService.SaveProfile(newProfile, skipExistCheck: true);
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, "ActiveModel"), activeSourcePath);
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, "OtherModel"), otherSourcePath);
+
+            var ledger = new DeploymentLedgerService(config, fileService);
+            ledger.RecordDeployment(new DeployedModelRecord
+            {
+                ModelName = "ActiveModel",
+                ProfileName = "ActiveProfile",
+                ModelType = ModelType.Source,
+                SourcePath = activeSourcePath
+            });
+            ledger.RecordDeployment(new DeployedModelRecord
+            {
+                ModelName = "OtherModel",
+                ProfileName = "OtherProfile",
+                ModelType = ModelType.Source,
+                SourcePath = otherSourcePath
+            });
+
+            var switched = service.SwitchProfile("NewProfile");
+
+            Assert.That(switched, Is.True);
+            Assert.That(linkService.ResolveLinkTarget(Path.Combine(deploymentBasePath, "ActiveModel")), Is.Null);
+            Assert.That(linkService.ResolveLinkTarget(Path.Combine(deploymentBasePath, "OtherModel")), Is.Null);
+            Assert.That(linkService.ResolveLinkTarget(Path.Combine(deploymentBasePath, "NewModel")), Is.EqualTo(newSourcePath));
+            Assert.That(ledger.LoadRecords().Select(record => record.ModelName), Is.EquivalentTo(new[] { "NewModel" }));
+        }
+
+        [Test]
+        public void UpdateDeploymentStatus_Should_Use_Deployment_Ledger_Not_Filesystem_Link()
+        {
+            var service = CreateProfileService();
+            var profileName = "ProfileA";
+            var modelName = "CarModel";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var sourcePath = Path.Combine(_baseDir, "Source", "Metadata", modelName);
+            Directory.CreateDirectory(sourcePath);
+            Directory.CreateDirectory(Path.Combine(deploymentBasePath, modelName));
+
+            var profile = new ProfileModel
+            {
+                ProfileName = profileName,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelType = ModelType.Source,
+                        MetadataFolder = sourcePath,
+                        IsDeployed = true
+                    }
+                ]
+            };
+
+            var fileService = new FileService(CreateAppConfig());
+            fileService.SaveProfile(profile, skipExistCheck: true);
+
+            service.UpdateDeploymentStatus(profileName);
+
+            var savedProfile = fileService.LoadProfile(profileName);
+            Assert.That(savedProfile.AllModels.Single().IsDeployed, Is.False);
+        }
+
+        [Test]
+        public void UpdateDeploymentStatus_Should_SelfHeal_Existing_Known_Link_Before_Updating_Profile()
+        {
+            var service = CreateProfileService(out var linkService);
+            var profileName = "ProfileA";
+            var modelName = "CarModel";
+            var deploymentBasePath = Path.Combine(_baseDir, "Deployment");
+            var sourcePath = Path.Combine(_baseDir, "Source", "Metadata", modelName);
+            Directory.CreateDirectory(sourcePath);
+            linkService.CreateSymbolicLink(Path.Combine(deploymentBasePath, modelName), sourcePath);
+
+            var profile = new ProfileModel
+            {
+                ProfileName = profileName,
+                StandaloneModels =
+                [
+                    new ProfileEnvironmentModel
+                    {
+                        ModelName = modelName,
+                        ModelType = ModelType.Source,
+                        MetadataFolder = sourcePath,
+                        IsDeployed = false
+                    }
+                ]
+            };
+
+            var fileService = new FileService(CreateAppConfig());
+            fileService.SaveProfile(profile, skipExistCheck: true);
+
+            service.UpdateDeploymentStatus(profileName);
+
+            var savedProfile = fileService.LoadProfile(profileName);
+            Assert.That(savedProfile.AllModels.Single().IsDeployed, Is.True);
+        }
+
+        private ProfileService CreateProfileService()
+            => CreateProfileService(out _);
+
+        private ProfileService CreateProfileService(out FakeDirectoryLinkService linkService)
+        {
+            var config = CreateAppConfig();
 
             var fileService = new FileService(config);
             var solutionService = new VisualStudioSolutionService(config);
             var deployablePackageService = new DeployablePackageService(config);
             var modelVersionService = new ModelVersionService();
-            var modelDeploymentService = new ModelDeploymentService(config, fileService, deployablePackageService);
+            linkService = new FakeDirectoryLinkService();
+            var deploymentLedgerService = new DeploymentLedgerService(config, fileService, linkService);
+            var modelDeploymentService = new ModelDeploymentService(config, fileService, deployablePackageService, deploymentLedgerService, modelVersionService, linkService);
             var profilesContainer = new ProfilesContainer(fileService);
 
             return new ProfileService(
@@ -108,7 +319,23 @@ namespace FODevManager.Tests
                 modelDeploymentService,
                 deployablePackageService,
                 modelVersionService,
-                profilesContainer);
+                profilesContainer,
+                deploymentLedgerService);
+        }
+
+        private AppConfig CreateAppConfig()
+        {
+            return new AppConfig
+            {
+                ProfileStoragePath = Path.Combine(_baseDir, "Profiles"),
+                DefaultSourceDirectory = Path.Combine(_baseDir, "Source"),
+                DeploymentBasePath = Path.Combine(_baseDir, "Deployment"),
+                DeployablePackages = Path.Combine(_baseDir, "DeployablePackages"),
+                TaskUrl = string.Empty,
+                ModelIdBegin = 1,
+                ModelIdEnd = 999,
+                CheckUncommittedBeforeSwitch = false
+            };
         }
 
         private string CreateExportProfile(string profileName, string databaseName, string path)
@@ -125,6 +352,29 @@ namespace FODevManager.Tests
             var json = JsonSerializer.Serialize(exportProfile);
             File.WriteAllText(path, json);
             return path;
+        }
+
+        private sealed class FakeDirectoryLinkService : IDirectoryLinkService
+        {
+            private readonly Dictionary<string, string> _links = new(StringComparer.OrdinalIgnoreCase);
+
+            public bool Exists(string path)
+                => _links.ContainsKey(Normalize(path)) || Directory.Exists(path);
+
+            public void CreateSymbolicLink(string linkPath, string targetPath)
+            {
+                Directory.CreateDirectory(linkPath);
+                _links[Normalize(linkPath)] = Path.GetFullPath(targetPath);
+            }
+
+            public void Delete(string path, bool recursive = true)
+                => _links.Remove(Normalize(path));
+
+            public string? ResolveLinkTarget(string linkPath)
+                => _links.TryGetValue(Normalize(linkPath), out var targetPath) ? targetPath : null;
+
+            private static string Normalize(string path)
+                => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
     }
 }

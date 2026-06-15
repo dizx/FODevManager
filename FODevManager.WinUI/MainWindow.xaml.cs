@@ -295,6 +295,8 @@ namespace FODevManager.WinUI
 
         private ProfileLoadResult? BuildProfileLoadResult(string profileName)
         {
+            _profileService.UpdateDeploymentStatus(profileName);
+
             var profile = _profileService.LoadProfile(profileName);
             if (profile == null)
                 return null;
@@ -1267,7 +1269,7 @@ namespace FODevManager.WinUI
             if (!informationalVersion.IsNullOrEmpty())
                 return informationalVersion.Split('+')[0];
 
-            return Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.1.3";
+            return Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.1.7";
         }
 
         private static async Task<bool> RunOperationAsync(Action action, string operationName, bool shutdownServer = true)
@@ -1421,7 +1423,8 @@ namespace FODevManager.WinUI
 
         private async Task<bool> DeployModel(string profileName, string modelName)
         {
-            return await RunOperationAsync(() => _deploymentService.DeployModel(profileName, modelName), "Deploy model");
+            var (ok, success) = await BusyOps.TrySyncAsAsync(() => _deploymentService.DeployModel(profileName, modelName), "Deploy model");
+            return ok && success;
         }
 
         private async Task<bool> UnDeployModel(string profileName, string modelName)

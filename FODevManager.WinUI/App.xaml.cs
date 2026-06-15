@@ -157,6 +157,8 @@ namespace FODevManager.WinUI
             services.AddSingleton<FileService>();
             services.AddSingleton<ModelDeploymentService>();
             services.AddSingleton<DeployablePackageService>();
+            services.AddSingleton<IDirectoryLinkService, DirectoryLinkService>();
+            services.AddSingleton<IDeploymentLedgerService, DeploymentLedgerService>();
             services.AddSingleton<ModelVersionService>();
             services.AddSingleton<VisualStudioSolutionService>();
             services.AddSingleton<AppConfigWriter>();
