@@ -14,6 +14,20 @@ namespace FODevManager.WinUI.ViewModel
         public string ProfileName { get; set; }
 
         public string ModelName { get; set; } = string.Empty;
+        private bool _isSelected;
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (_isSelected == value)
+                    return;
+
+                _isSelected = value;
+                OnPropertyChanged(nameof(IsSelected));
+            }
+        }
+
         private string _versionText = string.Empty;
         public string VersionText
         {

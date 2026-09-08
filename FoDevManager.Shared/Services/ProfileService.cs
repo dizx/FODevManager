@@ -1640,7 +1640,12 @@ namespace FODevManager.Services
                 return false;
             }
 
-            var solutionFilePath = _solutionService.CreateBuildSolution(profile, model);
+            if (model.ModelType == ModelType.Source && !_deployablePackageService.ConvertSourceHintPathReferences(profile, model))
+                return false;
+
+            var solutionFilePath = model.ModelType == ModelType.Source
+                ? _solutionService.CreateBuildSolution(profile, model)
+                : string.Empty;
             return _deployablePackageService.BuildDeployableNugetPackage(profile, model, solutionFilePath);
         }
 

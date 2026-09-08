@@ -29,7 +29,7 @@ namespace FODevManager.Utils
             ["peri"] = ("-profile <ProfileName> -model <ModelName> peri <Task>", "Assigns and saves task metadata only; does not check out a branch"),
             ["solution-path"] = ("-profile <ProfileName> solution-path", "Shows the profile solution path"),
             ["solution-ensure"] = ("-profile <ProfileName> solution-ensure", "Creates or updates the profile solution"),
-            ["package-build"] = ("-profile <ProfileName> -model <ModelName> package-build", "Builds a local package only; never pushes or publishes it"),
+            ["package-build"] = ("-profile <ProfileName> -model <ModelName> package-build", "Builds source models and converts matching DLL hints to project references, or packages existing compiled models as NuGet; never pushes or publishes it"),
             ["repos"] = ("-profile <ProfileName> repos", "Lists repositories in the profile")
         };
 

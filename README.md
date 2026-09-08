@@ -76,6 +76,9 @@ Profiles are stored locally as JSON and can also be imported from repository art
 ### Package Build Workflow
 
 - Build source FO models into compiled NuGet artifacts
+- Automatically replace DLL `HintPath` references with `ProjectReference` entries when a unique matching C# project is found within the model repository/root
+- Rebuild referenced C# projects with the solution and include their runtime dependencies in the model package
+- Package existing compiled models without requiring a source project or compilation
 - Restore FO build packages and compiler packages through NuGet
 - Include standard FO references, compiled NuGet references, and model-specific binary dependencies
 - Generate package build solutions for source models
@@ -204,7 +207,7 @@ Model commands:
 | `-model "Name" git-status` | Checks whether the model is in a Git repository |
 | `-model "Name" git-open` | Opens the model repository remote URL |
 | `-model "Name" peri "Task1234"` | Saves task metadata without stashing or checking out a branch |
-| `-model "Name" package-build` | Builds a source model package locally; never publishes, regardless of configuration |
+| `-model "Name" package-build` | Rebuilds source models and their C# projects, or packages existing compiled models; always produces NuGet locally and never publishes |
 
 Examples:
 
@@ -219,6 +222,12 @@ fodev.exe -profile "DevProfile" -model "MyModel" package-build
 ```
 
 Legacy `-profile list`, `-profile import "file.json"`, and name-inferred `-model add "path"` remain supported. `git-check` is an alias for `git-status`; this checks repository membership, not a full working-tree status report.
+
+For source packaging, reference conversion is an automatic, persisted update to the `.rnrproj` during build preparation. Matching C# projects are discovered along the DLL hint path within the repository/model root; ambiguous matches fail instead of guessing, and vendor DLL references without a matching project remain file references. Repeated builds do not add duplicate project references. Generated package solutions include the required build configuration and referenced projects without rewriting the original solution.
+
+Source packaging requires new compiler output from the current build; it never falls back to an older deployed model after a failed or skipped compilation. Runtime dependencies are collected from the actual build, and reference-only assemblies are excluded from the final package. Already compiled models use their configured compiled folder, including its supporting libraries. Repackaging an installed `CompiledNuget` model is not supported; use the original package instead.
+
+On Windows, source builds temporarily map the build-package cache to an unused drive letter (Z through D). This keeps Microsoft FO compiler reference paths short even when Windows long paths are enabled. The cache is not moved, settings are unchanged, and the exact mapping is removed after compilation, including on build failure. Builds require an available drive letter. Abrupt process termination can leave a mapping until logoff; the build log identifies its letter and target so it can be checked before manual removal. This workaround shortens build-cache paths, not arbitrary source or artifact paths.
 
 The CLI loads optional `appsettings.json` and environment-specific JSON from its executable directory, then applies environment-variable overrides. It does not automatically read the WinUI application's settings. For example, set `$env:ProfileStoragePath` to select a separate profile store. Keep credentials in configuration or environment variables rather than command arguments.
 

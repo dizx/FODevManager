@@ -296,12 +296,94 @@ namespace FODevManager.Tests
             Assert.That(savedProfile.AllModels.Single().IsDeployed, Is.True);
         }
 
+        [TestCase(true)]
+        [TestCase(false)]
+        public void BuildDeployableNugetPackage_Should_Validate_Compiled_Payload_Without_Creating_A_Solution(bool repositoryBacked)
+        {
+            var service = CreateProfileService(out var linkService);
+            var model = new ProfileEnvironmentModel
+            {
+                ModelName = "CompiledModel",
+                ModelType = ModelType.Compiled,
+                ModelRootFolder = _baseDir,
+                CompiledModelFolder = Path.Combine(_baseDir, "missing-compiled-root"),
+                ProjectFilePath = string.Empty,
+                MetadataFolder = string.Empty
+            };
+            var profile = new ProfileModel { ProfileName = "CompiledProfile" };
+            if (repositoryBacked)
+                profile.Repositories = [new RepositoryModel { RepoRootFolder = _baseDir, Models = [model] }];
+            else
+                profile.StandaloneModels = [model];
+            var fileService = new FileService(CreateAppConfig());
+            fileService.SaveProfile(profile, skipExistCheck: true);
+            var originalProfile = JsonSerializer.Serialize(fileService.LoadProfile(profile.ProfileName));
+            var linkPath = Path.Combine(_baseDir, "Deployment", model.ModelName);
+            linkService.CreateSymbolicLink(linkPath, model.CompiledModelFolder);
+            var messages = new List<string>();
+            using var subscription = FODevManager.Messages.MessageBus.Subscribe(message => messages.Add(message.Content));
+
+            Assert.That(service.BuildDeployableNugetPackage(profile.ProfileName, model.ModelName), Is.False);
+
+            Assert.That(messages.Any(message => message.Contains("Compiled model folder is missing or invalid")), Is.True);
+            Assert.That(Directory.GetFiles(_baseDir, "*.sln", SearchOption.AllDirectories), Is.Empty);
+            Assert.That(JsonSerializer.Serialize(fileService.LoadProfile(profile.ProfileName)), Is.EqualTo(originalProfile));
+            Assert.That(linkService.ResolveLinkTarget(linkPath), Is.EqualTo(model.CompiledModelFolder));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void BuildDeployableNugetPackage_Should_Convert_References_Before_Creating_Build_Solution(bool ambiguous)
+        {
+            var config = CreateAppConfig();
+            config.DeployablePackages = string.Empty;
+            var service = CreateProfileService(out _, config);
+            var projectDirectory = Path.Combine(_baseDir, "Project", "PTSSSH");
+            var producerDirectory = Path.Combine(_baseDir, "Libs", "Peritus.Ssh");
+            Directory.CreateDirectory(projectDirectory);
+            Directory.CreateDirectory(producerDirectory);
+            var producerPath = Path.Combine(producerDirectory, "Peritus.Ssh.csproj");
+            File.WriteAllText(producerPath, "<Project Sdk='Microsoft.NET.Sdk'><PropertyGroup><TargetFramework>net48</TargetFramework></PropertyGroup></Project>");
+            if (ambiguous)
+                File.WriteAllText(Path.Combine(producerDirectory, "Other.csproj"), "<Project><AssemblyName>Peritus.Ssh</AssemblyName></Project>");
+            var model = new ProfileEnvironmentModel
+            {
+                ModelName = "PTSSSH", ModelType = ModelType.Source,
+                ProjectFilePath = Path.Combine(projectDirectory, "PTSSSH.rnrproj")
+            };
+            File.WriteAllText(model.ProjectFilePath, "<Project><ItemGroup><Reference Include='Peritus.Ssh'><HintPath>../../Libs/Peritus.Ssh/bin/$(Configuration)/net48/Peritus.Ssh.dll</HintPath><Private>True</Private></Reference></ItemGroup></Project>");
+            var originalProject = File.ReadAllBytes(model.ProjectFilePath);
+            var profile = new ProfileModel
+            {
+                ProfileName = "SourceProfile", SolutionFilePath = Path.Combine(_baseDir, "Source.sln"),
+                Repositories = [new RepositoryModel { RepoRootFolder = _baseDir, Models = [model] }]
+            };
+            File.WriteAllText(profile.SolutionFilePath, "Microsoft Visual Studio Solution File, Format Version 12.00\r\n" +
+                "Project(\"{FC65038C-1B2F-41E1-A629-BED71D161FFF}\") = \"PTSSSH\", \"Project\\PTSSSH\\PTSSSH.rnrproj\", \"{11111111-1111-1111-1111-111111111111}\"\r\nEndProject\r\n");
+            new FileService(config).SaveProfile(profile, skipExistCheck: true);
+
+            Assert.That(service.BuildDeployableNugetPackage(profile.ProfileName, model.ModelName), Is.False);
+            var solutionPath = Path.Combine(projectDirectory, "PTSSSH.packagebuild.sln");
+            Assert.That(File.Exists(solutionPath), Is.EqualTo(!ambiguous));
+            if (ambiguous)
+                Assert.That(File.ReadAllBytes(model.ProjectFilePath), Is.EqualTo(originalProject));
+            else
+            {
+                var reference = System.Xml.Linq.XDocument.Load(model.ProjectFilePath).Descendants("ProjectReference").Single();
+                var guid = reference.Element("Project")!.Value;
+                var solution = File.ReadAllText(solutionPath);
+                Assert.That(solution, Does.Contain($"\"Peritus.Ssh\", \"..\\..\\Libs\\Peritus.Ssh\\Peritus.Ssh.csproj\", \"{guid}\""));
+                Assert.That(solution, Does.Contain($"{guid}.Debug|Any CPU.Build.0"));
+            }
+            Assert.That(Directory.Exists(Path.Combine(producerDirectory, "bin")), Is.False);
+        }
+
         private ProfileService CreateProfileService()
             => CreateProfileService(out _);
 
-        private ProfileService CreateProfileService(out FakeDirectoryLinkService linkService)
+        private ProfileService CreateProfileService(out FakeDirectoryLinkService linkService, AppConfig? configOverride = null)
         {
-            var config = CreateAppConfig();
+            var config = configOverride ?? CreateAppConfig();
 
             var fileService = new FileService(config);
             var solutionService = new VisualStudioSolutionService(config);

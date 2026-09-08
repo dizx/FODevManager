@@ -1,4 +1,4 @@
-﻿using FODevManager.Messages;
+using FODevManager.Messages;
 using FODevManager.Models;
 using FODevManager.Utils;
 using Microsoft.Extensions.Configuration;
@@ -99,8 +99,12 @@ namespace FODevManager.Services
 
             var lines = File.ReadAllLines(sourceSolutionFilePath);
             var sourceSolutionDirectory = Path.GetDirectoryName(sourceSolutionFilePath) ?? solutionDirectory;
-            var projectReferences = LoadProjectReferences(projectFilePath);
             var sourceProjects = ParseSolutionProjects(lines);
+            var modelProject = sourceProjects.FirstOrDefault(project => IsMatchingProject(project, sourceSolutionDirectory, projectFilePath, model.ModelName));
+            var mappingPrefix = $"{modelProject?.ProjectGuid}.Debug|Any CPU.ActiveCfg";
+            var mapping = lines.Select(line => line.Trim()).FirstOrDefault(line => line.StartsWith(mappingPrefix, StringComparison.OrdinalIgnoreCase))
+                ?.Split('=', 2)[1].Trim().Split('|', 2) ?? ["Debug", "AnyCPU"];
+            var projectReferences = LoadProjectReferences(projectFilePath, mapping[0], mapping[1].Replace("Any CPU", "AnyCPU"));
             var nestedProjects = ParseNestedProjects(lines);
 
             var projectFound = sourceProjects.Any(project => IsMatchingProject(project, sourceSolutionDirectory, projectFilePath, model.ModelName));
@@ -116,11 +120,10 @@ namespace FODevManager.Services
 
             if (!ReferenceEquals(lines, updatedSourceLines))
             {
-                File.WriteAllLines(sourceSolutionFilePath, updatedSourceLines);
                 lines = updatedSourceLines;
                 sourceProjects = ParseSolutionProjects(lines);
                 nestedProjects = ParseNestedProjects(lines);
-                MessageLogger.Info($"Updated project GUIDs in source solution '{sourceSolutionFilePath}' to match project references");
+                MessageLogger.Info($"Updated project GUIDs in package build solution to match project references from '{sourceSolutionFilePath}'");
             }
 
             var includedProjects = ResolveBuildSolutionProjects(
@@ -141,7 +144,7 @@ namespace FODevManager.Services
                 projectFilePath,
                 relativeProjectPath);
 
-            File.WriteAllText(solutionFilePath, builder.ToString());
+            File.WriteAllText(solutionFilePath, EnsureSolutionConfigurations(builder.ToString()));
             
             return solutionFilePath;
         }
@@ -161,8 +164,7 @@ namespace FODevManager.Services
             foreach (var projectReference in projectReferences.Where(reference => !reference.ProjectGuid.IsNullOrEmpty()))
             {
                 var matchingProject = projects.FirstOrDefault(project =>
-                    ProjectPathMatches(project, solutionDirectory, projectReference.FullPath)
-                    && project.Name.SameAs(projectReference.Name));
+                    ProjectPathMatches(project, solutionDirectory, projectReference.FullPath));
 
                 if (matchingProject == null || matchingProject.ProjectGuid.SameAs(projectReference.ProjectGuid))
                     continue;
@@ -474,6 +476,62 @@ namespace FODevManager.Services
             return line[(start + 1)..end];
         }
 
+        private static string EnsureSolutionConfigurations(string solution)
+        {
+            var lines = solution.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+            var projects = ParseSolutionProjects(lines);
+            if (!lines.Any(line => line.Trim().Equals("Global", StringComparison.Ordinal)))
+            {
+                lines.Add("Global");
+                lines.Add("EndGlobal");
+            }
+
+            int EnsureSection(string name, string placement)
+            {
+                var start = lines.FindIndex(line => line.TrimStart().StartsWith($"GlobalSection({name})", StringComparison.Ordinal));
+                if (start < 0)
+                {
+                    start = lines.FindIndex(line => line.Trim().Equals("EndGlobal", StringComparison.Ordinal));
+                    lines.InsertRange(start, new[] { $"\tGlobalSection({name}) = {placement}", "\tEndGlobalSection" });
+                }
+
+                return start;
+            }
+
+            var solutionSectionStart = EnsureSection("SolutionConfigurationPlatforms", "preSolution");
+            var configurations = lines.Skip(solutionSectionStart + 1)
+                .TakeWhile(line => !line.Trim().Equals("EndGlobalSection", StringComparison.Ordinal))
+                .Where(line => line.Contains('='))
+                .Select(line => line.Split('=')[0].Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (configurations.Count == 0)
+            {
+                configurations.Add("Debug|Any CPU");
+                lines.Insert(solutionSectionStart + 1, "\t\tDebug|Any CPU = Debug|Any CPU");
+            }
+
+            var projectSectionStart = EnsureSection("ProjectConfigurationPlatforms", "postSolution");
+            var projectSectionEnd = lines.FindIndex(projectSectionStart + 1,
+                line => line.Trim().Equals("EndGlobalSection", StringComparison.Ordinal));
+            foreach (var project in projects.Where(project => !project.ProjectTypeGuid.SameAs(SolutionFolderProjectTypeGuid)))
+            {
+                foreach (var configuration in configurations)
+                {
+                    var prefix = $"{project.ProjectGuid}.{configuration}.";
+                    // An existing ActiveCfg without Build.0 is an explicit build exclusion
+                    if (lines.Skip(projectSectionStart + 1).Take(projectSectionEnd - projectSectionStart - 1)
+                        .Any(line => line.TrimStart().StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
+                    lines.Insert(projectSectionEnd++, $"\t\t{prefix}ActiveCfg = {configuration}");
+                    lines.Insert(projectSectionEnd++, $"\t\t{prefix}Build.0 = {configuration}");
+                }
+            }
+
+            return string.Join("\r\n", lines).TrimEnd('\r', '\n') + "\r\n";
+        }
+
         private static bool TryGetLeadingGuid(string line, out string guid)
         {
             guid = string.Empty;
@@ -489,16 +547,36 @@ namespace FODevManager.Services
             return true;
         }
 
-        private static IReadOnlyCollection<ProjectReferenceInfo> LoadProjectReferences(string projectFilePath)
+        private static IReadOnlyCollection<ProjectReferenceInfo> LoadProjectReferences(string projectFilePath, string configuration, string platform)
         {
             try
             {
                 var projectDirectory = Path.GetDirectoryName(projectFilePath) ?? Directory.GetCurrentDirectory();
                 var document = XDocument.Load(projectFilePath);
 
-                return document
-                    .Descendants()
-                    .Where(element => element.Name.LocalName == "ProjectReference")
+                var references = document.Descendants().Where(element => element.Name.LocalName == "ProjectReference").ToList();
+                if (references.Any(element => element.AncestorsAndSelf().Attributes("Condition").Any()
+                    || (element.Attribute("Include")?.Value.Contains("$(", StringComparison.Ordinal) ?? false)))
+                {
+                    var executable = DeployablePackageService.ResolveMsBuildExecutable();
+                    if (string.IsNullOrEmpty(executable))
+                        throw new InvalidOperationException("MSBuild is required to evaluate conditional project references");
+                    var start = new ProcessStartInfo(executable,
+                        $"\"{projectFilePath}\" -nologo -getItem:ProjectReference /p:Configuration=\"{configuration}\" /p:Platform=\"{platform}\"")
+                    {
+                        WorkingDirectory = projectDirectory, UseShellExecute = false,
+                        RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true
+                    };
+                    DeployablePackageService.ApplyDotNetSdkEnvironmentIfNeeded(start, executable);
+                    if (!DeployablePackageService.RunProcess(start, out var output))
+                        throw new InvalidOperationException($"Could not evaluate project references: {output}");
+                    using var evaluated = System.Text.Json.JsonDocument.Parse(output[output.IndexOf('{')..]);
+                    references = evaluated.RootElement.GetProperty("Items").GetProperty("ProjectReference").EnumerateArray()
+                        .Select(item => new XElement("ProjectReference", new XAttribute("Include", item.GetProperty("FullPath").GetString()!),
+                            item.TryGetProperty("Name", out var name) ? new XElement("Name", name.GetString()) : null,
+                            item.TryGetProperty("Project", out var guid) ? new XElement("Project", guid.GetString()) : null)).ToList();
+                }
+                return references
                     .Select(element => CreateProjectReference(projectDirectory, element))
                     .Where(reference => reference != null)
                     .Cast<ProjectReferenceInfo>()
@@ -506,8 +584,7 @@ namespace FODevManager.Services
             }
             catch (Exception exception)
             {
-                MessageLogger.Warning($"Could not read project references from '{projectFilePath}': {exception.Message}");
-                return Array.Empty<ProjectReferenceInfo>();
+                throw new InvalidOperationException($"Could not read project references from '{projectFilePath}': {exception.Message}", exception);
             }
         }
 
@@ -530,8 +607,22 @@ namespace FODevManager.Services
                 ?.Value;
 
             projectGuid = NormalizeGuid(projectGuid);
+            if (projectGuid.IsNullOrEmpty() && File.Exists(fullPath))
+                projectGuid = ResolveProjectReferenceGuid(fullPath);
 
             return new ProjectReferenceInfo(name!, fullPath, projectGuid);
+        }
+
+        internal static string ResolveProjectReferenceGuid(string projectPath)
+        {
+            var declaredGuid = XDocument.Load(projectPath).Descendants()
+                .FirstOrDefault(element => element.Name.LocalName == "ProjectGuid")?.Value;
+            if (Guid.TryParse(declaredGuid, out var projectGuid))
+                return projectGuid.ToString("B").ToUpperInvariant();
+
+            var identity = Path.GetFullPath(projectPath).Replace('/', '\\').ToUpperInvariant();
+            var hash = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(identity));
+            return new Guid(hash.AsSpan(0, 16)).ToString("B").ToUpperInvariant();
         }
 
         private static IReadOnlyCollection<SolutionProject> ParseSolutionProjects(IReadOnlyList<string> lines)
@@ -697,7 +788,7 @@ namespace FODevManager.Services
             sb.AppendLine("# Visual Studio Version 17");
             sb.AppendLine("VisualStudioVersion = 17.12.35527.113");
 
-            File.WriteAllText(solutionFilePath, sb.ToString());
+            File.WriteAllText(solutionFilePath, EnsureSolutionConfigurations(sb.ToString()));
             MessageLogger.Info($"✅ Created solution file: {solutionFilePath}");
 
             return solutionFilePath;
@@ -752,11 +843,15 @@ namespace FODevManager.Services
             var projectTypeGuid = "{FC65038C-1B2F-41E1-A629-BED71D161FFF}";
             var projectGuid = Guid.NewGuid().ToString("B").ToUpper();
 
-            var sb = new StringBuilder(File.ReadAllText(solutionFilePath));
-            sb.AppendLine($"Project(\"{projectTypeGuid}\") = \"{model.ModelName}\",    \"{relativePath}\", \"{projectGuid}\"");
-            sb.AppendLine("EndProject");
+            var updatedLines = lines.ToList();
+            var globalIndex = updatedLines.FindIndex(line => line.Trim().Equals("Global", StringComparison.Ordinal));
+            updatedLines.InsertRange(globalIndex < 0 ? updatedLines.Count : globalIndex, new[]
+            {
+                $"Project(\"{projectTypeGuid}\") = \"{model.ModelName}\",    \"{relativePath}\", \"{projectGuid}\"",
+                "EndProject"
+            });
 
-            File.WriteAllText(solutionFilePath, sb.ToString());
+            File.WriteAllText(solutionFilePath, EnsureSolutionConfigurations(string.Join("\r\n", updatedLines)));
             MessageLogger.Info($"Added project '{model.ModelName}' to solution '{profile.ProfileName}.sln'");
         }
 

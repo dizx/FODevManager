@@ -558,7 +558,73 @@ namespace FODevManager.Tests
                 @"C:\Temp\BuildOutput");
 
             Assert.That(arguments, Does.Contain("/restore"));
+            Assert.That(arguments, Does.Contain("/t:Rebuild"));
+            Assert.That(arguments, Does.Contain("/p:Configuration=Debug"));
+            Assert.That(arguments, Does.Contain("/p:ReferencePath=\"C:\\AOSService\\PackagesLocalDirectory;C:\\Packages\\CarModel;"));
             Assert.That(arguments, Does.Contain("/p:MetadataDirectory=\"C:\\Dev\\FO\\Repo\\Metadata\""));
+        }
+
+        [Test]
+        public void BuildContext_Should_Use_Mapped_Package_Roots_Without_Changing_Stored_Paths()
+        {
+            if (!OperatingSystem.IsWindows())
+                Assert.Ignore("DOS-device mappings are only available on Windows");
+
+            var config = new AppConfig
+            {
+                DeployablePackages = Path.Combine(_baseDir, "DeployablePackages"),
+                DeploymentBasePath = Path.Combine(_baseDir, "Metadata")
+            };
+            var service = new DeployablePackageService(config);
+            var model = new ProfileEnvironmentModel { ModelRootFolder = _baseDir, MetadataFolder = config.DeploymentBasePath };
+            var profile = new ProfileModel { StandaloneModels = [model] };
+            var originalConfig = System.Text.Json.JsonSerializer.Serialize(config);
+            var originalProfile = System.Text.Json.JsonSerializer.Serialize(profile);
+            var packageIds = new[]
+            {
+                "Microsoft.Dynamics.AX.Platform.CompilerPackage",
+                "Microsoft.Dynamics.AX.Platform.DevALM.BuildXpp",
+                "Microsoft.Dynamics.AX.Application1.DevALM.BuildXpp",
+                "Microsoft.Dynamics.AX.Application2.DevALM.BuildXpp",
+                "Microsoft.Dynamics.AX.ApplicationSuite.DevALM.BuildXpp"
+            };
+            var roots = packageIds.ToDictionary(id => id,
+                id => Path.Combine(config.DeployablePackages, "BuildPackages", id + ".1.0.0"));
+            foreach (var root in roots.Values)
+            {
+                Directory.CreateDirectory(Path.Combine(root, "DevAlm"));
+                Directory.CreateDirectory(Path.Combine(root, "ref", "net40"));
+                File.WriteAllText(Path.Combine(root, "identity.txt"), root);
+            }
+
+            using var scope = BuildCachePathScope.Create(Path.Combine(config.DeployablePackages, "BuildPackages"));
+            var mappedRoot = scope.RootPath;
+            var effectiveRoots = roots.ToDictionary(pair => pair.Key, pair => scope.MapPath(pair.Value));
+            foreach (var pair in effectiveRoots)
+            {
+                Assert.That(File.ReadAllText(Path.Combine(pair.Value, "identity.txt")), Is.EqualTo(roots[pair.Key]));
+                File.WriteAllText(Path.Combine(pair.Value, "identity.txt"), "same file");
+                Assert.That(File.ReadAllText(Path.Combine(roots[pair.Key], "identity.txt")), Is.EqualTo("same file"));
+            }
+
+            var method = typeof(DeployablePackageService).GetMethod("TryBuildMsBuildContext", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            object?[] parameters = [effectiveRoots, Array.Empty<string>(), model.MetadataFolder, null];
+            Assert.That((bool)method.Invoke(service, parameters)!, Is.True);
+            var arguments = BuildMsBuildArguments("test.sln", parameters[3]!, Path.Combine(_baseDir, "output"));
+            Assert.That(arguments, Does.Contain($"/p:FrameworkDirectory=\"{effectiveRoots[packageIds[0]]}\""));
+            Assert.That(arguments, Does.Contain($"/p:BuildTasksDirectory=\"{Path.Combine(effectiveRoots[packageIds[0]], "DevAlm")}\""));
+            foreach (var id in packageIds.Skip(1))
+                Assert.That(arguments, Does.Contain(Path.Combine(effectiveRoots[id], "ref", "net40")));
+            Assert.That(System.Text.Json.JsonSerializer.Serialize(config), Is.EqualTo(originalConfig));
+            Assert.That(System.Text.Json.JsonSerializer.Serialize(profile), Is.EqualTo(originalProfile));
+            foreach (var pair in effectiveRoots)
+            {
+                Assert.That(pair.Value, Does.StartWith(mappedRoot));
+                Assert.That(pair.Value.Length, Is.LessThan(roots[pair.Key].Length));
+                Assert.That(arguments, Does.Not.Contain(roots[pair.Key]));
+            }
+            scope.Dispose();
+            Assert.That(Directory.Exists(mappedRoot), Is.False);
         }
 
         [Test]
@@ -609,6 +675,148 @@ namespace FODevManager.Tests
 
             Assert.That(credentials["Username"], Is.EqualTo("FODevManager"));
             Assert.That(credentials["ClearTextPassword"], Is.EqualTo("pat-token"));
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void BuildCompiledModelPackage_Should_Stage_Complete_Payload_Without_Build_Configuration_Or_Mutation(bool repositoryBacked)
+        {
+            var model = CreateCompiledPayload();
+            var profile = new ProfileModel { ProfileName = "CompiledProfile" };
+            if (repositoryBacked)
+                profile.Repositories = [new RepositoryModel { RepoRootFolder = _baseDir, Models = [model] }];
+            else
+                profile.StandaloneModels = [model];
+
+            var originalProfile = System.Text.Json.JsonSerializer.Serialize(profile);
+            var originalFiles = Directory.GetFiles(model.CompiledModelFolder, "*", SearchOption.AllDirectories)
+                .ToDictionary(path => Path.GetRelativePath(model.CompiledModelFolder, path), File.ReadAllBytes);
+            var stagedRoots = new List<string>();
+            Func<string, string, bool> packagePayload = (payloadRoot, outputRoot) =>
+            {
+                stagedRoots.Add(payloadRoot);
+                Assert.That(Path.GetFileName(payloadRoot), Is.EqualTo(model.ModelName));
+                Assert.That(payloadRoot, Does.StartWith(Path.Combine(_baseDir, "Artifacts", "BuildPackages", model.ModelName)));
+                Assert.That(Directory.Exists(outputRoot), Is.True);
+                Assert.That(Directory.GetFiles(payloadRoot, "*", SearchOption.AllDirectories)
+                    .Select(path => Path.GetRelativePath(payloadRoot, path)), Is.EquivalentTo(originalFiles.Keys));
+                foreach (var file in originalFiles)
+                    Assert.That(File.ReadAllBytes(Path.Combine(payloadRoot, file.Key)), Is.EqualTo(file.Value));
+
+                File.WriteAllText(Path.Combine(payloadRoot, "generated.nuspec"), "staged only");
+                return true;
+            };
+
+            Assert.That(BuildCompiledModelPackage(profile, model, packagePayload), Is.True);
+            Assert.That(BuildCompiledModelPackage(profile, model, packagePayload), Is.True);
+            Assert.That(stagedRoots.Distinct().Count(), Is.EqualTo(2));
+            Assert.That(System.Text.Json.JsonSerializer.Serialize(profile), Is.EqualTo(originalProfile));
+            Assert.That(Directory.GetFiles(model.CompiledModelFolder, "*", SearchOption.AllDirectories)
+                .Select(path => Path.GetRelativePath(model.CompiledModelFolder, path)), Is.EquivalentTo(originalFiles.Keys));
+            foreach (var file in originalFiles)
+                Assert.That(File.ReadAllBytes(Path.Combine(model.CompiledModelFolder, file.Key)), Is.EqualTo(file.Value));
+        }
+
+        [TestCase("missing-root")]
+        [TestCase("empty-root")]
+        [TestCase("relative-root")]
+        [TestCase("missing-descriptor")]
+        [TestCase("invalid-descriptor")]
+        [TestCase("wrong-model")]
+        [TestCase("xref-only")]
+        [TestCase("invalid-assembly")]
+        [TestCase("invalid-name")]
+        public void BuildCompiledModelPackage_Should_Reject_Invalid_Payload(string invalidPayload)
+        {
+            var model = CreateCompiledPayload();
+            var descriptorPath = Path.Combine(model.CompiledModelFolder, "Descriptor", "TestModel.xml");
+            var assemblyPath = Path.Combine(model.CompiledModelFolder, "bin", "Dynamics.AX.TestModel.dll");
+            switch (invalidPayload)
+            {
+                case "missing-root": model.CompiledModelFolder = Path.Combine(_baseDir, "missing"); break;
+                case "empty-root": model.CompiledModelFolder = string.Empty; break;
+                case "relative-root": model.CompiledModelFolder = "relative"; break;
+                case "missing-descriptor": File.Delete(descriptorPath); break;
+                case "invalid-descriptor": File.WriteAllText(descriptorPath, "invalid xml"); break;
+                case "wrong-model": File.WriteAllText(descriptorPath, "<AxModelInfo><Name>OtherModel</Name></AxModelInfo>"); break;
+                case "xref-only":
+                    File.Delete(assemblyPath);
+                    File.WriteAllText(Path.Combine(model.CompiledModelFolder, "TestModel.xref"), "xref");
+                    break;
+                case "invalid-assembly": File.WriteAllText(assemblyPath, "not an assembly"); break;
+                case "invalid-name": model.ModelName = "../TestModel"; break;
+            }
+
+            var called = false;
+            Assert.That(BuildCompiledModelPackage(new ProfileModel(), model, (_, _) => { called = true; return true; }), Is.False);
+            Assert.That(called, Is.False);
+            Assert.That(Directory.Exists(Path.Combine(_baseDir, "Artifacts")), Is.False);
+        }
+
+        [Test]
+        public void BuildCompiledModelPackage_Should_Keep_Artifacts_Outside_Standalone_Compiled_Root_And_Propagate_Packaging_Failure()
+        {
+            var model = CreateCompiledPayload();
+            model.ModelRootFolder = model.CompiledModelFolder;
+            Assert.That(BuildCompiledModelPackage(new ProfileModel { StandaloneModels = [model] }, model,
+                (payloadRoot, _) =>
+                {
+                    Assert.That(payloadRoot, Does.Not.StartWith(model.CompiledModelFolder + Path.DirectorySeparatorChar));
+                    return false;
+                }), Is.False);
+            Assert.That(Directory.Exists(Path.Combine(model.CompiledModelFolder, "Artifacts")), Is.False);
+        }
+
+        [Test]
+        public void BuildDeployableNugetPackage_Should_Refuse_CompiledNuget_Without_Restore()
+        {
+            var service = new DeployablePackageService(new AppConfig { DeployablePackages = string.Empty });
+            var model = CreateCompiledPayload();
+            model.ModelType = ModelType.CompiledNuget;
+            Assert.That(service.BuildDeployableNugetPackage(new ProfileModel(), model, string.Empty), Is.False);
+            Assert.That(Directory.Exists(Path.Combine(_baseDir, "Artifacts")), Is.False);
+        }
+
+        [Test]
+        public void BuildDeployableNugetPackage_Should_Not_Fall_Back_To_Compiled_Payload_For_Source_Without_Solution()
+        {
+            var service = new DeployablePackageService(new AppConfig { DeployablePackages = string.Empty });
+            var model = CreateCompiledPayload();
+            model.ModelType = ModelType.Source;
+            Assert.That(service.BuildDeployableNugetPackage(new ProfileModel(), model, string.Empty), Is.False);
+            Assert.That(Directory.Exists(Path.Combine(_baseDir, "Artifacts")), Is.False);
+        }
+
+        private ProfileEnvironmentModel CreateCompiledPayload()
+        {
+            var compiledRoot = Path.Combine(_baseDir, "compiled-original");
+            Directory.CreateDirectory(Path.Combine(compiledRoot, "Descriptor"));
+            Directory.CreateDirectory(Path.Combine(compiledRoot, "bin", "runtimes", "win-x64", "native"));
+            Directory.CreateDirectory(Path.Combine(compiledRoot, "Resources", "nested"));
+            File.WriteAllText(Path.Combine(compiledRoot, "Descriptor", "TestModel.xml"),
+                "<AxModelInfo><Name>TestModel</Name></AxModelInfo>");
+            File.Copy(typeof(DeployablePackageService).Assembly.Location,
+                Path.Combine(compiledRoot, "bin", "Dynamics.AX.TestModel.dll"));
+            File.WriteAllText(Path.Combine(compiledRoot, "bin", "Peritus.Ssh.dll"), "dependency");
+            File.WriteAllText(Path.Combine(compiledRoot, "bin", "Renci.SshNet.dll"), "dependency");
+            File.WriteAllText(Path.Combine(compiledRoot, "bin", "runtimes", "win-x64", "native", "support.dll"), "nested dependency");
+            File.WriteAllText(Path.Combine(compiledRoot, "Resources", "nested", "resource"), "deployable metadata");
+            return new ProfileEnvironmentModel
+            {
+                ModelName = "TestModel",
+                ModelType = ModelType.Compiled,
+                ModelRootFolder = _baseDir,
+                CompiledModelFolder = compiledRoot,
+                ProjectFilePath = string.Empty,
+                MetadataFolder = string.Empty
+            };
+        }
+
+        private static bool BuildCompiledModelPackage(ProfileModel profile, ProfileEnvironmentModel model, Func<string, string, bool> packagePayload)
+        {
+            var method = typeof(DeployablePackageService).GetMethod("BuildCompiledModelPackage", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.That(method, Is.Not.Null);
+            return (bool)method!.Invoke(null, [profile, model, packagePayload])!;
         }
 
         private static string ResolveCompiledModelName(string modelFolder, string packageId, string packageVersion)

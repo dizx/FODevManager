@@ -4,6 +4,8 @@ using FODevManager.Shared.Utils;
 using FODevManager.Utils;
 using Microsoft.Win32;
 using System.Diagnostics;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using System.Xml;
 using System.Xml.Linq;
 
@@ -136,21 +138,25 @@ namespace FODevManager.Services
             if (model == null)
                 throw new ArgumentNullException(nameof(model));
 
+            if (model.ModelType == ModelType.Compiled)
+                return BuildCompiledModelPackage(profile, model,
+                    (payloadRoot, outputRoot) => RunNugetUtilFopack(payloadRoot, outputRoot, out _, out _));
+
+            if (model.ModelType != ModelType.Source)
+            {
+                MessageLogger.Error($"Repackaging {model.ModelType} model '{model.ModelName}' is not supported. Use the original NuGet package");
+                return false;
+            }
+
             if (solutionFilePath.IsNullOrEmpty() || !File.Exists(solutionFilePath))
             {
                 MessageLogger.Error($"❌ Solution file not found: {solutionFilePath}");
                 return false;
             }
 
-            if (model.ModelType != ModelType.Source)
+            if (model.ModelName.IsNullOrEmpty() || model.ModelName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || model.ModelName is "." or "..")
             {
-                MessageLogger.Error($"❌ Only source models can be packaged. '{model.ModelName}' is {model.ModelType}");
-                return false;
-            }
-
-            if (model.ModelName.IsNullOrEmpty())
-            {
-                MessageLogger.Error("❌ Model name is required to build a Compiled Nuget");
+                MessageLogger.Error("A valid model name is required to build a source package");
                 return false;
             }
 
@@ -185,7 +191,7 @@ namespace FODevManager.Services
                 return false;
 
             var artifactsRoot = GetModelArtifactsRoot(profile, model);
-            var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            var timestamp = $"{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}";
             var runRoot = Path.Combine(artifactsRoot, "BuildPackages", model.ModelName, timestamp);
             var buildOutputRoot = Path.Combine(runRoot, "BuildOutput");
             var nugetOutputRoot = Path.Combine(runRoot, "NuGet");
@@ -201,16 +207,26 @@ namespace FODevManager.Services
             if (compiledNugetModels.Count > 0)
                 compiledNugetReferenceFolders.Add(PrepareCompiledNugetReferenceRoot(runRoot, compiledNugetModels));
 
-            compiledNugetReferenceFolders.AddRange(ResolveProjectReferenceOutputFolders(model.ProjectFilePath));
-
             var buildMetadataDirectory = ResolveBuildMetadataDirectory(model, _deploymentBasePath);
-            if (!TryBuildMsBuildContext(packageRoots, compiledNugetReferenceFolders, buildMetadataDirectory, out var buildContext))
-                return false;
+            try
+            {
+                // Always map Windows compiler cache paths because Xppc expands short-name aliases
+                using var cachePathScope = BuildCachePathScope.Create(buildPackagesRoot);
+                MessageLogger.Info($"Using build-scoped cache path '{cachePathScope.RootPath}' for '{buildPackagesRoot}'");
+                var effectivePackageRoots = packageRoots.ToDictionary(pair => pair.Key, pair => cachePathScope.MapPath(pair.Value));
+                if (!TryBuildMsBuildContext(effectivePackageRoots, compiledNugetReferenceFolders, buildMetadataDirectory, out var buildContext))
+                    return false;
 
-            MessageLogger.Highlight($"📦 Building package for '{model.ModelName}'.");
+                MessageLogger.Highlight($"📦 Building package for '{model.ModelName}'.");
 
-            if (!RunMsBuild(solutionFilePath, model.ProjectFilePath, model.ModelName, buildContext, buildOutputRoot, runRoot))
+                if (!RunMsBuild(solutionFilePath, model.ProjectFilePath, model.ModelName, buildContext, buildOutputRoot, runRoot))
+                    return false;
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"Source build with a temporary cache drive failed: {exception.Message}");
                 return false;
+            }
 
             if (!TryResolveBuiltPayloadRoot(buildOutputRoot, model.ModelName, out var payloadRoot))
             {
@@ -225,15 +241,7 @@ namespace FODevManager.Services
                 return false;
             }
 
-            var capturedPayloadRoot = IsPathWithinDirectory(payloadRoot, buildOutputRoot)
-                ? payloadRoot
-                : Path.Combine(buildOutputRoot, model.ModelName);
-
-            if (!AreSameDirectoryPath(payloadRoot, capturedPayloadRoot))
-            {
-                EnsureCleanDirectory(capturedPayloadRoot);
-                FileHelper.CopyDirectory(payloadRoot, capturedPayloadRoot);
-            }
+            var capturedPayloadRoot = payloadRoot;
 
             var capturedFileCount = Directory.GetFiles(capturedPayloadRoot, "*", SearchOption.AllDirectories).Length;
             if (capturedFileCount == 0)
@@ -251,6 +259,73 @@ namespace FODevManager.Services
                 return false;
 
             return true;
+        }
+
+        private static bool BuildCompiledModelPackage(
+            ProfileModel profile, ProfileEnvironmentModel model, Func<string, string, bool> packagePayload)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(model.ModelName)
+                    || model.ModelName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+                    || model.ModelName is "." or "..")
+                {
+                    MessageLogger.Error("A valid model name is required to package a compiled model");
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(model.CompiledModelFolder)
+                    || !Path.IsPathFullyQualified(model.CompiledModelFolder)
+                    || !Directory.Exists(model.CompiledModelFolder))
+                {
+                    MessageLogger.Error($"Compiled model folder is missing or invalid for '{model.ModelName}': {model.CompiledModelFolder}");
+                    return false;
+                }
+
+                var compiledRoot = Path.GetFullPath(model.CompiledModelFolder);
+                var descriptorPath = Path.Combine(compiledRoot, "Descriptor", $"{model.ModelName}.xml");
+                var assemblyPath = Path.Combine(compiledRoot, "bin", $"Dynamics.AX.{model.ModelName}.dll");
+                if (!File.Exists(descriptorPath) || !File.Exists(assemblyPath))
+                {
+                    MessageLogger.Error($"Compiled model '{model.ModelName}' requires '{descriptorPath}' and '{assemblyPath}'");
+                    return false;
+                }
+
+                var descriptor = XDocument.Load(descriptorPath);
+                if (descriptor.Root?.Name.LocalName != "AxModelInfo"
+                    || !string.Equals(descriptor.Root.Elements().FirstOrDefault(element => element.Name.LocalName == "Name")?.Value,
+                        model.ModelName, StringComparison.OrdinalIgnoreCase))
+                {
+                    MessageLogger.Error($"Compiled model descriptor '{descriptorPath}' does not describe '{model.ModelName}'");
+                    return false;
+                }
+
+                // Reject empty or invalid DLLs, not just xref-only payloads
+                System.Reflection.AssemblyName.GetAssemblyName(assemblyPath);
+
+                var artifactsRoot = GetModelArtifactsRoot(profile, model);
+                if (IsPathWithinDirectory(artifactsRoot, compiledRoot))
+                    artifactsRoot = Path.Combine(Directory.GetParent(compiledRoot)!.FullName, "Artifacts");
+
+                if (IsPathWithinDirectory(artifactsRoot, compiledRoot))
+                    throw new InvalidOperationException("Package artifacts must be outside the compiled model folder");
+
+                var runRoot = Path.Combine(artifactsRoot, "BuildPackages", model.ModelName,
+                    $"{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}");
+                var payloadRoot = Path.Combine(runRoot, "BuildOutput", model.ModelName);
+                var outputRoot = Path.Combine(runRoot, "NuGet");
+                Directory.CreateDirectory(payloadRoot);
+                Directory.CreateDirectory(outputRoot);
+                FileHelper.CopyDirectory(compiledRoot, payloadRoot);
+
+                MessageLogger.Highlight($"Packaging compiled model '{model.ModelName}' without compilation from '{payloadRoot}'");
+                return packagePayload(payloadRoot, outputRoot);
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"Could not package compiled model '{model.ModelName}': {exception.Message}");
+                return false;
+            }
         }
 
         public bool AddOrUpdatePackageFromUrl(ProfileModel profile, RepositoryModel repository, string packageUrl)
@@ -1607,71 +1682,180 @@ namespace FODevManager.Services
             return referenceRoot;
         }
 
-        private static IReadOnlyList<string> ResolveProjectReferenceOutputFolders(string projectFilePath)
+        public bool ConvertSourceHintPathReferences(ProfileModel profile, ProfileEnvironmentModel model)
         {
-            var outputFolders = new List<string>();
+            if (model.ModelType != ModelType.Source)
+                return true;
 
-            foreach (var referencedProjectPath in ResolveProjectReferencePaths(projectFilePath))
+            string? temporaryPath = null;
+            try
             {
-                foreach (var outputFolder in ResolveProjectOutputFolders(referencedProjectPath))
-                    AddReferenceFolder(outputFolders, outputFolder);
+                var projectPath = Path.GetFullPath(model.ProjectFilePath);
+                var projectDirectory = Path.GetDirectoryName(projectPath)!;
+                var modelRoot = profile.FindRepositoryForModel(model)?.RepoRootFolder ?? model.ModelRootFolder;
+                var original = File.ReadAllBytes(projectPath);
+                using var stream = new MemoryStream(original);
+                var document = XDocument.Load(stream, LoadOptions.PreserveWhitespace);
+                var converted = 0;
+                foreach (var reference in document.Descendants().Where(element => element.Name.LocalName == "Reference").ToList())
+                {
+                    var hint = reference.Elements().FirstOrDefault(element => element.Name.LocalName == "HintPath");
+                    if (hint == null || string.IsNullOrWhiteSpace(hint.Value))
+                        continue;
+                    var producer = FindHintPathProducer(ResolveReferencePath(projectDirectory, hint.Value.Trim()), modelRoot);
+                    if (producer == null)
+                        continue;
+                    if (hint.Attribute("Condition") != null || reference.Elements().Count(element => element.Name.LocalName == "HintPath") != 1)
+                        throw new InvalidOperationException($"Reference '{reference.Attribute("Include")?.Value}' has conditional or multiple HintPaths. Use explicit conditioned ProjectReferences to preserve its build semantics");
+
+                    var conditions = reference.AncestorsAndSelf().Attributes("Condition").Select(attribute => attribute.Value);
+                    var projectReferences = document.Descendants().Where(element =>
+                        element.Name.LocalName == "ProjectReference"
+                        && element.Attribute("Include") != null
+                        && AreSameFilePath(ResolveReferencePath(projectDirectory, element.Attribute("Include")!.Value), producer)).ToList();
+                    var existing = projectReferences.FirstOrDefault(element =>
+                        element.AncestorsAndSelf().Attributes("Condition").Select(attribute => attribute.Value).SequenceEqual(conditions));
+                    var replacement = new XElement(reference);
+                    var ns = reference.Name.Namespace;
+                    replacement.Name = ns + "ProjectReference";
+                    replacement.SetAttributeValue("Include", Path.GetRelativePath(projectDirectory, producer).Replace('/', '\\'));
+                    replacement.Elements().Where(element => element.Name.LocalName is "HintPath" or "Name" or "Project").Remove();
+                    var existingGuids = projectReferences.SelectMany(element => element.Elements().Where(child => child.Name.LocalName == "Project"))
+                        .Where(element => !string.IsNullOrWhiteSpace(element.Value))
+                        .Select(element => Guid.Parse(element.Value)).Distinct().ToList();
+                    if (existingGuids.Count > 1)
+                        throw new InvalidOperationException($"Conflicting project GUIDs for ProjectReference '{producer}'");
+                    var projectGuid = existingGuids.Count == 1
+                        ? existingGuids[0].ToString("B").ToUpperInvariant()
+                        : VisualStudioSolutionService.ResolveProjectReferenceGuid(producer);
+                    replacement.Add(new XElement(ns + "Name", existing?.Elements().FirstOrDefault(element => element.Name.LocalName == "Name")?.Value
+                        ?? Path.GetFileNameWithoutExtension(producer)), new XElement(ns + "Project", projectGuid));
+
+                    if (existing == null)
+                    {
+                        FormatConvertedReference(replacement, reference);
+                        reference.ReplaceWith(replacement);
+                    }
+                    else
+                    {
+                        // Merge only equivalent scopes without discarding reference metadata
+                        foreach (var attribute in replacement.Attributes().Where(attribute => attribute.Name.LocalName != "Include"))
+                        {
+                            var current = existing.Attribute(attribute.Name);
+                            if (current == null)
+                                existing.Add(new XAttribute(attribute));
+                            else if (current.Value != attribute.Value)
+                                throw new InvalidOperationException($"Conflicting {attribute.Name} for ProjectReference '{producer}'");
+                        }
+                        foreach (var metadata in replacement.Elements())
+                        {
+                            var current = existing.Element(metadata.Name);
+                            if (current == null)
+                                existing.Add(new XElement(metadata));
+                            else if (metadata.Name.LocalName == "Project" && string.IsNullOrWhiteSpace(current.Value))
+                                current.Value = projectGuid;
+                            else if (metadata.Name.LocalName == "Project" && Guid.TryParse(current.Value, out var currentGuid) && currentGuid == Guid.Parse(projectGuid))
+                                continue;
+                            else if (!XNode.DeepEquals(current, metadata))
+                                throw new InvalidOperationException($"Conflicting {metadata.Name.LocalName} for ProjectReference '{producer}'. Reconcile reference metadata before packaging");
+                        }
+                        FormatConvertedReference(existing, existing);
+                        if (reference.PreviousNode is XText whitespace && string.IsNullOrWhiteSpace(whitespace.Value))
+                            whitespace.Remove();
+                        reference.Remove();
+                    }
+                    converted++;
+                }
+
+                if (converted == 0)
+                    return true;
+
+                // Validate every conversion before atomically replacing the project file
+                temporaryPath = projectPath + $".{Guid.NewGuid():N}.tmp";
+                using (var writer = XmlWriter.Create(temporaryPath, new XmlWriterSettings
+                {
+                    Encoding = new System.Text.UTF8Encoding(original.AsSpan().StartsWith(new byte[] { 239, 187, 191 })),
+                    OmitXmlDeclaration = document.Declaration == null,
+                    NewLineChars = "\r\n",
+                    NewLineHandling = NewLineHandling.Replace
+                }))
+                {
+                    document.Save(writer);
+                }
+                if (!original.AsSpan().SequenceEqual(File.ReadAllBytes(projectPath)))
+                    throw new IOException($"Project '{projectPath}' changed during reference conversion. Retry packaging");
+                File.Replace(temporaryPath, projectPath, null);
+                MessageLogger.Info($"Converted {converted} source HintPath reference(s) to ProjectReference in '{projectPath}'");
+                return true;
             }
-
-            return outputFolders;
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"Could not convert source references in '{model.ProjectFilePath}': {exception.Message}");
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    if (temporaryPath != null && File.Exists(temporaryPath))
+                        File.Delete(temporaryPath);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    MessageLogger.Warning($"Could not remove temporary project file '{temporaryPath}': {exception.Message}");
+                }
+            }
         }
 
-        private static IReadOnlyList<string> ResolveProjectReferencePaths(string projectFilePath)
+        private static void FormatConvertedReference(XElement element, XElement original)
         {
-            if (projectFilePath.IsNullOrEmpty() || !File.Exists(projectFilePath))
-                return [];
-
-            var projectDirectory = Path.GetDirectoryName(Path.GetFullPath(projectFilePath)) ?? string.Empty;
-            if (projectDirectory.IsNullOrEmpty())
-                return [];
-
-            var document = XDocument.Load(projectFilePath);
-
-            return document.Descendants()
-                .Where(element => element.Name.LocalName.SameAs("ProjectReference"))
-                .Select(element => element.Attribute("Include")?.Value?.Trim() ?? string.Empty)
-                .Where(include => !include.IsNullOrEmpty())
-                .Select(include => Path.GetFullPath(Path.Combine(projectDirectory, include)))
-                .Where(File.Exists)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var indent = (original.PreviousNode as XText)?.Value.Split('\n').LastOrDefault() ?? "";
+            if (!string.IsNullOrWhiteSpace(indent))
+                indent = "";
+            var childIndent = original.Nodes().OfType<XText>().Select(text => text.Value.Split('\n').Last())
+                .FirstOrDefault(text => string.IsNullOrWhiteSpace(text) && text.Length > indent.Length) ?? indent + "  ";
+            foreach (var whitespace in element.Nodes().OfType<XText>().Where(text => string.IsNullOrWhiteSpace(text.Value)).ToList())
+                whitespace.Remove();
+            foreach (var node in element.Nodes().ToList())
+                node.AddBeforeSelf(new XText("\n" + childIndent));
+            element.Add(new XText("\n" + indent));
         }
 
-        private static IReadOnlyList<string> ResolveProjectOutputFolders(string referencedProjectPath)
+        private static string ResolveReferencePath(string projectDirectory, string include)
         {
-            return ResolveProjectTargetFrameworks(referencedProjectPath)
-                .Select(targetFramework => Path.Combine(
-                    Path.GetDirectoryName(referencedProjectPath) ?? string.Empty,
-                    "bin",
-                    "Debug",
-                    targetFramework))
-                .ToList();
+            var expanded = include.Replace("$(Configuration)", "Debug", StringComparison.OrdinalIgnoreCase)
+                .Replace("$(TargetFramework)", "net48", StringComparison.OrdinalIgnoreCase);
+            if (expanded.Contains("$(", StringComparison.Ordinal))
+                return string.Empty;
+            return Path.GetFullPath(Path.Combine(projectDirectory, expanded));
         }
 
-        private static IReadOnlyList<string> ResolveProjectTargetFrameworks(string projectFilePath)
+        private static string? FindHintPathProducer(string hintPath, string modelRoot)
         {
-            var document = XDocument.Load(projectFilePath);
-            var targetFramework = document.Descendants()
-                .FirstOrDefault(element => element.Name.LocalName.SameAs("TargetFramework"))
-                ?.Value
-                ?.Trim() ?? string.Empty;
-
-            if (!targetFramework.IsNullOrEmpty())
-                return [targetFramework];
-
-            var targetFrameworks = document.Descendants()
-                .FirstOrDefault(element => element.Name.LocalName.SameAs("TargetFrameworks"))
-                ?.Value ?? string.Empty;
-
-            return targetFrameworks
-                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(framework => !framework.IsNullOrEmpty())
-                .DefaultIfEmpty("net48")
-                .ToList();
+            if (string.IsNullOrEmpty(hintPath))
+                return null;
+            var candidates = new List<string>();
+            // Inspect only directories on the hint's ancestor chain, never sibling trees
+            for (var directory = Path.GetDirectoryName(hintPath);
+                 !string.IsNullOrEmpty(directory) && IsPathWithinDirectory(directory, modelRoot);
+                 directory = Path.GetDirectoryName(directory))
+            {
+                if (!Directory.Exists(directory))
+                    continue;
+                foreach (var project in Directory.GetFiles(directory, "*.csproj", SearchOption.TopDirectoryOnly))
+                {
+                    var names = XDocument.Load(project).Descendants()
+                        .Where(element => element.Name.LocalName == "AssemblyName")
+                        .Select(element => element.Value.Trim()).ToList();
+                    if (names.Count == 0)
+                        names.Add(Path.GetFileNameWithoutExtension(project));
+                    if (names.Any(name => name.SameAs(Path.GetFileNameWithoutExtension(hintPath))))
+                        candidates.Add(project);
+                }
+            }
+            if (candidates.Count > 1)
+                throw new InvalidOperationException($"Ambiguous producers for HintPath '{hintPath}': {string.Join(", ", candidates)}. Use an explicit ProjectReference");
+            return candidates.SingleOrDefault();
         }
 
         private static string ResolveModelDescriptorPath(ProfileEnvironmentModel model)
@@ -1764,13 +1948,18 @@ namespace FODevManager.Services
             var buildBinPath = Path.Combine(buildOutputRoot, "Bin");
             Directory.CreateDirectory(buildBinPath);
 
-            if (!PrepareProjectReferenceAssemblies(msbuildExecutable, sourceProjectFilePath, buildOutputRoot, modelName))
-                return false;
+            var stagingRoot = Path.Combine(runRoot, "SourceReferences", Guid.NewGuid().ToString("N"));
+            var runtimeRoot = Path.Combine(stagingRoot, "Runtime");
+            Directory.CreateDirectory(runtimeRoot);
+            var targetsPath = Path.Combine(stagingRoot, "PackageBuild.targets");
+            WritePackageBuildTargets(targetsPath, sourceProjectFilePath, modelName, buildOutputRoot, stagingRoot);
+            buildContext = buildContext with { ReferenceFolder = $"{runtimeRoot};{buildContext.ReferenceFolder}" };
 
             var processStartInfo = new ProcessStartInfo
             {
                 FileName = msbuildExecutable,
-                Arguments = BuildMsBuildArguments(solutionFilePath, buildContext, buildOutputRoot),
+                Arguments = BuildMsBuildArguments(solutionFilePath, buildContext, buildOutputRoot)
+                    + $" /p:CustomAfterMicrosoftCommonTargets=\"{targetsPath}\" /warnaserror:MSB3245",
                 WorkingDirectory = Path.GetDirectoryName(solutionFilePath) ?? Directory.GetCurrentDirectory(),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -1795,61 +1984,176 @@ namespace FODevManager.Services
                 return false;
             }
 
+            if (!File.Exists(Path.Combine(stagingRoot, "compiled.txt"))
+                || !TryResolveBuiltPayloadRoot(buildOutputRoot, modelName, out var payloadRoot))
+            {
+                MessageLogger.Error($"Source build did not verify fresh compilation of Dynamics.AX.{modelName}.dll under '{buildOutputRoot}'. Check the CopyReferences/Build hooks, solution build configuration and '{compilerLogsRoot}'");
+                return false;
+            }
+            try
+            {
+                var activeProjects = File.ReadAllLines(Path.Combine(stagingRoot, "active-projects.txt")).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var buildManifests = Directory.GetFiles(Path.Combine(stagingRoot, "Projects"), "built.txt", SearchOption.AllDirectories);
+                var referenceFolders = buildManifests.Select(Path.GetDirectoryName)
+                    .Where(path => activeProjects.Contains(File.ReadAllText(Path.Combine(path!, "project.txt")).Trim()))
+                    .Select(path => Path.Combine(path!, "Files")).ToList();
+                referenceFolders.Add(Path.Combine(stagingRoot, "FileReferences"));
+                var stagedTargets = buildManifests.SelectMany(File.ReadAllLines).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var stagedProjects = Directory.GetFiles(Path.Combine(stagingRoot, "Projects"), "project.txt", SearchOption.AllDirectories)
+                    .SelectMany(File.ReadAllLines).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                foreach (var reference in activeProjects)
+                    if (!stagedProjects.Contains(reference))
+                        throw new InvalidOperationException($"Active ProjectReference '{reference}' produced no staged output in this build. Check its build mapping and Microsoft.Common targets import");
+                foreach (var reference in File.ReadAllLines(Path.Combine(stagingRoot, "project-references.txt")))
+                    if (!stagedTargets.Contains(reference) && !IsReferenceOnlyAssembly(reference))
+                        throw new InvalidOperationException($"Project reference '{reference}' was not built and staged in this solution configuration. Check its Build.0 mapping and Microsoft.Common targets import");
+                if (referenceFolders.Any(folder => Directory.GetFiles(folder, $"Dynamics.AX.{modelName}.dll", SearchOption.AllDirectories).Length > 0))
+                    throw new InvalidOperationException($"A source reference bundle contains Dynamics.AX.{modelName}.dll and would overwrite the model built in this run");
+                CopyStagedReferences(referenceFolders, Path.Combine(payloadRoot, "bin"));
+                foreach (var assembly in Directory.GetFiles(payloadRoot, "*.dll", SearchOption.AllDirectories))
+                {
+                    if (!IsReferenceOnlyAssembly(assembly))
+                        continue;
+                    MessageLogger.Info($"Excluding reference-only assembly from source package: '{assembly}'");
+                    File.Delete(assembly);
+                }
+                if (!IsValidPayloadRoot(payloadRoot, modelName))
+                    throw new InvalidOperationException("Source compiler output was a reference-only assembly, not a deployable model");
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"Could not copy source dependencies into '{payloadRoot}': {exception.Message}");
+                return false;
+            }
+
             MessageLogger.Info($"✅ MSBuild completed for '{Path.GetFileName(solutionFilePath)}'");
             return true;
         }
 
-        private static bool PrepareProjectReferenceAssemblies(string msbuildExecutable, string sourceProjectFilePath, string buildOutputRoot, string modelName)
+        private static void WritePackageBuildTargets(string targetsPath, string sourceProject, string modelName, string buildOutputRoot, string stagingRoot)
         {
-            var projectReferences = ResolveProjectReferencePaths(sourceProjectFilePath);
-            if (projectReferences.Count == 0)
-                return true;
-
-            foreach (var projectReference in projectReferences)
-            {
-                var processStartInfo = new ProcessStartInfo
-                {
-                    FileName = msbuildExecutable,
-                    Arguments = $"\"{projectReference}\" /restore /p:Configuration=Debug",
-                    WorkingDirectory = Path.GetDirectoryName(projectReference) ?? Directory.GetCurrentDirectory(),
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-
-                ApplyDotNetSdkEnvironmentIfNeeded(processStartInfo, msbuildExecutable);
-
-                if (!RunProcess(processStartInfo, out var output))
-                {
-                    MessageLogger.Error($"❌ MSBuild failed for project reference '{projectReference}'. {output}".Trim());
-                    return false;
-                }
-            }
-
-            var targetBinFolder = Path.Combine(buildOutputRoot, "Bin", modelName, "bin");
-            Directory.CreateDirectory(targetBinFolder);
-
-            foreach (var outputFolder in projectReferences.SelectMany(ResolveProjectOutputFolders))
-            {
-                if (!Directory.Exists(outputFolder))
-                    continue;
-
-                foreach (var filePath in Directory.GetFiles(outputFolder, "*.*", SearchOption.TopDirectoryOnly)
-                             .Where(path => IsReferenceAssemblyOutput(Path.GetExtension(path))))
-                {
-                    File.Copy(filePath, Path.Combine(targetBinFolder, Path.GetFileName(filePath)), overwrite: true);
-                }
-            }
-
-            return true;
+            var modelBinPath = Path.GetFullPath(Path.Combine(buildOutputRoot, "Bin", modelName, "bin"));
+            if (!IsPathWithinDirectory(modelBinPath, buildOutputRoot))
+                throw new InvalidOperationException("Source build cleanup must remain inside the run-local build output");
+            Directory.CreateDirectory(Path.Combine(stagingRoot, "Projects"));
+            Directory.CreateDirectory(Path.Combine(stagingRoot, "FileReferences"));
+            var root = System.Security.SecurityElement.Escape(stagingRoot);
+            var project = System.Security.SecurityElement.Escape(Path.GetFullPath(sourceProject));
+            var modelBin = System.Security.SecurityElement.Escape(modelBinPath);
+            var assemblyName = System.Security.SecurityElement.Escape($"Dynamics.AX.{modelName}");
+            // FileWrites contains evaluated outputs of this build, not a scan of historical output directories
+            var document = XDocument.Parse($$"""
+                <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+                  <Target Name="FODevManagerStageOutputs" AfterTargets="Build"
+                          Condition="'$(MSBuildProjectExtension)' == '.csproj' And '$(IsCrossTargetingBuild)' != 'true'">
+                    <PropertyGroup>
+                      <_FOStage>{{root}}\Projects\$([MSBuild]::StableStringHash('$(MSBuildProjectFullPath)'))\$(Configuration)\$(Platform)\$(TargetFramework)</_FOStage>
+                    </PropertyGroup>
+                    <Error Condition="!Exists('$(TargetPath)')" Text="Producer did not create $(TargetPath)" />
+                    <ItemGroup>
+                      <_FOOutput Include="@(FileWrites->'%(FullPath)')"
+                                 Condition="$([System.String]::Copy('%(FileWrites.FullPath)').StartsWith('$(TargetDir)', System.StringComparison.OrdinalIgnoreCase))" />
+                      <_FOOutput Include="$(TargetPath)" />
+                      <_FOOutput Update="@(_FOOutput)">
+                        <RelativePath>$([MSBuild]::MakeRelative('$(TargetDir)', '%(_FOOutput.FullPath)'))</RelativePath>
+                      </_FOOutput>
+                    </ItemGroup>
+                    <Copy SourceFiles="@(_FOOutput)" DestinationFiles="@(_FOOutput->'$(_FOStage)\Files\%(RelativePath)')" />
+                    <Copy SourceFiles="@(_FOOutput)" DestinationFiles="@(_FOOutput->'{{root}}\Runtime\%(RelativePath)')" />
+                    <WriteLinesToFile File="$(_FOStage)\built.txt" Lines="$(TargetPath)" Overwrite="true" />
+                    <WriteLinesToFile File="$(_FOStage)\project.txt" Lines="$(MSBuildProjectFullPath)" Overwrite="true" />
+                  </Target>
+                  <Target Name="FODevManagerCleanCopiedModel" AfterTargets="CopyReferences"
+                          Condition="'$(MSBuildProjectFullPath)' == '{{project}}'">
+                    <Error Condition="'%(Reference.HintPath)' != '' And !Exists('%(Reference.HintPath)')" Text="Missing active reference %(Reference.HintPath)" />
+                    <Error Condition="'@(ProjectReference)' != '' And !Exists('%(ProjectReference.FullPath)')" Text="Missing active ProjectReference %(ProjectReference.FullPath)" />
+                    <ItemGroup>
+                      <_FOCopiedModel Include="{{modelBin}}\{{assemblyName}}.*" />
+                      <_FOFileReference Include="@(ReferencePath)" Condition="'%(ReferencePath.ReferenceSourceTarget)' != 'ProjectReference' And '%(ReferencePath.FrameworkFile)' != 'true'" />
+                      <_FOFileReference Include="@(ReferenceCopyLocalPaths)" />
+                      <_FOProjectReference Include="@(ReferencePath)" Condition="'%(ReferencePath.ReferenceSourceTarget)' == 'ProjectReference'" />
+                      <_FOActiveProject Include="@(ProjectReference)" Condition="'%(ProjectReference.Extension)' == '.csproj' And '%(ProjectReference.ReferenceOutputAssembly)' != 'false'" />
+                    </ItemGroup>
+                    <Delete Files="@(_FOCopiedModel)" />
+                    <Copy SourceFiles="@(_FOFileReference)" DestinationFiles="@(_FOFileReference->'{{root}}\FileReferences\%(DestinationSubDirectory)%(Filename)%(Extension)')" />
+                    <Copy SourceFiles="@(_FOFileReference)" DestinationFiles="@(_FOFileReference->'{{root}}\Runtime\%(DestinationSubDirectory)%(Filename)%(Extension)')" />
+                    <ItemGroup>
+                      <_FOActualRuntime Include="{{root}}\Runtime\**\*" Exclude="{{root}}\Runtime\**\{{assemblyName}}.*" />
+                    </ItemGroup>
+                    <Copy SourceFiles="@(_FOActualRuntime)" DestinationFiles="@(_FOActualRuntime->'{{modelBin}}\%(RecursiveDir)%(Filename)%(Extension)')" />
+                    <WriteLinesToFile File="{{root}}\project-references.txt" Lines="@(_FOProjectReference->'%(FullPath)')" Overwrite="true" />
+                    <WriteLinesToFile File="{{root}}\active-projects.txt" Lines="@(_FOActiveProject->'%(FullPath)')" Overwrite="true" />
+                    <WriteLinesToFile File="{{root}}\compile-started.txt" Lines="CopyReferences completed" Overwrite="true" />
+                  </Target>
+                  <Target Name="FODevManagerVerifyCompilation" AfterTargets="Build"
+                          Condition="'$(MSBuildProjectFullPath)' == '{{project}}'">
+                    <Error Condition="!Exists('{{root}}\compile-started.txt') Or !Exists('{{modelBin}}\{{assemblyName}}.dll')"
+                           Text="Source build did not create a new {{assemblyName}}.dll after CopyReferences" />
+                    <WriteLinesToFile File="{{root}}\compiled.txt" Lines="Build completed" Overwrite="true" />
+                  </Target>
+                </Project>
+                """);
+            document.Save(targetsPath);
         }
 
-        private static bool IsReferenceAssemblyOutput(string extension)
+        private static bool IsReferenceOnlyAssembly(string path)
         {
-            return extension.Equals(".dll", StringComparison.OrdinalIgnoreCase)
-                || extension.Equals(".pdb", StringComparison.OrdinalIgnoreCase)
-                || extension.Equals(".xml", StringComparison.OrdinalIgnoreCase);
+            try
+            {
+                using var stream = File.OpenRead(path);
+                using var reader = new PEReader(stream);
+                if (!reader.HasMetadata)
+                    return false;
+                var metadata = reader.GetMetadataReader();
+                if (!metadata.IsAssembly)
+                    return false;
+                foreach (var handle in metadata.GetAssemblyDefinition().GetCustomAttributes())
+                {
+                    var constructor = metadata.GetCustomAttribute(handle).Constructor;
+                    var typeHandle = constructor.Kind == HandleKind.MemberReference
+                        ? metadata.GetMemberReference((MemberReferenceHandle)constructor).Parent
+                        : constructor.Kind == HandleKind.MethodDefinition
+                            ? metadata.GetMethodDefinition((MethodDefinitionHandle)constructor).GetDeclaringType()
+                            : default;
+                    if (typeHandle.Kind == HandleKind.TypeReference)
+                    {
+                        var type = metadata.GetTypeReference((TypeReferenceHandle)typeHandle);
+                        if (metadata.StringComparer.Equals(type.Namespace, "System.Runtime.CompilerServices")
+                            && metadata.StringComparer.Equals(type.Name, "ReferenceAssemblyAttribute"))
+                            return true;
+                    }
+                    else if (typeHandle.Kind == HandleKind.TypeDefinition)
+                    {
+                        var type = metadata.GetTypeDefinition((TypeDefinitionHandle)typeHandle);
+                        if (metadata.StringComparer.Equals(type.Namespace, "System.Runtime.CompilerServices")
+                            && metadata.StringComparer.Equals(type.Name, "ReferenceAssemblyAttribute"))
+                            return true;
+                    }
+                }
+                return false;
+            }
+            catch (BadImageFormatException)
+            {
+                return false;
+            }
+        }
+
+        private static void CopyStagedReferences(IReadOnlyList<string> referenceFolders, string targetBinFolder)
+        {
+            var copied = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var folder in referenceFolders)
+            {
+                foreach (var file in Directory.GetFiles(folder, "*", SearchOption.AllDirectories))
+                {
+                    var destination = Path.Combine(targetBinFolder, Path.GetRelativePath(folder, file));
+                    if (copied.TryGetValue(destination, out var previous)
+                        && !File.ReadAllBytes(previous).AsSpan().SequenceEqual(File.ReadAllBytes(file)))
+                        throw new InvalidOperationException($"Conflicting source dependencies '{previous}' and '{file}'");
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                    File.Copy(file, destination, overwrite: true);
+                    copied[destination] = file;
+                }
+            }
         }
 
         private static string BuildMsBuildArguments(string solutionFilePath, MsBuildContext buildContext, string buildOutputRoot)
@@ -1858,12 +2162,12 @@ namespace FODevManager.Services
 
             return
                 $"\"{solutionFilePath}\" " +
-                "/restore " +
+                "/restore /t:Rebuild /p:Configuration=Debug " +
                 $"/p:BuildTasksDirectory=\"{buildContext.BuildTasksDirectory}\" " +
                 $"/p:MetadataDirectory=\"{buildContext.MetadataDirectory}\" " +
                 $"/p:FrameworkDirectory=\"{buildContext.CompilerPackageRoot}\" " +
                 $"/p:ReferenceFolder=\"{buildContext.ReferenceFolder};{buildBinPath}\" " +
-                $"/p:ReferencePath=\"{buildContext.CompilerPackageRoot}\" " +
+                $"/p:ReferencePath=\"{buildContext.ReferenceFolder};{buildContext.CompilerPackageRoot}\" " +
                 $"/p:OutputDirectory=\"{buildBinPath}\"";
         }
 
@@ -2017,7 +2321,7 @@ namespace FODevManager.Services
             return true;
         }
 
-        private static bool RunProcess(ProcessStartInfo processStartInfo, out string combinedOutput)
+        internal static bool RunProcess(ProcessStartInfo processStartInfo, out string combinedOutput)
         {
             combinedOutput = string.Empty;
 
@@ -2027,11 +2331,11 @@ namespace FODevManager.Services
                 if (!process.Start())
                     return false;
 
-                var stdout = process.StandardOutput.ReadToEnd();
-                var stderr = process.StandardError.ReadToEnd();
+                var stdout = process.StandardOutput.ReadToEndAsync();
+                var stderr = process.StandardError.ReadToEndAsync();
                 process.WaitForExit();
 
-                combinedOutput = string.Join(Environment.NewLine, new[] { stdout, stderr }
+                combinedOutput = string.Join(Environment.NewLine, new[] { stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult() }
                     .Where(text => !string.IsNullOrWhiteSpace(text)));
 
                 return process.ExitCode == 0;
@@ -2043,7 +2347,7 @@ namespace FODevManager.Services
             }
         }
 
-        private static string ResolveMsBuildExecutable()
+        internal static string ResolveMsBuildExecutable()
         {
             var visualStudioCandidate = ResolveVisualStudioMsBuildExecutable();
             if (!visualStudioCandidate.IsNullOrEmpty())
@@ -2130,7 +2434,7 @@ namespace FODevManager.Services
             return true;
         }
 
-        private static void ApplyDotNetSdkEnvironmentIfNeeded(ProcessStartInfo processStartInfo, string msbuildExecutable)
+        internal static void ApplyDotNetSdkEnvironmentIfNeeded(ProcessStartInfo processStartInfo, string msbuildExecutable)
         {
             if (CanResolveMicrosoftNetSdk(msbuildExecutable))
                 return;
@@ -2346,29 +2650,16 @@ namespace FODevManager.Services
                 return true;
             }
 
-            var xrefPath = Directory.Exists(buildOutputRoot)
-                ? Directory.GetFiles(buildOutputRoot, $"{modelName}.xref", SearchOption.AllDirectories)
-                    .OrderBy(path => path.Count(character => character == Path.DirectorySeparatorChar))
-                    .FirstOrDefault()
+            var candidateRoot = Directory.Exists(buildOutputRoot)
+                ? Directory.GetFiles(buildOutputRoot, $"Dynamics.AX.{modelName}.dll", SearchOption.AllDirectories)
+                    .Select(path => Path.GetDirectoryName(Path.GetDirectoryName(path)))
+                    .FirstOrDefault(path => path != null && IsValidPayloadRoot(path, modelName))
                 : null;
 
-            if (xrefPath.IsNullOrEmpty())
-            {
-                var packagesLocalPayloadRoot = Path.Combine(_deploymentBasePath, modelName);
-                if (IsValidPayloadRoot(packagesLocalPayloadRoot, modelName))
-                {
-                    payloadRoot = packagesLocalPayloadRoot;
-                    return true;
-                }
-
-                return false;
-            }
-
-            var candidateRoot = Path.GetDirectoryName(xrefPath!) ?? string.Empty;
-            if (!IsValidPayloadRoot(candidateRoot, modelName))
+            if (candidateRoot.IsNullOrEmpty())
                 return false;
 
-            payloadRoot = candidateRoot;
+            payloadRoot = candidateRoot!;
             return true;
         }
 
@@ -2446,8 +2737,15 @@ namespace FODevManager.Services
             if (payloadRoot.IsNullOrEmpty() || !Directory.Exists(payloadRoot))
                 return false;
 
-            return File.Exists(Path.Combine(payloadRoot, $"{modelName}.xref"))
-                || File.Exists(Path.Combine(payloadRoot, "bin", $"Dynamics.AX.{modelName}.dll"));
+            try
+            {
+                System.Reflection.AssemblyName.GetAssemblyName(Path.Combine(payloadRoot, "bin", $"Dynamics.AX.{modelName}.dll"));
+                return true;
+            }
+            catch (Exception exception) when (exception is IOException or BadImageFormatException or UnauthorizedAccessException)
+            {
+                return false;
+            }
         }
 
 
