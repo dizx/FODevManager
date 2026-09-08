@@ -30,22 +30,25 @@ namespace FODevManager.Utils
         }
 
         public static void UpdateWebConfigDatabase(string dbName)
+            => UpdateWebConfigDatabase(dbName, WebConfigPath);
+
+        public static void UpdateWebConfigDatabase(string dbName, string webConfigPath)
         {
-            if (!File.Exists(WebConfigPath))
+            if (!File.Exists(webConfigPath))
             {
-                MessageLogger.Warning("❌ web.config not found");
+                MessageLogger.Error("❌ web.config not found");
                 return;
             }
 
             try
             {
-                var xml = XDocument.Load(WebConfigPath);
+                var xml = XDocument.Load(webConfigPath);
                 var dbKey = xml.Descendants("add")
                     .FirstOrDefault(e => e.Attribute("key")?.Value == "DataAccess.Database");
 
                 if (dbKey == null)
                 {
-                    MessageLogger.Warning("❌ 'DataAccess.Database' key not found in web.config");
+                    MessageLogger.Error("❌ 'DataAccess.Database' key not found in web.config");
                     return;
                 }
 
@@ -57,7 +60,7 @@ namespace FODevManager.Utils
                 }
 
                 dbKey.SetAttributeValue("value", dbName);
-                xml.Save(WebConfigPath);
+                xml.Save(webConfigPath);
                 MessageLogger.Info($"🔄 Database switched to: {dbName}");
             }
             catch (Exception ex)

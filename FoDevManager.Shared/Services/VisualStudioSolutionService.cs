@@ -733,10 +733,8 @@ namespace FODevManager.Services
 
             var lines = File.ReadAllLines(solutionFilePath);
 
-            var alreadyInSolution = lines
-                .Select(TryGetProjectNameFromLine)
-                .Where(name => !name.IsNullOrEmpty())
-                .Any(name => name!.Contains(model.ModelName));
+            var alreadyInSolution = ParseSolutionProjects(lines)
+                .Any(project => ProjectPathMatches(project, solutionDir, projectFilePath));
 
             if (alreadyInSolution)
             {
@@ -760,27 +758,6 @@ namespace FODevManager.Services
 
             File.WriteAllText(solutionFilePath, sb.ToString());
             MessageLogger.Info($"Added project '{model.ModelName}' to solution '{profile.ProfileName}.sln'");
-        }
-
-        private static string? TryGetProjectNameFromLine(string line)
-        {
-            // Example line:
-            // Project("{TYPE-GUID}") = "MyModelName", "MyModelName\MyModelName.rnrproj", "{PROJECT-GUID}"
-            if (!line.TrimStart().StartsWith("Project("))
-                return null;
-
-            var parts = line.Split('"');
-            // indices:
-            // 0: Project(
-            // 1: TYPE-GUID
-            // 2: ) = 
-            // 3: PROJECT NAME
-            // 4: , 
-            // 5: PROJECT PATH
-            if (parts.Length < 4)
-                return null;
-
-            return parts[3].Trim();
         }
 
 

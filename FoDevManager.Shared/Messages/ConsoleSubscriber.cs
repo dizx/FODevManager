@@ -20,25 +20,34 @@ namespace FODevManager.Messages
             if (msg.Type == MessageType.LogOnly)
                 return;
 
-            Console.ForegroundColor = msg.Type switch
-            {
-                MessageType.Highlight => ConsoleColor.Cyan,
-                MessageType.Warning => ConsoleColor.Yellow,
-                MessageType.Error => ConsoleColor.Red,
-                _ => ConsoleColor.White
-            };
+            var output = msg.Type == MessageType.Error ? Console.Error : Console.Out;
+            var useColor = !Console.IsOutputRedirected && !Console.IsErrorRedirected;
+            if (useColor)
+                Console.ForegroundColor = msg.Type switch
+                {
+                    MessageType.Highlight => ConsoleColor.Cyan,
+                    MessageType.Warning => ConsoleColor.Yellow,
+                    MessageType.Error => ConsoleColor.Red,
+                    _ => ConsoleColor.White
+                };
 
             var lines = msg.Content.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
 
-            foreach (var line in lines)
+            try
             {
-                if (msg.Type != MessageType.Info && msg.Type != MessageType.Highlight)
-                    Console.WriteLine($"[{msg.Type}] {line}");
-                else
-                    Console.WriteLine(line);
+                foreach (var line in lines)
+                {
+                    if (msg.Type != MessageType.Info && msg.Type != MessageType.Highlight)
+                        output.WriteLine($"[{msg.Type}] {line}");
+                    else
+                        output.WriteLine(line);
+                }
             }
-
-            Console.ResetColor();
+            finally
+            {
+                if (useColor)
+                    Console.ResetColor();
+            }
         }
         public void Dispose()
         {

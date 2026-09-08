@@ -52,10 +52,10 @@ namespace FODevManager.Utils
             ModelIdBegin = ReadInt(configuration, "ModelIdBegin", DefaultModelIdBegin, "ModelIdStart");
             ModelIdEnd = ReadInt(configuration, "ModelIdEnd", DefaultModelIdEnd);
 
-            var toggle = Environment.ExpandEnvironmentVariables(configuration["CheckUncommittedBeforeSwitch"]);
+            var toggle = Environment.ExpandEnvironmentVariables(configuration["CheckUncommittedBeforeSwitch"] ?? string.Empty);
             if (bool.TryParse(toggle, out var onOff)) CheckUncommittedBeforeSwitch = onOff;
 
-            var pushDeployablePackageOnBuild = Environment.ExpandEnvironmentVariables(configuration["PushDeployablePackageOnBuild"]);
+            var pushDeployablePackageOnBuild = Environment.ExpandEnvironmentVariables(configuration["PushDeployablePackageOnBuild"] ?? string.Empty);
             if (bool.TryParse(pushDeployablePackageOnBuild, out var pushOnBuild))
                 PushDeployablePackageOnBuild = pushOnBuild;
 

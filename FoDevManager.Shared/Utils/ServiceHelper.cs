@@ -1,5 +1,6 @@
 ﻿using FODevManager.Messages;
 using FODevManager.Shared.Utils.FODevManager.WinUI.Services;
+using FODevManager.Shared.Utils;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -12,6 +13,17 @@ namespace FODevManager.Utils
 {
     public static class ServiceHelper
     {
+        public static void RefreshW3SVCState(Func<bool>? isRunning = null)
+        {
+            var state = Singleton<W3cServiceState>.Instance;
+            lock (state.SyncRoot)
+            {
+                if (state.InOperation)
+                    throw new InvalidOperationException("Cannot refresh W3SVC state during another operation");
+
+                state.IsRunning = (isRunning ?? IsW3cRunning)();
+            }
+        }
 
         public static bool IsW3cRunning()
         {
@@ -21,97 +33,68 @@ namespace FODevManager.Utils
         }
 
         public static void StopW3SVC()
-        {
-            var w3cServiceState = Singleton<W3cServiceState>.Instance;
+            => ChangeW3SVCState(running: false);
 
-            lock (w3cServiceState.SyncRoot)
-            {
-                if (w3cServiceState.InOperation)
-                {
-                    return;
-                }
-
-                if (!w3cServiceState.IsRunning)
-                {
-                    return;
-                }
-            }
-            MessageLogger.Info("⏳ Stopping World Wide Web Publishing Service (W3SVC)..");
-
-            try
-            {
-                Process process = new Process
-                {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        FileName = "net",
-                        Arguments = "stop W3SVC",
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    }
-                };
-
-                process.Start();
-                process.WaitForExit();
-
-                lock (w3cServiceState.SyncRoot)
-                    w3cServiceState.IsRunning = false;
-
-                MessageLogger.Info("✅ W3SVC stopped");
-            }
-            catch (Exception ex)
-            {
-                MessageLogger.Error($"❌ Failed to stop W3SVC: {ex.Message}");
-            }
-            
-        }
         public static void StartW3SVC()
+            => ChangeW3SVCState(running: true);
+
+        public static void ChangeW3SVCState(bool running,
+            Func<string, (int ExitCode, string Output, string Error)>? execute = null)
         {
             var w3cServiceState = Singleton<W3cServiceState>.Instance;
 
             lock (w3cServiceState.SyncRoot)
             {
-                if (w3cServiceState.InOperation)
-                {
+                if (w3cServiceState.InOperation || w3cServiceState.IsRunning == running)
                     return;
-                }
-
-                if (w3cServiceState.IsRunning)
-                {
-                    return;
-                }
             }
-            MessageLogger.Info("🔄 Restarting World Wide Web Publishing Service (W3SVC)..");
+
+            var action = running ? "start" : "stop";
+            MessageLogger.Info($"Requesting W3SVC {action}..");
 
             try
             {
-                Process process = new Process
-                {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        FileName = "net",
-                        Arguments = "start W3SVC",
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    }
-                };
-
-                process.Start();
-                process.WaitForExit();
+                var result = execute != null
+                    ? execute(action)
+                    : RunServiceCommandAsync(action).GetAwaiter().GetResult();
+                if (result.ExitCode != 0)
+                    throw new InvalidOperationException(
+                        $"net {action} W3SVC exited with code {result.ExitCode}. {result.Output.Trim()} {result.Error.Trim()}");
 
                 lock (w3cServiceState.SyncRoot)
-                    w3cServiceState.IsRunning = true;
+                    w3cServiceState.IsRunning = running;
 
-                MessageLogger.Info("✅ W3SVC restarted");
+                MessageLogger.Info(running ? "W3SVC started" : "W3SVC stopped");
             }
             catch (Exception ex)
             {
-                MessageLogger.Error($"❌ Failed to start W3SVC: {ex.Message}");
+                MessageLogger.Error($"Failed to {action} W3SVC: {ex.Message}");
+                if (!running && Singleton<Engine>.Instance.EnvironmentType == EnvironmentType.Console)
+                    throw;
             }
+        }
+
+        private static async Task<(int ExitCode, string Output, string Error)> RunServiceCommandAsync(string action)
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "net",
+                    Arguments = $"{action} W3SVC",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            process.Start();
+            // Drain both pipes while waiting so a full redirected buffer cannot block net
+            var output = process.StandardOutput.ReadToEndAsync();
+            var error = process.StandardError.ReadToEndAsync();
+            await Task.WhenAll(output, error, process.WaitForExitAsync()).ConfigureAwait(false);
+            return (process.ExitCode, await output.ConfigureAwait(false), await error.ConfigureAwait(false));
         }
         
 

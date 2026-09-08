@@ -156,7 +156,14 @@ Important settings:
 
 ## Console Usage
 
-The console project remains available for profile and model automation:
+Build or publish the console separately from the WinUI installer:
+
+```powershell
+dotnet build FODevManager\FODevManager.csproj -c Release
+dotnet publish FODevManager\FODevManager.csproj -c Release -r win-x64 --self-contained true
+```
+
+Run `fodev.exe` from the console output directory. Use `help`, `--help`, or `help <command>` for usage. Commands and option names are case-insensitive; profile names, model names, and paths retain their casing. Both `-profile` / `--profile` and `-model` / `--model` are accepted.
 
 ```powershell
 fodev.exe -profile "DevProfile" <command> [options]
@@ -168,15 +175,20 @@ Profile commands:
 | --- | --- |
 | `create` | Creates a new profile |
 | `import` | Imports a profile JSON file |
-| `delete` | Deletes a profile |
-| `check` | Validates profile paths and state |
+| `delete` | Undeploys verified owned links and deletes the local profile; preserves solutions, repositories, and exported artifacts |
+| `check` | Validates and saves profile state; may clone repositories and update external artifacts |
 | `list` | Lists profiles or models in a profile |
+| `show` | Shows saved profile and model details without refreshing repositories or saving the profile |
+| `repos` | Lists repositories, paths, and saved branch information |
+| `export "output.json"` | Writes a portable profile artifact; refuses to overwrite an existing file |
+| `solution-path` | Reports the resolved solution path |
+| `solution-ensure` | Creates or updates the solution with source model projects |
 | `deploy` | Deploys all undeployed models |
 | `undeploy` | Undeploys all deployed models |
 | `open-vs` | Opens the active profile solution |
 | `git-fetch` | Fetches latest Git state for repositories |
 | `switch` | Switches to the selected profile |
-| `db-set` | Sets the profile database name |
+| `db-set "DatabaseName"` | Saves the database name and applies it immediately if the profile is active |
 | `db-apply` | Applies the database name to FO configuration |
 
 Model commands:
@@ -184,13 +196,37 @@ Model commands:
 | Command | Description |
 | --- | --- |
 | `-model "Name" add "path"` | Adds a model to the profile |
-| `-model "Name" remove` | Removes a model from the profile |
+| `-model "Name" remove` | Undeploys a verified owned link before removing membership; compiled NuGet package removal is refused |
+| `-model "Name" show` | Shows saved details for one model |
 | `-model "Name" deploy` | Deploys one model |
 | `-model "Name" undeploy` | Undeploys one model |
 | `-model "Name" check` | Checks deployment state |
 | `-model "Name" git-status` | Checks whether the model is in a Git repository |
 | `-model "Name" git-open` | Opens the model repository remote URL |
-| `-model "Name" peri` | Assigns task metadata |
+| `-model "Name" peri "Task1234"` | Saves task metadata without stashing or checking out a branch |
+| `-model "Name" package-build` | Builds a source model package locally; never publishes, regardless of configuration |
+
+Examples:
+
+```powershell
+fodev.exe list
+fodev.exe import "C:\Artifacts\TeamProfile.json"
+fodev.exe -profile "DevProfile" show
+fodev.exe -profile "DevProfile" repos
+fodev.exe -profile "DevProfile" export "C:\Artifacts\DevProfile.json"
+fodev.exe -profile "DevProfile" solution-ensure
+fodev.exe -profile "DevProfile" -model "MyModel" package-build
+```
+
+Legacy `-profile list`, `-profile import "file.json"`, and name-inferred `-model add "path"` remain supported. `git-check` is an alias for `git-status`; this checks repository membership, not a full working-tree status report.
+
+The CLI loads optional `appsettings.json` and environment-specific JSON from its executable directory, then applies environment-variable overrides. It does not automatically read the WinUI application's settings. For example, set `$env:ProfileStoragePath` to select a separate profile store. Keep credentials in configuration or environment variables rather than command arguments.
+
+Exit codes are `0` for success/help, `2` for invalid usage, and `1` for operational failure. Error messages go to stderr; human-readable output goes to stdout. `show`, `repos`, and `list` report saved state, not live Git or deployment health, and do not rewrite profiles or artifacts. Initialization may create the configured profile directory and logs.
+
+Deployment, database, and switching operations require a suitable FO machine and service-control permissions. `switch` can stash work, change branches, restore packages, replace deployments, and apply a database. These shared workflows are not transactional: a failure exit code does not imply rollback. Active `db-set` saves before application, so an application failure can leave the requested name persisted. Service-controlled workflows may start W3SVC even if it was initially stopped. Avoid concurrent CLI/UI mutations of the same profile or deployment paths.
+
+CLI undeploy/delete/remove refuse unmanaged folders, broken links, foreign ownership, and mismatched deployment targets rather than forcing deletion. Repository-URL import, package add/update/removal, and destructive Git reset/merge workflows remain desktop operations. Package builds need the same FO tools, feed access, and repository build configuration as the desktop workflow.
 
 ## Project Structure
 
@@ -217,10 +253,12 @@ Important service areas:
 Run the test suite with:
 
 ```powershell
-dotnet test FODevManager.sln
+dotnet test FODevManager.Tests\FODevManager.Tests.csproj --filter "TestCategory!=LocalIntegration"
 ```
 
 The tests cover command parsing, profile handling, deployment behavior, Visual Studio solution generation, compiled NuGet package preparation, and package build reference resolution.
+
+`LocalIntegration` tests require a configured developer machine and perform real package-build workflows; run them explicitly only in that environment.
 
 ## Current Roadmap
 

@@ -25,6 +25,25 @@ namespace FODevManager.Tests
         }
 
         [Test]
+        public void AddProjectMatchesExactPathRatherThanSubstringOrDisplayName()
+        {
+            var service = CreateService();
+            var path = Path.Combine(_baseDir, "Foo.rnrproj");
+            File.WriteAllText(path, "<Project />");
+            var profile = new ProfileModel { ProfileName = "Test", SolutionFilePath = Path.Combine(_baseDir, "Test.sln") };
+            File.WriteAllText(profile.SolutionFilePath,
+                "Project(\"{FC65038C-1B2F-41E1-A629-BED71D161FFF}\") = \"FooExtensions\", \"FooExtensions.rnrproj\", \"{11111111-1111-1111-1111-111111111111}\"\r\nEndProject\r\n" +
+                "Project(\"{FC65038C-1B2F-41E1-A629-BED71D161FFF}\") = \"Foo\", \"OtherFoo.rnrproj\", \"{22222222-2222-2222-2222-222222222222}\"\r\nEndProject\r\n");
+            var model = new ProfileEnvironmentModel { ModelName = "Foo", ProjectFilePath = path };
+            service.AddProjectToSolution(profile, model);
+            var solution = File.ReadAllText(profile.SolutionFilePath);
+            Assert.That(solution, Does.Contain("\"Foo.rnrproj\""));
+            model.ModelName = "RenamedFoo";
+            service.AddProjectToSolution(profile, model);
+            Assert.That(File.ReadAllText(profile.SolutionFilePath), Is.EqualTo(solution));
+        }
+
+        [Test]
         public void CreateBuildSolution_Should_Include_ProjectReferences_And_Filter_Invalid_Nesting()
         {
             var repoRoot = Path.Combine(_baseDir, "Peritus ZTL");
