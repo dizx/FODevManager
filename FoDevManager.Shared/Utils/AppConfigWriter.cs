@@ -87,12 +87,12 @@ namespace FODevManager.Shared.Utils
                             break;
                     }
 
-                    MessageLogger.Info($"Config updated: {key} = {value}");
+                    MessageLogger.Info($"Config updated: {key}");
                 }
             }
             catch (Exception ex)
             {
-                MessageLogger.Error($"Failed to update config '{key}': {ex.Message}");
+                MessageLogger.Error($"Failed to update config '{key}' ({ex.GetType().Name})");
                 throw;
             }
         }
