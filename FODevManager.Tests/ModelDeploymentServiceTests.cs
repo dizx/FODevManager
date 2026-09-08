@@ -128,6 +128,37 @@ namespace FODevManager.Tests
         }
 
         [Test]
+        public void AddModelToProfileIfNotExists_Should_Find_Dotted_Git_Repository_Root()
+        {
+            var profileName = "DottedRepositoryProfile";
+            var modelName = "BankConnect";
+            var repositoryRoot = Path.Combine(_baseDir, "Peritus.BankConnect");
+            var metadataFolder = Path.Combine(repositoryRoot, "Metadata", modelName);
+            var projectFolder = Path.Combine(repositoryRoot, "Project", modelName);
+            var projectFile = Path.Combine(projectFolder, $"{modelName}.rnrproj");
+            var gitFolder = Path.Combine(repositoryRoot, ".git");
+
+            Directory.CreateDirectory(metadataFolder);
+            Directory.CreateDirectory(projectFolder);
+            Directory.CreateDirectory(gitFolder);
+            File.WriteAllText(projectFile, string.Empty);
+            File.WriteAllText(
+                Path.Combine(gitFolder, "config"),
+                "[remote \"origin\"]\n    url = https://example.com/Peritus.BankConnect.git");
+            SaveProfile(new ProfileModel { ProfileName = profileName });
+
+            var service = CreateModelDeploymentService();
+
+            service.AddModelToProfileIfNotExists(profileName, modelName, repositoryRoot, ModelType.Source);
+
+            var savedProfile = LoadProfile(profileName);
+            Assert.That(savedProfile.Repositories, Has.Count.EqualTo(1));
+            Assert.That(savedProfile.Repositories.Single().RepoRootFolder, Is.EqualTo(repositoryRoot));
+            Assert.That(savedProfile.Repositories.Single().Models.Single().ModelName, Is.EqualTo(modelName));
+            Assert.That(savedProfile.StandaloneModels, Is.Empty);
+        }
+
+        [Test]
         public void DeploymentLedger_Should_Write_To_Profile_Storage_File()
         {
             var config = CreateAppConfig(Path.Combine(_baseDir, "Deployment"));

@@ -110,7 +110,7 @@ namespace FODevManager.Utils
                     return returnPath;
             }
 
-            if (!Path.HasExtension(projectFilePath))
+            if (Directory.Exists(projectFilePath) || !Path.HasExtension(projectFilePath))
             {
                 if (PathContainsDirectory(projectFilePath, "project") && PathContainsDirectory(projectFilePath, modelName))
                 {
@@ -151,7 +151,9 @@ namespace FODevManager.Utils
 
         public static string GetMetadataFolder(string modelName, string modelPath)
         {
-            string? currentPath = Path.HasExtension(modelPath) ? Path.GetDirectoryName(modelPath) : modelPath;
+            string? currentPath = Directory.Exists(modelPath) || !Path.HasExtension(modelPath)
+                ? modelPath
+                : Path.GetDirectoryName(modelPath);
 
             // Move up to 3 levels and check for Metadata folder
             for (int i = 0; i < 3; i++)
@@ -186,9 +188,9 @@ namespace FODevManager.Utils
             if (modelPath.IsNullOrEmpty())
                 throw new ArgumentException("Model path is required", nameof(modelPath));
 
-            string? currentPath = Path.HasExtension(modelPath)
-                ? Path.GetDirectoryName(modelPath)
-                : modelPath;
+            string? currentPath = Directory.Exists(modelPath) || !Path.HasExtension(modelPath)
+                ? modelPath
+                : Path.GetDirectoryName(modelPath);
 
             var libFolderNames = new[] { "Libs", "Lib" };
 
@@ -217,7 +219,9 @@ namespace FODevManager.Utils
 
         public static string GetModelRootFolder(string projectFilePath)
         {
-            string? currentPath = Path.HasExtension(projectFilePath) ? Path.GetDirectoryName(projectFilePath) : projectFilePath;
+            string? currentPath = Directory.Exists(projectFilePath) || !Path.HasExtension(projectFilePath)
+                ? projectFilePath
+                : Path.GetDirectoryName(projectFilePath);
 
             // Move up to 4 levels and check for Metadata folder
             for (int i = 0; i < 4; i++)

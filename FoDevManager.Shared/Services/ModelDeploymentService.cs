@@ -981,9 +981,9 @@ namespace FODevManager.Services
             if (path.IsNullOrEmpty())
                 return false;
 
-            string? currentPath = Path.HasExtension(path)
-                ? Path.GetDirectoryName(path)
-                : path;
+            string? currentPath = Directory.Exists(path) || !Path.HasExtension(path)
+                ? path
+                : Path.GetDirectoryName(path);
 
             while (!currentPath.IsNullOrEmpty())
             {

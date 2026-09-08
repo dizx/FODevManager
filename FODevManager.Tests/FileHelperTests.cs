@@ -65,6 +65,20 @@ namespace FODevManager.Tests
         }
 
         [Test]
+        public void GetProjectFilePath_Should_Handle_Directory_With_Dot()
+        {
+            var model = "BankConnect";
+            var repositoryPath = Path.Combine(_baseDir, "Peritus.BankConnect");
+            var projectPath = Path.Combine(repositoryPath, "Project", model, $"{model}.rnrproj");
+            Directory.CreateDirectory(Path.GetDirectoryName(projectPath)!);
+            File.WriteAllText(projectPath, "// dummy rnrproj file");
+
+            var result = FileHelper.GetProjectFilePath(model, repositoryPath);
+
+            Assert.That(result, Is.EqualTo(projectPath).IgnoreCase);
+        }
+
+        [Test]
         public void Should_Throw_When_File_Not_Found()
         {
             var model = "MissingModel";
@@ -94,6 +108,17 @@ namespace FODevManager.Tests
         }
 
         [Test]
+        public void GetModelRootFolder_Should_Handle_Directory_With_Dot()
+        {
+            var modelRoot = Path.Combine(_baseDir, "source.v2");
+            Directory.CreateDirectory(Path.Combine(modelRoot, "Project"));
+
+            var root = FileHelper.GetModelRootFolder(modelRoot);
+
+            Assert.That(root, Is.EqualTo(modelRoot));
+        }
+
+        [Test]
         public void GetProjectFilePath_Should_Find_Various_Layouts()
         {
             var model = "DemoModel";
@@ -112,6 +137,32 @@ namespace FODevManager.Tests
 
             var result = FileHelper.GetMetadataFolder(model, _baseDir);
             Assert.That(result, Is.EqualTo(metaPath));
+        }
+
+        [Test]
+        public void GetMetadataFolder_Should_Handle_Directory_With_Dot()
+        {
+            var model = "BankConnect";
+            var repositoryPath = Path.Combine(_baseDir, "Peritus.BankConnect");
+            var metadataPath = Path.Combine(repositoryPath, "Metadata", model);
+            Directory.CreateDirectory(metadataPath);
+
+            var result = FileHelper.GetMetadataFolder(model, repositoryPath);
+
+            Assert.That(result, Is.EqualTo(metadataPath));
+        }
+
+        [Test]
+        public void GetLibsFolder_Should_Handle_Directory_With_Dot()
+        {
+            var model = "BankConnect";
+            var repositoryPath = Path.Combine(_baseDir, "Peritus.BankConnect");
+            var libsPath = Path.Combine(repositoryPath, "Libs", model);
+            Directory.CreateDirectory(libsPath);
+
+            var result = FileHelper.GetLibsFolder(model, repositoryPath);
+
+            Assert.That(result, Is.EqualTo(libsPath));
         }
 
         [Test]
