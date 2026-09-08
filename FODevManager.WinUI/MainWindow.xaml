@@ -69,14 +69,14 @@
                 <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="10">
                     <ComboBox x:Name="ProfilesDropdown" Width="300" SelectionChanged="ProfilesDropdown_SelectionChanged" ToolTipService.ToolTip="Select an existing profile" />
 
-                    <Button Click="CreateProfile_Click" ToolTipService.ToolTip="Create a new profile">
+                    <Button x:Name="CreateProfileButton" Click="CreateProfile_Click" ToolTipService.ToolTip="Create a new profile">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE710;" FontSize="14" />
                             <TextBlock Text="Create" />
                         </StackPanel>
                     </Button>
 
-                    <Button ToolTipService.ToolTip="Import a profile from GIT repo or a JSON file">
+                    <Button x:Name="ImportProfileButton" ToolTipService.ToolTip="Import a profile from GIT repo or a JSON file">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8B5;" FontSize="14" />
                             <TextBlock Text="Import" />
@@ -89,34 +89,34 @@
                         </Button.Flyout>
                     </Button>
 
-                    <Button Click="DeployProfile_Click" ToolTipService.ToolTip="Deploy all undeployed models">
+                    <Button x:Name="DeployProfileButton" Click="DeployProfile_Click" ToolTipService.ToolTip="Deploy all undeployed models in this profile">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE899;" FontSize="14" />
                             <TextBlock Text="Deploy" />
                         </StackPanel>
                     </Button>
 
-                    <Button Click="UnDeployProfile_Click" ToolTipService.ToolTip="Remove all deployed models">
+                    <Button x:Name="UnDeployProfileButton" Click="UnDeployProfile_Click" ToolTipService.ToolTip="Remove all deployed models in all profiles">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE896;" FontSize="14" />
                             <TextBlock Text="UnDeploy" />
                         </StackPanel>
                     </Button>
 
-                    <Button Click="SwitchProfile_Click" ToolTipService.ToolTip="Switch to this profile and redeploy">
+                    <Button x:Name="SwitchProfileButton" Click="SwitchProfile_Click" ToolTipService.ToolTip="Switch to this profile and redeploy">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8AB;" FontSize="14" />
                             <TextBlock Text="Switch" />
                         </StackPanel>
                     </Button>
-                    <Button Click="RefreshProfile_Click" ToolTipService.ToolTip="Refreshes all the information about model deployment etc">
+                    <Button x:Name="RefreshProfileButton" Click="RefreshProfile_Click" ToolTipService.ToolTip="Refreshes all the information about model deployment etc">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE72C;" FontSize="14" />
                             <TextBlock Text="Refresh Profile" />
                         </StackPanel>
                     </Button>
 
-                    <Button ToolTipService.ToolTip="Git actions for all repos in the selected profile">
+                    <Button x:Name="GitActionsButton" ToolTipService.ToolTip="Git actions for all repos in the selected profile">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE777;" FontSize="14" />
                             <TextBlock Text="Git Actions" />
@@ -130,7 +130,7 @@
                         </Button.Flyout>
                     </Button>
 
-                    <Button Click="DeleteProfile_Click" ToolTipService.ToolTip="Delete the selected profile (removes the profile file)">
+                    <Button x:Name="DeleteProfileButton" Click="DeleteProfile_Click" ToolTipService.ToolTip="Delete the selected profile (removes the profile file)">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE74D;" FontSize="14" />
                             <!-- Delete icon -->
@@ -140,7 +140,7 @@
 
                 </StackPanel>
 
-                <Button Grid.Row="0" Grid.Column="1" Click="OpenSolution_Click" Margin="10,0,0,0" ToolTipService.ToolTip="Open the Visual Studio solution associated with this profile">
+                <Button x:Name="OpenSolutionButton" Grid.Row="0" Grid.Column="1" Click="OpenSolution_Click" Margin="10,0,0,0" ToolTipService.ToolTip="Open the Visual Studio solution associated with this profile">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8B7;" FontSize="14" />
                         <TextBlock Text="Open Solution" />
@@ -179,12 +179,19 @@
                         <TextBlock Text="Profile Is Active" VerticalAlignment="Center" />
                         <CheckBox x:Name="IsActiveCheckBox" IsEnabled="False" VerticalAlignment="Center" />
                     </StackPanel>
+                    <Button x:Name="ClearModelSelectionButton" Content="Clear selection" Click="ClearModelSelection_Click" Visibility="Collapsed"/>
                 </StackPanel>
 
                 <!-- 🔷 Row 2: Repo and Models List -->
 
                 <Grid Grid.Row="2" Grid.ColumnSpan="2">
                     <Grid.Resources>
+                        <Style x:Key="ModelRowStyle" TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Padding" Value="6"/>
+                            <Setter Property="CornerRadius" Value="4"/>
+                            <Setter Property="UseSystemFocusVisuals" Value="True"/>
+                        </Style>
                         <!-- Selector -->
                         <local:CombinedTemplateSelector x:Key="CombinedSelector"
                                         RepoTemplate="{StaticResource RepoItemTemplate}"
@@ -239,7 +246,11 @@
                                 <ItemsControl ItemsSource="{x:Bind Models, Mode=OneWay}" Visibility="{x:Bind IsExpandedVisibility, Mode=OneWay}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:ProfileEnvironmentViewModel">
-                                            <Grid Margin="10,4,0,2">
+                                            <ListViewItem Style="{StaticResource ModelRowStyle}" Margin="10,4,0,2"
+                                                          IsSelected="{x:Bind IsSelected, Mode=OneWay}"
+                                                          AutomationProperties.Name="{x:Bind DisplayNameWithVersion}"
+                                                          Tapped="ModelRow_Tapped" KeyDown="ModelRow_KeyDown">
+                                            <Grid Background="Transparent">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="240"/>
                                                     <ColumnDefinition Width="240"/>
@@ -249,8 +260,20 @@
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
 
+                                                <Border Grid.ColumnSpan="6" Margin="-5" CornerRadius="4" BorderThickness="2"
+                                                        BorderBrush="{ThemeResource AccentFillColorDefaultBrush}" IsHitTestVisible="False"
+                                                        Visibility="{Binding IsSelected, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                    <Border Background="{ThemeResource AccentFillColorDefaultBrush}" Opacity="0.18"/>
+                                                </Border>
+
                                                 <!--<FontIcon Grid.Column="0" Glyph="&#xE734;" FontFamily="Segoe MDL2 Assets" Margin="0,0,6,0" VerticalAlignment="Center" Visibility="{x:Bind Model.IsMainFOModel, Converter={StaticResource BoolToVisibilityConverter}}"/>-->
                                                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
+                                                    <Grid Width="20" Height="20">
+                                                        <Border CornerRadius="10" Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                                                Visibility="{Binding IsSelected, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                            <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"/>
+                                                        </Border>
+                                                    </Grid>
                                                     <Border x:Name="BorderIsMain" Grid.Column="0" Width="3" CornerRadius="2" Background="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Stretch" Margin="0,2,8,2" x:Load="{x:Bind Model.IsMainFOModel, Mode=OneWay}" />
                                                     <!-- Source -->
                                                     <TextBlock x:Name="ModelNameSource" Text="{x:Bind DisplayNameWithVersion}" Opacity="0.88" x:Load="{x:Bind IsSource, Mode=OneWay}" />
@@ -272,6 +295,7 @@
                                                 
                                                 
                                             </Grid>
+                                            </ListViewItem>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
@@ -282,7 +306,11 @@
 
 
                         <DataTemplate x:Key="NonGitRowTemplate" x:DataType="vm:ProfileEnvironmentViewModel">
-                            <Grid Margin="0,2,0,2">
+                            <ListViewItem Style="{StaticResource ModelRowStyle}" Margin="0,2,0,2"
+                                          IsSelected="{x:Bind IsSelected, Mode=OneWay}"
+                                          AutomationProperties.Name="{x:Bind DisplayNameWithVersion}"
+                                          Tapped="ModelRow_Tapped" KeyDown="ModelRow_KeyDown">
+                            <Grid Background="Transparent">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="220"/>
                                     <ColumnDefinition Width="140"/>
@@ -292,7 +320,21 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <TextBlock Grid.Column="0" Text="{x:Bind DisplayNameWithVersion}" Opacity="0.88" VerticalAlignment="Center"/>
+                                <Border Grid.ColumnSpan="6" Margin="-5" CornerRadius="4" BorderThickness="2"
+                                        BorderBrush="{ThemeResource AccentFillColorDefaultBrush}" IsHitTestVisible="False"
+                                        Visibility="{Binding IsSelected, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <Border Background="{ThemeResource AccentFillColorDefaultBrush}" Opacity="0.18"/>
+                                </Border>
+
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
+                                    <Grid Width="20" Height="20">
+                                        <Border CornerRadius="10" Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                                Visibility="{Binding IsSelected, Converter={StaticResource BoolToVisibilityConverter}}">
+                                            <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"/>
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Text="{x:Bind DisplayNameWithVersion}" Opacity="0.88" VerticalAlignment="Center"/>
+                                </StackPanel>
 
                                 <TextBlock Grid.Column="1"
                                     Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}"
@@ -307,18 +349,28 @@
                                     Margin="10,0,0,0"
                                     HorizontalAlignment="Right"/>           
                             </Grid>
+                            </ListViewItem>
                         </DataTemplate>
 
 
                     </Grid.Resources>
 
-                    <ListView x:Name="CombinedList" ItemTemplateSelector="{StaticResource CombinedSelector}"  RightTapped="CombinedList_RightTapped" SelectionMode="None" Padding="0">
+                    <ListView x:Name="CombinedList" ItemTemplateSelector="{StaticResource CombinedSelector}" RightTapped="CombinedList_RightTapped" KeyDown="CombinedList_KeyDown" SelectionMode="None" Padding="0">
                         <ListView.ItemContainerStyle>
                             <Style TargetType="ListViewItem">
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                 <Setter Property="VerticalContentAlignment" Value="Top"/>
                                 <Setter Property="MinHeight" Value="0"/>
                                 <Setter Property="Padding" Value="6"/>
+                                <Setter Property="IsTabStop" Value="False"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListViewItem">
+                                            <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                              Padding="{TemplateBinding Padding}" HorizontalContentAlignment="Stretch"/>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
                             </Style>
                         </ListView.ItemContainerStyle>
                     </ListView>

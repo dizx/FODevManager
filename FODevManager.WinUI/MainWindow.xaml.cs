@@ -275,6 +275,7 @@ namespace FODevManager.WinUI
 
         private async Task SetSelectedProfileAsync(string profileName)
         {
+            ClearModelSelection();
             var requestId = Interlocked.Increment(ref _profileLoadRequestId);
             var loadResult = await Task.Run(() => BuildProfileLoadResult(profileName));
             if (requestId != _profileLoadRequestId || loadResult == null)
@@ -330,6 +331,10 @@ namespace FODevManager.WinUI
 
         private void ApplyLoadedProfile(ProfileLoadResult loadResult)
         {
+            if (string.Equals(ActiveProfile?.ProfileName, loadResult.Profile.ProfileName, StringComparison.OrdinalIgnoreCase))
+                ReconcileModelSelection(loadResult.Grouping);
+            else
+                ClearModelSelection();
             ActiveProfile = loadResult.Profile;
             _groupingVm = loadResult.Grouping;
             CombinedList.ItemsSource = loadResult.CombinedItems;
@@ -691,6 +696,8 @@ namespace FODevManager.WinUI
             if (loadResult == null)
             {
                 MessageLogger.Error($"LoadModelListViewData: Could not load profile '{profileName}'");
+                ClearModelSelection();
+                _groupingVm = null;
                 CombinedList.ItemsSource = new List<object>();
                 return;
             }
@@ -1034,6 +1041,15 @@ namespace FODevManager.WinUI
 
         private async void DeployProfile_Click(object sender, RoutedEventArgs e)
         {
+            if (_modelSelectionInvalidated)
+                return;
+
+            if (_modelSelection.Selected.Count > 0)
+            {
+                await RunSelectedModelDeploymentAsync(deploy: true);
+                return;
+            }
+
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
                 UpdateStatus($"Deploying profile '{profileName}'..");
@@ -1045,6 +1061,15 @@ namespace FODevManager.WinUI
 
         private async void UnDeployProfile_Click(object sender, RoutedEventArgs e)
         {
+            if (_modelSelectionInvalidated)
+                return;
+
+            if (_modelSelection.Selected.Count > 0)
+            {
+                await RunSelectedModelDeploymentAsync(deploy: false);
+                return;
+            }
+
             await UnDeployAllModels();
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
@@ -1629,6 +1654,8 @@ namespace FODevManager.WinUI
             if (frameworkElement?.DataContext is RepoGroupViewModel repoGroup)
             {
                 repoGroup.IsExpanded = !repoGroup.IsExpanded;
+                if (!repoGroup.IsExpanded)
+                    ClearModelSelection();
                 e.Handled = true;
 
                 if (!repoGroup.IsExpanded)
@@ -1825,7 +1852,7 @@ namespace FODevManager.WinUI
             }
 
             if (clickedItem is ProfileEnvironmentViewModel packageViewModel
-                && packageViewModel.Model.ModelType == ModelType.Source)
+                && packageViewModel.Model.ModelType is ModelType.Source or ModelType.Compiled)
             {
                 var buildPackageMenuItem = new MenuFlyoutItem
                 {
