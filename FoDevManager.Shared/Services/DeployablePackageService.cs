@@ -1555,29 +1555,6 @@ namespace FODevManager.Services
             return fallbackMetadataDirectory;
         }
 
-        private bool TryResolveReferencedCompiledNugetReferenceFolders(
-            ProfileModel profile,
-            ProfileEnvironmentModel model,
-            out IReadOnlyList<string> referenceFolders)
-        {
-            referenceFolders = [];
-
-            if (!TryResolveReferencedCompiledNugetModels(profile, model, out var compiledModels))
-                return false;
-
-            var resolvedFolders = new List<string>();
-            foreach (var compiledModel in compiledModels)
-            {
-                AddReferenceFolder(resolvedFolders, compiledModel.CompiledModelFolder);
-
-                var binFolder = Path.Combine(compiledModel.CompiledModelFolder, "bin");
-                if (Directory.Exists(binFolder))
-                    AddReferenceFolder(resolvedFolders, binFolder);
-            }
-
-            referenceFolders = resolvedFolders;
-            return true;
-        }
 
         private bool TryResolveReferencedCompiledNugetModels(
             ProfileModel profile,
