@@ -109,19 +109,34 @@ From the repository root:
 
 ```powershell
 dotnet build FODevManager.sln
-dotnet publish FODevManager.WinUI\FODevManager.WinUI.csproj -c Release -r win-x64 --self-contained true
+dotnet publish FODevManager.WinUI\FODevManager.WinUI.csproj -c Release -r win-x64 --self-contained true -p:Platform=x64 -p:PublishProfile=win-x64
 ```
 
-Run the desktop app from the publish output:
+Publishing WinUI automatically publishes the console companion into the same output directory:
+
+```text
+FODevManager.WinUI\bin\win-x64\publish\
+  FODevManager.WinUI.exe
+  fodev.exe
+  appsettings.json
+  nuget.config
+```
+
+An explicit `-o` changes the shared output directory for both applications. Both use the same published WinUI settings and compatible shared dependencies; combined publishing is untrimmed and does not use single-file output. Azure Artifacts credentials are cleared from published settings, NuGet credential sections are removed, and Development settings are excluded. Local source settings are not modified.
+
+Run either application from that directory:
 
 ```powershell
 FODevManager.WinUI.exe
+fodev.exe help
 ```
 
-The Inno Setup script builds the installer from the WinUI publish folder:
+The Inno Setup script packages that combined folder and installs both executables directly into the same application directory. It checks that both executables and configuration files exist before compiling the installer:
 
-```text
-innosetup.iss
+```powershell
+ISCC.exe innosetup.iss
+# For a custom publish location supplied with dotnet publish -o:
+ISCC.exe "/DPublishDir=C:\Release\FODevManager" innosetup.iss
 ```
 
 ## Configuration

@@ -11,10 +11,10 @@
 	<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <EnableMsixTooling>false</EnableMsixTooling>
     <Nullable>enable</Nullable>
-	<AssemblyVersion>1.1.7</AssemblyVersion>
-	<FileVersion>1.1.7</FileVersion>
-	<Version>1.1.7</Version>
-	<InformationalVersion>1.1.7</InformationalVersion>
+	<AssemblyVersion>1.2.0</AssemblyVersion>
+	<FileVersion>1.2.0</FileVersion>
+	<Version>1.2.0</Version>
+	<InformationalVersion>1.2.0</InformationalVersion>
 	<IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
   <ItemGroup>
@@ -53,7 +53,7 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260101001" />
 	<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.2" />
 	<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.2" />
-	<PackageReference Include="Serilog.Sinks.File" Version="5.0" />
+	<PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
 
   </ItemGroup>
   <ItemGroup>
@@ -70,6 +70,7 @@
     </None>
     <None Update="appsettings.Development.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
     </None>
     <None Update="nuget.config">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -96,13 +97,30 @@
 
   <!-- Publish Properties -->
   <PropertyGroup>
-    <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
-    <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
-    <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
-    <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <PublishDir Condition="'$(PublishDir)' == ''">bin\$(RuntimeIdentifier)\publish\</PublishDir>
+    <SelfContained Condition="'$(SelfContained)' == ''">true</SelfContained>
+    <UseAppHost Condition="'$(UseAppHost)' == ''">true</UseAppHost>
+    <PublishReadyToRun Condition="'$(PublishReadyToRun)' == '' and '$(Configuration)' == 'Debug'">false</PublishReadyToRun>
+    <PublishReadyToRun Condition="'$(PublishReadyToRun)' == ''">true</PublishReadyToRun>
+    <PublishTrimmed Condition="'$(PublishTrimmed)' == ''">false</PublishTrimmed>
+    <PublishSingleFile Condition="'$(PublishSingleFile)' == ''">false</PublishSingleFile>
     <SupportedOSPlatformVersion>10.0.22621.0</SupportedOSPlatformVersion>
     <ApplicationIcon>Assets\FODev.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <Target Name="ValidateCombinedPublish" BeforeTargets="PrepareForPublish">
+    <Error Condition="'$(PublishTrimmed)' == 'true'" Text="Combined WinUI/CLI publishing requires PublishTrimmed=false" />
+    <Error Condition="'$(PublishSingleFile)' == 'true'" Text="Combined WinUI/CLI publishing requires PublishSingleFile=false" />
+    <Error Condition="'$(UseAppHost)' != 'true'" Text="Combined WinUI/CLI publishing requires UseAppHost=true for both executables" />
+  </Target>
+
+  <Target Name="SanitizeWinUIPublishConfiguration" AfterTargets="CopyFilesToPublishDirectory">
+    <PropertyGroup>
+      <_CombinedPublishDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(PublishDir)'))</_CombinedPublishDir>
+    </PropertyGroup>
+    <Exec Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\PublishCompanion.ps1&quot; -PublishDir &quot;$(_CombinedPublishDir).&quot; -SanitizeOnly" />
+  </Target>
 
   <Target Name="CopyWinUIXamlResourcesToPublishDirectory" AfterTargets="Publish">
     <ItemGroup>
@@ -118,5 +136,12 @@
     <Error
       Condition="!Exists('$(PublishDir)MainWindow.xbf') Or !Exists('$(PublishDir)$(AssemblyName).pri')"
       Text="WinUI publish output is missing app XAML resources. Expected MainWindow.xbf and $(AssemblyName).pri in $(PublishDir)" />
+  </Target>
+
+  <Target Name="PublishCLICompanion" AfterTargets="Publish" DependsOnTargets="CopyWinUIXamlResourcesToPublishDirectory">
+    <PropertyGroup>
+      <_CombinedPublishDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(PublishDir)'))</_CombinedPublishDir>
+    </PropertyGroup>
+    <Exec Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\PublishCompanion.ps1&quot; -PublishDir &quot;$(_CombinedPublishDir).&quot; -Configuration &quot;$(Configuration)&quot; -RuntimeIdentifier &quot;$(RuntimeIdentifier)&quot; -SelfContained &quot;$(SelfContained)&quot; -PublishReadyToRun &quot;$(PublishReadyToRun)&quot; -UseAppHost &quot;$(UseAppHost)&quot;" />
   </Target>
 </Project>

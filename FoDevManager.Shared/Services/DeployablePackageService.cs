@@ -191,12 +191,10 @@ namespace FODevManager.Services
                 return false;
 
             var artifactsRoot = GetModelArtifactsRoot(profile, model);
-            var timestamp = $"{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}";
-            var runRoot = Path.Combine(artifactsRoot, "BuildPackages", model.ModelName, timestamp);
+            var runRoot = CreateBuildRunDirectory(artifactsRoot, model.ModelName, DateTime.Now);
             var buildOutputRoot = Path.Combine(runRoot, "BuildOutput");
             var nugetOutputRoot = Path.Combine(runRoot, "NuGet");
 
-            EnsureCleanDirectory(runRoot);
             Directory.CreateDirectory(buildOutputRoot);
             Directory.CreateDirectory(nugetOutputRoot);
 
@@ -310,8 +308,7 @@ namespace FODevManager.Services
                 if (IsPathWithinDirectory(artifactsRoot, compiledRoot))
                     throw new InvalidOperationException("Package artifacts must be outside the compiled model folder");
 
-                var runRoot = Path.Combine(artifactsRoot, "BuildPackages", model.ModelName,
-                    $"{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}");
+                var runRoot = CreateBuildRunDirectory(artifactsRoot, model.ModelName, DateTime.Now);
                 var payloadRoot = Path.Combine(runRoot, "BuildOutput", model.ModelName);
                 var outputRoot = Path.Combine(runRoot, "NuGet");
                 Directory.CreateDirectory(payloadRoot);
@@ -2581,6 +2578,38 @@ namespace FODevManager.Services
                 baseRoot = Directory.GetCurrentDirectory();
 
             return Path.Combine(baseRoot, "Artifacts");
+        }
+
+        private static string CreateBuildRunDirectory(string artifactsRoot, string modelName, DateTime startedAt)
+        {
+            var timestampPath = Path.Combine(artifactsRoot, "BuildPackages", modelName,
+                startedAt.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture));
+
+            // Coordinate allocation across UI and CLI processes without deleting earlier build output
+            using var mutex = new Mutex(false, @"Local\FODevManager.BuildRunDirectories");
+            try
+            {
+                if (!mutex.WaitOne(TimeSpan.FromSeconds(30)))
+                    throw new TimeoutException("Timed out allocating a build output directory");
+            }
+            catch (AbandonedMutexException)
+            {
+                // The abandoned mutex is now owned by this process
+            }
+
+            try
+            {
+                var runRoot = timestampPath;
+                for (var suffix = 2; Directory.Exists(runRoot) || File.Exists(runRoot); suffix++)
+                    runRoot = timestampPath + "-" + suffix.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+                Directory.CreateDirectory(runRoot);
+                return runRoot;
+            }
+            finally
+            {
+                mutex.ReleaseMutex();
+            }
         }
 
         private string ResolvePreferredBuildPackagesRoot()

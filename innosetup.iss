@@ -1,8 +1,19 @@
 #define MyAppName "FO Dev Manager"
-#define MyAppVersion "1.1.7"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "ECIT Peritus AS"
 #define MyAppURL "https://www.ecit.com/no/ecit-peritus/"
 #define MyAppExeName "FODevManager.WinUI.exe"
+
+#ifndef PublishDir
+  #define PublishDir AddBackslash(SourcePath) + "FODevManager.WinUI\bin\win-x64\publish"
+#endif
+
+#if !FileExists(AddBackslash(PublishDir) + "FODevManager.WinUI.exe") || !FileExists(AddBackslash(PublishDir) + "fodev.exe")
+  #error Publish the WinUI project first; the installer requires both FODevManager.WinUI.exe and fodev.exe in PublishDir
+#endif
+#if !FileExists(AddBackslash(PublishDir) + "appsettings.json") || !FileExists(AddBackslash(PublishDir) + "nuget.config")
+  #error Combined publish configuration is missing; do not distribute an incomplete publish
+#endif
 
 [Setup]
 AppId={{572DE851-82D6-430F-B12A-EBF141025C02}
@@ -30,7 +41,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "C:\dev\source\FODevManager\FODevManager.WinUI\bin\win-x64\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#AddBackslash(PublishDir)}*"; DestDir: "{app}"; Excludes: "appsettings.Development.json"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Code]
@@ -63,19 +74,47 @@ var
   KeyToken: string;
   ValueStart: Integer;
   ValueEnd: Integer;
+  Escaped: Boolean;
 begin
   Result := Json;
-  KeyToken := '"' + Key + '": "';
+  KeyToken := '"' + Key + '"';
   ValueStart := Pos(KeyToken, Result);
 
   if ValueStart = 0 then
     RaiseException('Could not find JSON key "' + Key + '" in appsettings.json.');
 
   ValueStart := ValueStart + Length(KeyToken);
-  ValueEnd := ValueStart;
+  while (ValueStart <= Length(Result)) and
+    ((Result[ValueStart] = ' ') or (Result[ValueStart] = #9) or
+     (Result[ValueStart] = #10) or (Result[ValueStart] = #13)) do
+    ValueStart := ValueStart + 1;
 
-  while (ValueEnd <= Length(Result)) and (Result[ValueEnd] <> '"') do
+  if (ValueStart > Length(Result)) or (Result[ValueStart] <> ':') then
+    RaiseException('Could not parse JSON key "' + Key + '" in appsettings.json.');
+
+  ValueStart := ValueStart + 1;
+  while (ValueStart <= Length(Result)) and
+    ((Result[ValueStart] = ' ') or (Result[ValueStart] = #9) or
+     (Result[ValueStart] = #10) or (Result[ValueStart] = #13)) do
+    ValueStart := ValueStart + 1;
+
+  if (ValueStart > Length(Result)) or (Result[ValueStart] <> '"') then
+    RaiseException('Expected a JSON string for "' + Key + '" in appsettings.json.');
+
+  ValueStart := ValueStart + 1;
+  ValueEnd := ValueStart;
+  Escaped := False;
+
+  while ValueEnd <= Length(Result) do
+  begin
+    if (Result[ValueEnd] = '"') and not Escaped then
+      break;
+    if Result[ValueEnd] = '\' then
+      Escaped := not Escaped
+    else
+      Escaped := False;
     ValueEnd := ValueEnd + 1;
+  end;
 
   if ValueEnd > Length(Result) then
     RaiseException('Could not parse JSON value for key "' + Key + '" in appsettings.json.');

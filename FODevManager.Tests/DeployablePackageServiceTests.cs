@@ -677,6 +677,42 @@ namespace FODevManager.Tests
             Assert.That(credentials["ClearTextPassword"], Is.EqualTo("pat-token"));
         }
 
+        [Test]
+        public void CreateBuildRunDirectory_Should_Use_Timestamp_And_Preserve_Existing_Output()
+        {
+            var startedAt = new DateTime(2026, 9, 9, 9, 10, 10);
+            var first = CreateBuildRunDirectory(startedAt);
+            var existingOutput = Path.Combine(first, "package.nupkg");
+            File.WriteAllText(existingOutput, "existing output");
+            var second = CreateBuildRunDirectory(startedAt);
+
+            Assert.That(Path.GetFileName(first), Is.EqualTo("20260909-091010"));
+            Assert.That(Path.GetFileName(second), Is.EqualTo("20260909-091010-2"));
+            Assert.That(File.ReadAllText(existingOutput), Is.EqualTo("existing output"));
+            File.WriteAllText(first + "-3", "occupied filename");
+            Assert.That(Path.GetFileName(CreateBuildRunDirectory(startedAt)), Is.EqualTo("20260909-091010-4"));
+        }
+
+        [Test]
+        public void CreateBuildRunDirectory_Should_Keep_Concurrent_Builds_Separate()
+        {
+            var startedAt = new DateTime(2026, 9, 9, 9, 10, 10);
+            var runs = Enumerable.Range(0, 8)
+                .Select(_ => Task.Run(() => CreateBuildRunDirectory(startedAt))).ToArray();
+            Task.WaitAll(runs);
+
+            var directories = runs.Select(run => run.Result).ToList();
+            Assert.That(directories.Distinct().Count(), Is.EqualTo(runs.Length));
+            Assert.That(directories.All(Directory.Exists), Is.True);
+            Assert.That(directories.Select(Path.GetFileName), Does.Contain("20260909-091010"));
+        }
+
+        private string CreateBuildRunDirectory(DateTime startedAt)
+        {
+            var method = typeof(DeployablePackageService).GetMethod("CreateBuildRunDirectory", BindingFlags.NonPublic | BindingFlags.Static)!;
+            return (string)method.Invoke(null, [Path.Combine(_baseDir, "Artifacts"), "TestModel", startedAt])!;
+        }
+
         [TestCase(true)]
         [TestCase(false)]
         public void BuildCompiledModelPackage_Should_Stage_Complete_Payload_Without_Build_Configuration_Or_Mutation(bool repositoryBacked)
@@ -697,6 +733,7 @@ namespace FODevManager.Tests
                 stagedRoots.Add(payloadRoot);
                 Assert.That(Path.GetFileName(payloadRoot), Is.EqualTo(model.ModelName));
                 Assert.That(payloadRoot, Does.StartWith(Path.Combine(_baseDir, "Artifacts", "BuildPackages", model.ModelName)));
+                Assert.That(Path.GetFileName(Path.GetDirectoryName(outputRoot)), Does.Match(@"^\d{8}-\d{6}(-\d+)?$"));
                 Assert.That(Directory.Exists(outputRoot), Is.True);
                 Assert.That(Directory.GetFiles(payloadRoot, "*", SearchOption.AllDirectories)
                     .Select(path => Path.GetRelativePath(payloadRoot, path)), Is.EquivalentTo(originalFiles.Keys));
