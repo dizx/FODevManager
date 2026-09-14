@@ -32,8 +32,14 @@ namespace FODevManager.Services
         private readonly string _deployablePackagesRoot;
         private readonly string _deploymentBasePath;
 
-        public DeployablePackageService(AppConfig config)
+        private readonly bool allowLegacyDeploymentCleanup;
+        private readonly Func<ProcessStartInfo, (bool Succeeded, string Output)>? versionQueryRunner;
+
+        public DeployablePackageService(AppConfig config, bool allowLegacyDeploymentCleanup = true,
+            Func<ProcessStartInfo, (bool Succeeded, string Output)>? versionQueryRunner = null)
         {
+            this.versionQueryRunner = versionQueryRunner;
+            this.allowLegacyDeploymentCleanup = allowLegacyDeploymentCleanup;
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _deployablePackagesRoot = _config.DeployablePackages;
             _deploymentBasePath = _config.DeploymentBasePath;
@@ -114,6 +120,10 @@ namespace FODevManager.Services
                 return false;
             }
 
+            if (TryGetIsvConfigPath(repository, createIfMissing: false, out var existingConfigPath)
+                && LoadIsvPackageReferences(existingConfigPath).Count == 0)
+                return SyncRepositoryNugetModels(profile, repository, []);
+
             if (!TryGetPackageContext(repository, out var packageContext))
             {
                 MessageLogger.Error($"❌ Nuget is not configured for repository '{repository.DisplayName}'. Cannot prepare compiled NuGet models");
@@ -158,8 +168,11 @@ namespace FODevManager.Services
             return EnsureCompiledNugetModels(profile, repository);
         }
 
+        public IReadOnlyList<string> LastBuiltArtifactPaths { get; private set; } = Array.Empty<string>();
+
         public bool BuildDeployableNugetPackage(ProfileModel profile, ProfileEnvironmentModel model, string solutionFilePath)
         {
+            LastBuiltArtifactPaths = Array.Empty<string>();
             if (profile == null)
                 throw new ArgumentNullException(nameof(profile));
 
@@ -388,7 +401,6 @@ namespace FODevManager.Services
                 return false;
 
             var removed = RemovePackageReference(isvConfigPath, packageId.Trim());
-            var synced = EnsureCompiledNugetModels(profile, repository);
 
             var staleModels = (repository.Models ?? new List<ProfileEnvironmentModel>())
                 .Where(model => model.ModelType == ModelType.CompiledNuget && model.PackageId.SameAs(packageId))
@@ -399,6 +411,7 @@ namespace FODevManager.Services
                 repository.Models.Remove(staleModel);
             }
 
+            var synced = EnsureCompiledNugetModels(profile, repository);
             return removed || synced || staleModels.Count > 0;
         }
 
@@ -454,21 +467,35 @@ namespace FODevManager.Services
             return EnsureCompiledNugetModels(profile, repository);
         }
 
-        public List<string> GetAvailablePackageVersions(RepositoryModel repository, string packageId)
+        public IReadOnlyDictionary<string, string> GetConfiguredPackageVersions(RepositoryModel repository)
+        {
+            if (!TryGetIsvConfigPath(repository, createIfMissing: false, out var path))
+                return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            return LoadIsvPackageReferences(path).ToDictionary(p => p.Id, p => p.Version, StringComparer.OrdinalIgnoreCase);
+        }
+
+        public List<string> GetAvailablePackageVersions(RepositoryModel repository, string packageId, bool throwOnFailure = false)
         {
             if (repository == null || packageId.IsNullOrEmpty())
+            {
+                if (throwOnFailure) throw new ArgumentException("A repository and package ID are required");
                 return new List<string>();
+            }
 
             if (!TryResolvePackageNugetConfigPath(repository, out var nugetConfigPath))
+            {
+                if (throwOnFailure) throw new InvalidOperationException("Cannot resolve package NuGet configuration");
                 return new List<string>();
+            }
 
             if (!TryGetAvailablePackageVersions(
                     repository.RepoRootFolder ?? Directory.GetCurrentDirectory(),
                     nugetConfigPath,
                     packageId,
                     out var versions,
-                    out var errorMessage))
+                    out var errorMessage, requireSuccessfulExit: throwOnFailure))
             {
+                if (throwOnFailure) throw new InvalidOperationException($"Could not load available versions for package '{packageId}': {errorMessage}");
                 MessageLogger.Warning($"⚠️ Could not load available versions for package '{packageId}'. {errorMessage}");
                 return new List<string>();
             }
@@ -588,6 +615,8 @@ namespace FODevManager.Services
 
         private bool TryRemoveLegacyVersionedDeploymentLink(ProfileEnvironmentModel staleModel, IReadOnlyCollection<ResolvedModelDescriptor> descriptors)
         {
+            // Coordinated callers own link removal using the original saved membership and ledger
+            if (!allowLegacyDeploymentCleanup) return false;
             if (!IsLegacyVersionedNugetModel(staleModel, descriptors))
                 return false;
 
@@ -975,7 +1004,7 @@ namespace FODevManager.Services
             return true;
         }
 
-        private static bool TryParseNugetPackageUrl(string packageUrl, out string packageId, out string packageVersion)
+        public static bool TryParseNugetPackageUrl(string packageUrl, out string packageId, out string packageVersion)
         {
             packageId = string.Empty;
             packageVersion = string.Empty;
@@ -1351,7 +1380,8 @@ namespace FODevManager.Services
             string nugetConfigPath,
             string packageId,
             out List<string> versions,
-            out string errorMessage)
+            out string errorMessage,
+            bool requireSuccessfulExit = false)
         {
             versions = new List<string>();
             errorMessage = string.Empty;
@@ -1377,9 +1407,11 @@ namespace FODevManager.Services
 
             ApplyAzureArtifactsCredentials(processStartInfo, nugetConfigPath);
 
-            if (!RunProcess(processStartInfo, out var output))
+            var query = versionQueryRunner != null ? versionQueryRunner(processStartInfo) : RunVersionQuery(processStartInfo);
+            var output = query.Output;
+            if (!query.Succeeded)
             {
-                if (IsNuGetNoPackagesFoundOutput(output))
+                if (!requireSuccessfulExit && IsNuGetNoPackagesFoundOutput(output))
                     return true;
 
                 errorMessage = output;
@@ -1406,6 +1438,12 @@ namespace FODevManager.Services
                 .ToList();
 
             return true;
+        }
+
+        private (bool Succeeded, string Output) RunVersionQuery(ProcessStartInfo start)
+        {
+            var succeeded = RunProcess(start, out var output);
+            return (succeeded, output);
         }
 
         private static bool IsNuGetNoPackagesFoundOutput(string output)
@@ -2289,6 +2327,7 @@ namespace FODevManager.Services
 
             packagePath = packageFiles[0];
             nuspecPath = nuspecFiles[0];
+            LastBuiltArtifactPaths = packageFiles.Concat(nuspecFiles).Select(Path.GetFullPath).ToArray();
 
             MessageLogger.Info($"📦 NuGet package: {packagePath}");
             MessageLogger.Info($"📄 Nuspec: {nuspecPath}");

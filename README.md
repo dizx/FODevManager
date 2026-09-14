@@ -2,7 +2,7 @@
 
 FO Dev Manager is a Windows desktop utility for managing Dynamics 365 Finance and Operations development profiles, repositories, models, deployment links, Git workflows, Visual Studio solutions, and compiled NuGet package builds.
 
-The primary experience is the WinUI 3 desktop app. A console entry point is still available for profile and model operations.
+The primary experience is the WinUI 3 desktop app. The console supports profile/model commands and an independent headless MCP server with 52 tools for application workflows.
 
 ## Current Version
 
@@ -181,6 +181,12 @@ Important settings:
 - `PushDeployablePackageOnBuild`: push compiled NuGet packages immediately after build
 - `PushDeployablePackageSource`: feed name or source used when pushing packages
 
+## MCP clients
+
+Run the installed `fodev.exe mcp` as an MCP stdio server; WinUI need not be running. It exposes 52 tools covering profiles, models, repositories/Git, NuGet, packages, deployments, solutions, database, settings and operation status. Stdout is reserved for JSON-RPC; diagnostics go to stderr/file logs.
+
+See [MCP configuration, full desktop action mapping and execution semantics](docs/mcp.md). MCP mutations coordinate with CLI/WinUI through a shared machine lease. Package builds require an explicit publishing boolean; release tagging performs remote tag pushes. Actual FO/build/service/feed prerequisites still apply.
+
 ## Console Usage
 
 Build or publish the console separately from the WinUI installer:
@@ -257,9 +263,9 @@ The CLI loads optional `appsettings.json` and environment-specific JSON from its
 
 Exit codes are `0` for success/help, `2` for invalid usage, and `1` for operational failure. Error messages go to stderr; human-readable output goes to stdout. `show`, `repos`, and `list` report saved state, not live Git or deployment health, and do not rewrite profiles or artifacts. Initialization may create the configured profile directory and logs.
 
-Deployment, database, and switching operations require a suitable FO machine and service-control permissions. `switch` can stash work, change branches, restore packages, replace deployments, and apply a database. These shared workflows are not transactional: a failure exit code does not imply rollback. Active `db-set` saves before application, so an application failure can leave the requested name persisted. Service-controlled workflows may start W3SVC even if it was initially stopped. Avoid concurrent CLI/UI mutations of the same profile or deployment paths.
+Deployment, database, and switching operations require a suitable FO machine and service-control permissions. `switch` can stash work, change branches, restore packages, replace deployments, and apply a database. These shared workflows are not transactional: a failure exit code does not imply rollback. Active `db-set` saves before application, so an application failure can leave the requested name persisted. Service-controlled workflows may start W3SVC even if it was initially stopped. CLI, WinUI and MCP mutations share a machine lease and reject cross-host contention; participating accounts must have access to the same lock file.
 
-CLI undeploy/delete/remove refuse unmanaged folders, broken links, foreign ownership, and mismatched deployment targets rather than forcing deletion. Repository-URL import, package add/update/removal, and destructive Git reset/merge workflows remain desktop operations. Package builds need the same FO tools, feed access, and repository build configuration as the desktop workflow.
+CLI undeploy/delete/remove refuse unmanaged folders, broken links, foreign ownership, and mismatched deployment targets rather than forcing deletion. Repository-URL import, package add/update/removal, and Git reset/merge workflows are available through desktop and MCP tools. Package builds need the same FO tools, feed access, and repository build configuration as the desktop workflow.
 
 ## Project Structure
 

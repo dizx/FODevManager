@@ -52,6 +52,8 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260101001" />
 	<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.2" />
+    <!-- Match the MCP companion's hosting abstractions and transitive versions in the shared publish folder -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.10" />
 	<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.2" />
 	<PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
 

@@ -1,4 +1,5 @@
 using FODevManager.Logging;
+using FODevManager.Operations;
 using FODevManager.Messages;
 using FODevManager.Models;
 using FODevManager.Services;
@@ -41,10 +42,10 @@ namespace FODevManager.WinUI
     public sealed partial class MainWindow : Window
     {
         private readonly UIMessageSubscriber _uiSubscriber;
-        private readonly ProfileService _profileService;
-        private readonly FileService _fileService;
-        private readonly ModelDeploymentService _deploymentService;
-        private readonly ModelVersionService _modelVersionService;
+        private ProfileService _profileService => new WorkflowContext(_appConfig).Profiles;
+        private FileService _fileService => new(_appConfig, ensureDirectory: false);
+        private ModelDeploymentService _deploymentService => new WorkflowContext(_appConfig).Deployment;
+        private readonly ModelVersionService _modelVersionService = new();
         private readonly AppConfig _appConfig;
         private MicaController? _micaController;
         private SystemBackdropConfiguration? _backdropConfig;
@@ -65,7 +66,7 @@ namespace FODevManager.WinUI
 
         private UiDispatcher Ui => _uiDispatcher ?? throw new InvalidOperationException("BusyOps.Initialize must be called before using BusyOps");
 
-        public MainWindow(ProfileService profileService, FileService fileService, ModelDeploymentService deploymentService, ModelVersionService modelVersionService, AppConfig appConfig)
+        public MainWindow(AppConfig appConfig)
         {
             this.InitializeComponent();
             this.Activated += MainWindow_Activated;
@@ -87,10 +88,6 @@ namespace FODevManager.WinUI
 
             var serilogSubscriber = new SerilogSubscriber();
 
-            _profileService = profileService;
-            _fileService = fileService;
-            _deploymentService = deploymentService;
-            _modelVersionService = modelVersionService;
             _appConfig = appConfig;
 
             ApplyMicaEffect();
@@ -296,9 +293,7 @@ namespace FODevManager.WinUI
 
         private ProfileLoadResult? BuildProfileLoadResult(string profileName)
         {
-            _profileService.UpdateDeploymentStatus(profileName);
-
-            var profile = _profileService.LoadProfile(profileName);
+            var profile = _fileService.LoadProfile(profileName);
             if (profile == null)
                 return null;
 
@@ -358,9 +353,14 @@ namespace FODevManager.WinUI
             {
                 try
                 {
-                    var updated = _profileService.PrepareCompiledNugetModels(profile.ProfileName);
-                    if (!updated || cancellationToken.IsCancellationRequested)
-                        return;
+                    var updated = await RunBackgroundMutationAsync("Prepare NuGet models", () =>
+                    {
+                        var before = System.Text.Json.JsonSerializer.Serialize(_fileService.LoadProfile(profile.ProfileName));
+                        new PackageOperations(new WorkflowContext(_appConfig)).Prepare(profile.ProfileName, cancellationToken);
+                        var after = System.Text.Json.JsonSerializer.Serialize(_fileService.LoadProfile(profile.ProfileName));
+                        return Task.FromResult(before != after);
+                    }, cancellationToken);
+                    if (!updated || cancellationToken.IsCancellationRequested) return;
 
                     await Ui.EnqueueAsync(async () =>
                     {
@@ -458,15 +458,16 @@ namespace FODevManager.WinUI
                 if (busyHandler.IsBusy)
                     return;
 
-                foreach (var repository in profile.Repositories ?? Enumerable.Empty<RepositoryModel>())
+                await RunBackgroundMutationAsync("Background Git health", async () =>
                 {
-                    token.ThrowIfCancellationRequested();
-
-                    if (busyHandler.IsBusy)
-                        return;
-
-                    await RefreshRepositoryHealthAsync(repository, token);
-                }
+                    var fresh = _fileService.LoadProfile(profile.ProfileName);
+                    foreach (var repository in fresh.Repositories)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        await RefreshRepositoryHealthAsync(repository, token);
+                    }
+                    return true;
+                }, token);
             }
             finally
             {
@@ -538,7 +539,26 @@ namespace FODevManager.WinUI
 
         private async Task<bool> EnsureMergedWithMainAsync(RepositoryModel repository)
         {
-            if (!GitHelper.HasMainChanges(repository.RepoRootFolder, repository.MainBranchName))
+            try { return await EnsureMergedWithMainCoreAsync(repository); }
+            catch (OperationCanceledException)
+            {
+                MessageLogger.Warning("Merge main canceled");
+                return false;
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"Merge main failed: {exception.Message}");
+                return false;
+            }
+        }
+
+        private async Task<bool> EnsureMergedWithMainCoreAsync(RepositoryModel repository)
+        {
+            var profileName = ActiveProfile!.ProfileName;
+            var hasChanges = await RunBackgroundMutationAsync("Fetch and check main updates", () =>
+                new RepositoryOperations(new WorkflowContext(_appConfig)).CheckMainUpdates(profileName, repository.RepoId, CancellationToken.None),
+                CancellationToken.None);
+            if (!hasChanges)
                 return true;
 
             await _mergePromptSemaphore.WaitAsync();
@@ -550,12 +570,16 @@ namespace FODevManager.WinUI
                 if (!confirm)
                     return false;
 
-                var merged = await RunOperationAsync(() => GitHelper.MergeMainIntoCurrentBranch(repository.RepoRootFolder, repository.MainBranchName), "Merge main into current branch", false);
+                var merged = await RunOperationAsync(() =>
+                {
+                    var fresh = WorkflowContext.Repository(_fileService.LoadProfile(profileName), repository.RepoId);
+                    WorkflowContext.Require(GitHelper.MergeMainIntoCurrentBranch(fresh.RepoRootFolder, fresh.MainBranchName), "Merge main");
+                }, "Merge main into current branch", false);
 
                 if (!merged)
                     return false;
 
-                await RefreshRepositoryHealthAsync(repository, CancellationToken.None);
+                await RunGitHealthCheckAndUpdates(_fileService.LoadProfile(profileName), CancellationToken.None);
 
                 return true;
             }
@@ -616,7 +640,8 @@ namespace FODevManager.WinUI
                 if (currentProfile == null)
                     return;
 
-                var syncResult = await _profileService.CheckProfileModelChangesAsync(currentProfile).ConfigureAwait(false);
+                var syncResult = await RunBackgroundMutationAsync("Check profile sync", () =>
+                    _profileService.CheckProfileModelChangesAsync(_fileService.LoadProfile(currentProfile.ProfileName)), token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
 
                 if (!syncResult.HasChanges)
@@ -658,14 +683,16 @@ namespace FODevManager.WinUI
 
                 if (!userWantsImport)
                 {
-                    _profileService.DismissProfileChanges(currentProfile, syncResult.DefinitionRevision);
+                    await RunBackgroundMutationAsync("Dismiss profile sync", () =>
+                        new ProfileOperations(new WorkflowContext(_appConfig)).DismissSync(currentProfile.ProfileName, syncResult.DefinitionRevision), token);
                     return;
                 }
 
-                if (currentProfile.ProfileFilePath.IsNullOrEmpty())
-                    return;
-
-                var (ok, updatedProfile) = await BusyOps.TrySyncAsAsync(() => _profileService.ImportProfile(currentProfile.ProfileFilePath, currentProfile.ProfileName), "Import profile");
+                var (ok, updatedProfile) = await BusyOps.TrySyncAsAsync(() =>
+                {
+                    new ProfileOperations(new WorkflowContext(_appConfig) { OuterOwnsServiceControl = true }).Reimport(currentProfile.ProfileName, token);
+                    return _fileService.LoadProfile(currentProfile.ProfileName);
+                }, "Import profile");
 
                 if (!ok || updatedProfile == null)
                     return;
@@ -791,7 +818,7 @@ namespace FODevManager.WinUI
 
             try
             {
-                await RunOperationAsync(() =>
+                if (!await RunOperationAsync(() =>
                 {
                     _deploymentService.AssignTaskToRepository(
                         profileName: profileName,
@@ -799,7 +826,7 @@ namespace FODevManager.WinUI
                         task: taskId,
                         comment: comment,
                         switchBranch: true);
-                }, "Assign Task", false);
+                }, "Assign Task", false)) return;
 
                 UIMessageHelper.LogToUI($"✅ Assigned Task '{taskId}' to repo '{group.DisplayName}'");
             }
@@ -910,7 +937,7 @@ namespace FODevManager.WinUI
             {
                 var modelName = inputBox.Text.Trim();
 
-                await CreateModel(profileName, modelName);
+                if (!await CreateModel(profileName, modelName)) return;
 
                 UIMessageHelper.LogToUI($"📦 Created new model '{modelName}' under profile '{profileName}'");
                 LoadModelListViewData(profileName);
@@ -987,6 +1014,7 @@ namespace FODevManager.WinUI
                 {
                     var importPath = file.Path;
                     var importedProfileName = await ImportProfile(importPath);
+                    if (importedProfileName.IsNullOrEmpty()) return;
 
                     MessageLogger.Highlight($"✅ Profile imported: {Path.GetFileName(importPath)}");
 
@@ -1063,7 +1091,7 @@ namespace FODevManager.WinUI
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
                 UpdateStatus($"Deploying profile '{profileName}'..");
-                await DeployAllModels(profileName);
+                if (!await DeployAllModels(profileName)) return;
                 LoadModelListViewData(profileName);
                 UpdateStatus($"✅ Deployment complete for '{profileName}'");
             }
@@ -1080,7 +1108,7 @@ namespace FODevManager.WinUI
                 return;
             }
 
-            await UnDeployAllModels();
+            if (!await UnDeployAllModels()) return;
             if (ProfilesDropdown.SelectedItem is string profileName)
             {
                LoadModelListViewData(profileName);
@@ -1196,7 +1224,7 @@ namespace FODevManager.WinUI
                 if (result != ContentDialogResult.Primary)
                     return;
 
-                await RemoveModelFromProfile(profileName, modelName);
+                if (!await RemoveModelFromProfile(profileName, modelName)) return;
                 LoadModelListViewData(profileName);
                 UpdateStatus($"🗑️ Model '{modelName}' removed from '{profileName}'");
             }
@@ -1307,6 +1335,13 @@ namespace FODevManager.WinUI
             return Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.1.7";
         }
 
+        private static Task<T> RunBackgroundMutationAsync<T>(string name, Func<Task<T>> action, CancellationToken token)
+            => new HostOperationBoundary().RunAsync(name, () =>
+            {
+                App.ReloadConfiguration();
+                return action();
+            }, token);
+
         private static async Task<bool> RunOperationAsync(Action action, string operationName, bool shutdownServer = true)
         {
             return await BusyOps.TrySyncAsAsync(action, operationName, shutdownServer);
@@ -1330,7 +1365,8 @@ namespace FODevManager.WinUI
 
         private async Task<bool> CreateModel(string profileName, string modelName)
         {
-            return await RunOperationAsync(() => _profileService.CreateModel(profileName, modelName), "Create model");
+            var (ok, created) = await BusyOps.TrySyncAsAsync(() => _profileService.CreateModel(profileName, modelName), "Create model");
+            return ok && created;
         }
 
         private async Task<bool> RemoveModelFromProfile(string profileName, string modelName)
@@ -1489,7 +1525,14 @@ namespace FODevManager.WinUI
 
         private void OpenGitRepo(string profileName, string modelName)
         {
-            TryCatch(() => _deploymentService.OpenGitRepositoryUrl(profileName, modelName));
+            TryCatch(() =>
+            {
+                var profile = _fileService.LoadProfile(profileName);
+                var model = WorkflowContext.Model(profile, modelName);
+                var repository = profile.FindRepositoryForModel(model);
+                if (repository != null && GitHelper.IsGitRepository(repository.RepoRootFolder))
+                    GitHelper.OpenGitRemoteUrl(repository.RepoRootFolder);
+            });
         }
 
         private List<ProfileModel> GetAllProfiles()
@@ -1539,6 +1582,7 @@ namespace FODevManager.WinUI
             if (ActiveProfile == null)
                 return;
 
+            var profileName = ActiveProfile.ProfileName;
             var newDbString = (DatabaseNameTextBox.Text ?? string.Empty).Trim();
             if (newDbString.SameAs(ActiveProfile.DatabaseName))
             {
@@ -1572,12 +1616,12 @@ namespace FODevManager.WinUI
                 return;
             }
 
-            await RunOperationAsync(() =>
+            if (!await RunOperationAsync(() =>
             {
-                _profileService.SetDatabaseName(ActiveProfile.ProfileName, newDbString);
-            }, "Apply database name");
+                _profileService.SetDatabaseName(profileName, newDbString);
+            }, "Apply database name")) return;
 
-            ActiveProfile.DatabaseName = newDbString;
+            await RefreshProfileViewAsync(profileName);
             SetDatabaseEditingState(false);
         }
 
@@ -1610,52 +1654,6 @@ namespace FODevManager.WinUI
                 return;
 
             await ApplyDatabaseNameChangeAsync();
-            return;
-
-            if (ActiveProfile == null) return;
-
-            var newDbString = (DatabaseNameTextBox.Text ?? string.Empty).Trim();
-            if (newDbString.SameAs(ActiveProfile.DatabaseName))
-            {
-                // nothing changed—do nothing
-                MessageLogger.Info("Database name unchanged");
-                return;
-            }
-
-            if (newDbString.IsNullOrEmpty())
-            {
-                MessageLogger.Warning("Database name cannot be empty");
-                DatabaseNameTextBox.Text = ActiveProfile.DatabaseName;
-                return;
-            }
-
-            var dialog = new ContentDialog
-            {
-                Title = "Apply database change?",
-                Content = $"Change database for profile '{ActiveProfile.ProfileName}' to:\n\n“{newDbString}”\n\nApply now?",
-                PrimaryButtonText = "Yes",
-                CloseButtonText = "No",
-                DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = this.Content.XamlRoot
-            };
-
-            var result = await dialog.ShowAsync();
-            if (result != ContentDialogResult.Primary)
-            {
-                // revert if user says No
-                DatabaseNameTextBox.Text = ActiveProfile.DatabaseName;
-                DatabaseNameTextBox.IsReadOnly = true;
-                MessageLogger.Info("Database change cancelled");
-                return;
-            }
-
-            await RunOperationAsync(() =>
-            {
-                _profileService.SetDatabaseName(ActiveProfile.ProfileName, newDbString);
-            }, "Apply database name");
-
-            ActiveProfile.DatabaseName = newDbString;
-            DatabaseNameTextBox.IsReadOnly = true;
         }
         
         private void RepoHeader_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
@@ -1680,9 +1678,6 @@ namespace FODevManager.WinUI
                 return;
 
             if (frameworkElement.DataContext is not RepoGroupViewModel repoGroup)
-                return;
-
-            if (!repoGroup.HasMainUpdates)
                 return;
 
             if (repoGroup.Repository == null)
@@ -1712,7 +1707,7 @@ namespace FODevManager.WinUI
             if (!confirm)
                 return;
 
-            await RunOperationAsync(() => _profileService.GitResetProfile(profile), "Reset to Main", false);
+            await RunOperationAsync(() => _profileService.GitResetProfile(_fileService.LoadProfile(profileName)), "Reset to Main", false);
 
             // Reload view models (branch info, grouping, etc.)
             UIRefresh(profileName);
@@ -1741,7 +1736,7 @@ namespace FODevManager.WinUI
             if (!confirm)
                 return;
 
-            await RunOperationAsync(() => _profileService.TagReleaseProfile(profile), "Tag Release", false);
+            await RunOperationAsync(() => _profileService.TagReleaseProfile(_fileService.LoadProfile(profileName)), "Tag Release", false);
 
             UIRefresh(profileName);
         }
@@ -1786,7 +1781,8 @@ namespace FODevManager.WinUI
                 try
                 {
 
-                    _profileService.DeleteProfile(selectedProfileName);
+                    if (!await RunOperationAsync(() => _profileService.DeleteProfile(selectedProfileName), "Delete profile"))
+                        return;
 
                     MessageLogger.Highlight($"✅ Deleted profile: {selectedProfileName}");
 
@@ -1885,6 +1881,15 @@ namespace FODevManager.WinUI
         private async Task ShowRepositoryPropertiesAsync(RepoGroupViewModel repoGroupViewModel)
         {
             RepositoryModel repositoryModel = repoGroupViewModel.Repository;
+            var originalProperties = new RepositoryModel
+            {
+                DisplayName = repositoryModel.DisplayName?.Trim() ?? string.Empty,
+                PreferredBranch = repositoryModel.PreferredBranch?.Trim() ?? string.Empty,
+                AutoCheckoutOnProfileLoad = repositoryModel.AutoCheckoutOnProfileLoad,
+                AutoStashOnDirtyCheckout = repositoryModel.AutoStashOnDirtyCheckout,
+                Task = repositoryModel.Task?.Trim() ?? string.Empty,
+                TaskComment = repositoryModel.TaskComment?.Trim() ?? string.Empty
+            };
             var maxDialogBodyWidth = Math.Max(440, Math.Min(620, this.Bounds.Width - 220));
             var availableDialogBodyHeight = Math.Max(560, this.Bounds.Height - 80);
 
@@ -2058,14 +2063,26 @@ namespace FODevManager.WinUI
             if (dialogResult != ContentDialogResult.Primary)
                 return;
 
-            repositoryModel.DisplayName = displayNameTextBox.Text?.Trim() ?? string.Empty;
-            repositoryModel.PreferredBranch = preferredBranchTextBox.Text?.Trim();
-            repositoryModel.AutoCheckoutOnProfileLoad = autoCheckoutToggle.IsOn;
-            repositoryModel.AutoStashOnDirtyCheckout = autoStashToggle.IsOn;
-            repositoryModel.Task = taskTextBox.Text?.Trim() ?? string.Empty;
-            repositoryModel.TaskComment = taskCommentTextBox.Text?.Trim() ?? string.Empty;
-
-            _profileService.UpdateRepositoryProperties(repoGroupViewModel.ProfileName, repositoryModel);
+            var edited = new RepositoryModel
+            {
+                DisplayName = displayNameTextBox.Text?.Trim() ?? string.Empty,
+                PreferredBranch = preferredBranchTextBox.Text?.Trim() ?? string.Empty,
+                AutoCheckoutOnProfileLoad = autoCheckoutToggle.IsOn,
+                AutoStashOnDirtyCheckout = autoStashToggle.IsOn,
+                Task = taskTextBox.Text?.Trim() ?? string.Empty,
+                TaskComment = taskCommentTextBox.Text?.Trim() ?? string.Empty
+            };
+            var edits = new PropertyEdits<RepositoryModel>(originalProperties, edited,
+                nameof(RepositoryModel.DisplayName), nameof(RepositoryModel.PreferredBranch),
+                nameof(RepositoryModel.AutoCheckoutOnProfileLoad), nameof(RepositoryModel.AutoStashOnDirtyCheckout),
+                nameof(RepositoryModel.Task), nameof(RepositoryModel.TaskComment));
+            if (!edits.HasChanges) return;
+            if (!await RunOperationAsync(() =>
+            {
+                var fresh = WorkflowContext.Repository(_fileService.LoadProfile(repoGroupViewModel.ProfileName), repositoryModel.RepoId);
+                edits.Apply(fresh);
+                _profileService.UpdateRepositoryProperties(repoGroupViewModel.ProfileName, fresh);
+            }, "Update repository properties", false)) return;
 
             UIRefresh(repoGroupViewModel.ProfileName);
         }
@@ -2305,7 +2322,14 @@ namespace FODevManager.WinUI
             {
                 packageVersionComboBox.IsEnabled = false;
 
-                _ = Task.Run(() => _profileService.GetAvailablePackageVersions(environmentViewModel.ProfileName, environmentViewModel.ModelName))
+                _ = Task.Run(() => RunBackgroundMutationAsync("Query package versions", () =>
+                {
+                    var context = new WorkflowContext(_appConfig);
+                    var profile = _fileService.LoadProfile(environmentViewModel.ProfileName);
+                    var model = WorkflowContext.Model(profile, environmentViewModel.ModelName);
+                    var repository = profile.FindRepositoryForModel(model);
+                    return Task.FromResult(repository == null ? new List<string>() : context.Packages.GetAvailablePackageVersions(repository, model.PackageId));
+                }, CancellationToken.None))
                     .ContinueWith(task =>
                     {
                         var loadedVersions = task.Status == TaskStatus.RanToCompletion
@@ -2360,19 +2384,40 @@ namespace FODevManager.WinUI
                     return;
                 }
 
-                sourceVersion = new ModelVersion(major, minor, revision);
+                var editedVersion = new ModelVersion(major, minor, revision);
+                if (!editedVersion.Equals(currentVersion)) sourceVersion = editedVersion;
             }
 
-            environmentModel.IsMainFOModel = canChooseMainFoModel && mainFoToggle.IsOn;
-            if (canSelectNugetVersion && packageVersionComboBox.SelectedItem is string selectedPackageVersion)
-                environmentModel.PackageVersion = selectedPackageVersion;
+            var editedModel = new ProfileEnvironmentModel
+            {
+                IsMainFOModel = canChooseMainFoModel ? mainFoToggle.IsOn : environmentModel.IsMainFOModel,
+                PackageVersion = canSelectNugetVersion && packageVersionComboBox.SelectedItem is string selectedPackageVersion
+                    ? selectedPackageVersion : environmentModel.PackageVersion
+            };
+            var edits = new PropertyEdits<ProfileEnvironmentModel>(environmentModel, editedModel,
+                nameof(ProfileEnvironmentModel.IsMainFOModel), nameof(ProfileEnvironmentModel.PackageVersion));
+            if (!edits.HasChanges && sourceVersion == null) return;
 
             var operationName = canSelectNugetVersion
                 ? $"Update NuGet package version for {environmentViewModel.ModelName}"
                 : $"Update model properties for {environmentViewModel.ModelName}";
 
             var updated = await RunOperationAsync(
-                () => _profileService.UpdateModelProperties(environmentViewModel.ProfileName, environmentModel, sourceVersion),
+                () =>
+                {
+                    var fresh = WorkflowContext.Model(_fileService.LoadProfile(environmentViewModel.ProfileName), environmentModel.ModelName);
+                    if (fresh.ModelType != environmentModel.ModelType)
+                        throw new InvalidOperationException("Model type changed while the properties dialog was open; reopen properties");
+                    edits.Apply(fresh);
+                    ModelVersion? versionToSave = null;
+                    if (sourceVersion.HasValue)
+                    {
+                        if (!_modelVersionService.TryGetVersion(fresh, out var freshVersion))
+                            throw new InvalidOperationException("Cannot read the current source version");
+                        versionToSave = ModelVersionEdits.Apply(currentVersion, sourceVersion.Value, freshVersion);
+                    }
+                    _profileService.UpdateModelProperties(environmentViewModel.ProfileName, fresh, versionToSave);
+                },
                 operationName,
                 shutdownServer: false);
 

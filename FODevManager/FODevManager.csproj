@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.2" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.2" />
 	<PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
@@ -45,6 +46,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\docs\mcp.md" Link="docs\mcp.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory Condition="'$(PublishAsWinUICompanion)' == 'true'">Never</CopyToPublishDirectory>

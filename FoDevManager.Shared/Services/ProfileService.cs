@@ -434,7 +434,7 @@ namespace FODevManager.Services
             ConfigureModelPathsAndDeployment(null, model, modelRootFolder);
         }
 
-        public ProfileModel ImportProfileFromRepoUrl(string repoUrl)
+        public ProfileModel ImportProfileFromRepoUrl(string repoUrl, Func<string, ProfileModel>? importProfile = null)
         {
             if (repoUrl.IsNullOrEmpty())
             {
@@ -479,7 +479,7 @@ namespace FODevManager.Services
             }
 
             MessageLogger.Highlight($"📥 Importing profile from: {profileJsonPath}");
-            return ImportProfile(profileJsonPath);
+            return importProfile != null ? importProfile(profileJsonPath) : ImportProfile(profileJsonPath);
         }
 
         private static string? FindProfileJsonInArtifacts(string repoRootFolder)
@@ -804,7 +804,7 @@ namespace FODevManager.Services
             MessageLogger.Info($"NuGet package '{packageUrl}' added to repository '{repository.DisplayName}'");
         }
 
-        private static string UpdatePackageOverviewUrl(string existingPackageUrl, string packageId, string packageVersion)
+        internal static string UpdatePackageOverviewUrl(string existingPackageUrl, string packageId, string packageVersion)
         {
             if (existingPackageUrl.IsNullOrEmpty()
                 || packageId.IsNullOrEmpty()
@@ -935,15 +935,13 @@ namespace FODevManager.Services
             return false;
         }
 
-        public void CreateModel(string profileName, string modelName)
+        public bool CreateModel(string profileName, string modelName)
         {
             var profile = _fileService.LoadProfile(profileName);
             
-            if (_modelDeploymentService.CreateModel(modelName, profile))
-            {
-                AddProjectToVsSolution(profile, modelName);                
-            }
-            
+            if (!_modelDeploymentService.CreateModel(modelName, profile)) return false;
+            AddProjectToVsSolution(profile, modelName);
+            return true;
         }
 
         private void HandleInstalledModel(string profileName, string modelName, string environmentPath)
@@ -982,7 +980,7 @@ namespace FODevManager.Services
 
         }
 
-        private bool IsInstalledModel(string path) => path.StartsWith(_deploymentBasePath);
+        private bool IsInstalledModel(string path) => FODevManager.Operations.ModelPathSafety.IsWithin(path, _deploymentBasePath);
 
         public void OpenVisualStudioSolution(string profileName)
         {

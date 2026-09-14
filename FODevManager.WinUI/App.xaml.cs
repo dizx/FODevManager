@@ -1,4 +1,5 @@
 using FODevManager.Messages;
+using FODevManager.Operations;
 using FODevManager.Services;
 using FODevManager.Shared.Utils;
 using FODevManager.Shared.Utils.FODevManager.WinUI.Services;
@@ -58,7 +59,18 @@ namespace FODevManager.WinUI
             {
                 this.InitializeComponent();
 
-                AppSettingsMigration.RunOnStartup();
+                try
+                {
+                    new HostOperationBoundary().Run("Settings migration", () =>
+                    {
+                        AppSettingsMigration.RunOnStartup();
+                        return true;
+                    });
+                }
+                catch (Exception exception)
+                {
+                    MessageLogger.Error($"Settings migration deferred: {exception.Message}");
+                }
 
                 ConfigureLogger();
                 RegisterGlobalExceptionHandlers();
@@ -147,6 +159,7 @@ namespace FODevManager.WinUI
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
                 .AddJsonFile($"appsettings.{environmentName}.json", optional: true, reloadOnChange: true)
+                .AddEnvironmentVariables()
                 .Build();
 
             var config = new AppConfig(configuration);
@@ -181,10 +194,6 @@ namespace FODevManager.WinUI
                     throw new InvalidOperationException("Service provider is not initialized");
                 }
 
-                var profileService = Services.GetRequiredService<ProfileService>();
-                var fileService = Services.GetRequiredService<FileService>();
-                var deploymentService = Services.GetRequiredService<ModelDeploymentService>();
-                var modelVersionService = Services.GetRequiredService<ModelVersionService>();
                 var appConfig = Services.GetRequiredService<AppConfig>();
 
                 Log.Information("Services resolved");
@@ -192,7 +201,7 @@ namespace FODevManager.WinUI
                 InitializeW3CState();
                 Log.Information("W3C state initialized");
 
-                var mainWindow = new MainWindow(profileService, fileService, deploymentService, modelVersionService, appConfig);
+                var mainWindow = new MainWindow(appConfig);
                 MainWindow = mainWindow;
                 Log.Information("Main window created");
                 mainWindow.Activate();
@@ -205,6 +214,13 @@ namespace FODevManager.WinUI
                 throw;
             }
 
+        }
+
+        internal static void ReloadConfiguration()
+        {
+            var config = Services!.GetRequiredService<AppConfig>();
+            new SettingsOperations(config, AppContext.BaseDirectory,
+                Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? "Production").Reload();
         }
 
         internal static void WriteStartupCrashLog(string stage, Exception ex)

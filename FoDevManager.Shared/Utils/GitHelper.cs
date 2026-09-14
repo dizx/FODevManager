@@ -11,6 +11,7 @@ namespace FODevManager.Utils
 {
     public static class GitHelper
     {
+        public static bool DisableInteractivePrompts { get; set; }
         public sealed class GitRepoState
         {
             public string? Branch { get; init; }
@@ -209,6 +210,33 @@ namespace FODevManager.Utils
             return AsyncHelpers.RunSync(() => GetActiveBranchAsync(repoPath, CancellationToken.None));
         }
 
+        public static async Task<string> InspectAsync(string repositoryRootFolder, string arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var result = await RunGitCommandAsync(repositoryRootFolder, arguments,
+                timeout: TimeSpan.FromSeconds(10), cancellationToken: cancellationToken,
+                logOnSuccess: false, logOnFailure: false).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!result.Ok) throw new InvalidOperationException($"Cannot inspect Git repository ({arguments}): {result.Output}");
+            return result.Output.Trim();
+        }
+
+        public static async Task<bool> IsWorkingTreeDirtyStrictAsync(string repositoryRootFolder, CancellationToken cancellationToken)
+            => !string.IsNullOrWhiteSpace(await InspectAsync(repositoryRootFolder, "status --porcelain", cancellationToken).ConfigureAwait(false));
+
+        public static bool IsWorkingTreeDirtyStrict(string repositoryRootFolder, CancellationToken cancellationToken = default)
+            => AsyncHelpers.RunSync(() => IsWorkingTreeDirtyStrictAsync(repositoryRootFolder, cancellationToken));
+
+        public static async Task<RepoBranchHealth> GetBranchHealthStrictAsync(string repositoryRootFolder, CancellationToken cancellationToken)
+        {
+            var dirty = await IsWorkingTreeDirtyStrictAsync(repositoryRootFolder, cancellationToken).ConfigureAwait(false);
+            var conflicts = await InspectAsync(repositoryRootFolder, "diff --name-only --diff-filter=U", cancellationToken).ConfigureAwait(false);
+            var mergePath = await InspectAsync(repositoryRootFolder, "rev-parse --git-path MERGE_HEAD", cancellationToken).ConfigureAwait(false);
+            if (conflicts.Length > 0 || File.Exists(Path.GetFullPath(mergePath, repositoryRootFolder)))
+                return RepoBranchHealth.NeedsAttention;
+            return dirty ? RepoBranchHealth.Dirty : RepoBranchHealth.Clean;
+        }
+
         public static async Task<bool> IsWorkingTreeDirtyAsync(string repositoryRootFolder, CancellationToken cancellationToken)
         {
             var result = await RunGitCommandAsync(
@@ -291,21 +319,32 @@ namespace FODevManager.Utils
             return AsyncHelpers.RunSync(() => HasMainChangesAsync(repositoryRootFolder, mainBranchName, CancellationToken.None));                
         }
 
-        public static async Task<bool> HasMainChangesAsync(string repositoryRootFolder, string mainBranchName = "main", CancellationToken cancellationToken = default)
+        public static async Task<bool> HasMainChangesAsync(string repositoryRootFolder, string mainBranchName = "main", CancellationToken cancellationToken = default, bool fetchUpdates = true, bool throwOnFailure = false)
         {
+            if (throwOnFailure) cancellationToken.ThrowIfCancellationRequested();
             if (repositoryRootFolder.IsNullOrEmpty())
+            {
+                if (throwOnFailure) throw new InvalidOperationException("Cannot inspect Git repository without a root folder");
                 return false;
+            }
 
             var safeMainBranchName = mainBranchName.IsNullOrEmpty() ? "main" : mainBranchName;
 
-            var shouldFetch = Singleton<GitFetchThrottle>.Instance.ShouldFetch(repositoryRootFolder);
+            var shouldFetch = fetchUpdates && Singleton<GitFetchThrottle>.Instance.ShouldFetch(repositoryRootFolder);
 
             if (shouldFetch)
             {
                 MessageLogger.LogOnly($"🔄 Fetching updates for repository at {repositoryRootFolder}..");
                 var fetchOk = await FetchAllAsync(repositoryRootFolder, cancellationToken).ConfigureAwait(false);
                 if (!fetchOk)
+                {
+                    if (throwOnFailure)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        throw new InvalidOperationException("Cannot fetch Git repository before comparison");
+                    }
                     return false;
+                }
             }
             else
             {
@@ -323,7 +362,11 @@ namespace FODevManager.Utils
                 .ConfigureAwait(false);
 
             if (!mergeBaseResult.Ok)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (throwOnFailure) throw new InvalidOperationException($"Cannot compare HEAD with origin/{safeMainBranchName}: {mergeBaseResult.Output}");
                 return false;
+            }
 
             var mainHeadResult = await RunGitCommandAsync(
                     repositoryRootFolder,
@@ -335,7 +378,11 @@ namespace FODevManager.Utils
                 .ConfigureAwait(false);
 
             if (!mainHeadResult.Ok)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (throwOnFailure) throw new InvalidOperationException($"Cannot resolve origin/{safeMainBranchName}: {mainHeadResult.Output}");
                 return false;
+            }
 
             return !mergeBaseResult.Output.Trim().SameAs(mainHeadResult.Output.Trim());
         }
@@ -1102,7 +1149,8 @@ namespace FODevManager.Utils
             var processStartInfo = new ProcessStartInfo
             {
                 FileName = "git",
-                Arguments = arguments,
+                Arguments = DisableInteractivePrompts ? "-c core.askPass= -c credential.interactive=false " + arguments : arguments,
+                RedirectStandardInput = DisableInteractivePrompts,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -1110,11 +1158,17 @@ namespace FODevManager.Utils
                 WorkingDirectory = workingDirectory
             };
 
-            if (!allowCredentialPrompt)
+            if (!allowCredentialPrompt || DisableInteractivePrompts)
             {
                 // Prevent Git from prompting for credentials in a non-interactive process.
                 processStartInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
                 processStartInfo.Environment["GCM_INTERACTIVE"] = "Never";
+                if (DisableInteractivePrompts)
+                {
+                    processStartInfo.Environment.Remove("GIT_ASKPASS");
+                    processStartInfo.Environment.Remove("SSH_ASKPASS");
+                    processStartInfo.Environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes";
+                }
             }
 
             try
@@ -1123,6 +1177,8 @@ namespace FODevManager.Utils
 
                 if (!process.Start())
                     return (false, $"Failed to start git {arguments}");
+
+                if (DisableInteractivePrompts) process.StandardInput.Close();
 
                 var standardOutputTask = process.StandardOutput.ReadToEndAsync();
                 var standardErrorTask = process.StandardError.ReadToEndAsync();
@@ -1139,6 +1195,9 @@ namespace FODevManager.Utils
                 catch (OperationCanceledException)
                 {
                     try { process.Kill(entireProcessTree: true); } catch { }
+                    await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+                    await Task.WhenAll(standardOutputTask, standardErrorTask).ConfigureAwait(false);
+                    if (DisableInteractivePrompts) cancellationToken.ThrowIfCancellationRequested();
 
                     var reason = cancellationToken.IsCancellationRequested ? "canceled" : "timed out";
                     if (logOnFailure)
@@ -1164,6 +1223,10 @@ namespace FODevManager.Utils
                     MessageLogger.Error(combinedOutput);
 
                 return (false, combinedOutput);
+            }
+            catch (OperationCanceledException) when (DisableInteractivePrompts && cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception exception)
             {

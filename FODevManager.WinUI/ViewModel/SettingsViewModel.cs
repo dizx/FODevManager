@@ -1,4 +1,5 @@
 using FODevManager.Messages;
+using FODevManager.Operations;
 using FODevManager.Shared.Utils; // AppConfigWriter
 using FODevManager.Utils;
 using System;
@@ -8,6 +9,7 @@ namespace FODevManager.WinUI.ViewModel
     public sealed class SettingsViewModel : ViewModelBase
     {
         private readonly AppConfigWriter _configWriter;
+        private SettingsUpdate _savedValues;
 
         private bool _checkUncommittedBeforeSwitch = true;
         public bool CheckUncommittedBeforeSwitch
@@ -79,32 +81,38 @@ namespace FODevManager.WinUI.ViewModel
             _nuGetExecutablePath = cfg.NuGetExecutablePath;
             _pushDeployablePackageOnBuild = cfg.PushDeployablePackageOnBuild;
             _pushDeployablePackageSource = cfg.PushDeployablePackageSource;
+            _savedValues = Snapshot();
         }
+
+        private SettingsUpdate Snapshot() => new()
+        {
+            CheckUncommittedBeforeSwitch = CheckUncommittedBeforeSwitch,
+            DefaultSourceDirectory = DefaultSourceDirectory,
+            AzureArtifactsUsername = AzureArtifactsUsername,
+            AzureArtifactsPat = AzureArtifactsPat,
+            AzureArtifactsApiKey = AzureArtifactsApiKey,
+            NuGetExecutablePath = NuGetExecutablePath,
+            PushDeployablePackageOnBuild = PushDeployablePackageOnBuild,
+            PushDeployablePackageSource = PushDeployablePackageSource
+        };
 
         public void Save()
         {
             try
             {
-                // Persist both settings to the SAME appsettings.json
-                _configWriter.UpdateSetting(nameof(AppConfig.CheckUncommittedBeforeSwitch), CheckUncommittedBeforeSwitch);
-                _configWriter.UpdateSetting(nameof(AppConfig.DefaultSourceDirectory), DefaultSourceDirectory);
-                _configWriter.UpdateSetting(nameof(AppConfig.AzureArtifactsUsername), AzureArtifactsUsername);
-                _configWriter.UpdateSetting(nameof(AppConfig.AzureArtifactsPat), AzureArtifactsPat);
-                _configWriter.UpdateSetting(nameof(AppConfig.AzureArtifactsApiKey), AzureArtifactsApiKey);
-                _configWriter.UpdateSetting(nameof(AppConfig.NuGetExecutablePath), NuGetExecutablePath);
-                _configWriter.UpdateSetting(nameof(AppConfig.PushDeployablePackageOnBuild), PushDeployablePackageOnBuild);
-                _configWriter.UpdateSetting(nameof(AppConfig.PushDeployablePackageSource), PushDeployablePackageSource);
-
-                // keep in-memory AppConfig aligned, if writer exposes it via GetConfig()
-                var cfg = _configWriter.GetConfig();
-                cfg.CheckUncommittedBeforeSwitch = CheckUncommittedBeforeSwitch;
-                cfg.DefaultSourceDirectory = DefaultSourceDirectory;
-                cfg.AzureArtifactsUsername = AzureArtifactsUsername;
-                cfg.AzureArtifactsPat = AzureArtifactsPat;
-                cfg.AzureArtifactsApiKey = AzureArtifactsApiKey;
-                cfg.NuGetExecutablePath = NuGetExecutablePath;
-                cfg.PushDeployablePackageOnBuild = PushDeployablePackageOnBuild;
-                cfg.PushDeployablePackageSource = PushDeployablePackageSource;
+                var edited = Snapshot();
+                var edits = new PropertyEdits<SettingsUpdate>(_savedValues, edited,
+                    nameof(AppConfig.CheckUncommittedBeforeSwitch), nameof(AppConfig.DefaultSourceDirectory),
+                    nameof(AppConfig.AzureArtifactsUsername), nameof(AppConfig.AzureArtifactsPat), nameof(AppConfig.AzureArtifactsApiKey),
+                    nameof(AppConfig.NuGetExecutablePath), nameof(AppConfig.PushDeployablePackageOnBuild), nameof(AppConfig.PushDeployablePackageSource));
+                new HostOperationBoundary().Run("Save settings", () =>
+                {
+                    App.ReloadConfiguration();
+                    edits.Write((key, value) => _configWriter.UpdateSetting(key, value!));
+                    App.ReloadConfiguration();
+                    return true;
+                });
+                _savedValues = edited;
 
                 MessageLogger.Highlight("Settings saved");
             }

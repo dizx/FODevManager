@@ -198,6 +198,7 @@ namespace FODevManager.Utils
         {
             MessageLogger.Info("FODevManager - Dynamics 365 FO Developer Profile Manager\n"
                 + "Usage: fodev.exe [-profile <ProfileName>] [-model <ModelName>] <command> [argument]\n"
+                + "MCP server: fodev.exe mcp (headless JSON-RPC over stdio; diagnostics on stderr; see docs/mcp.md)\n"
                 + "Options: -profile / --profile, -model / --model (case-insensitive; values are preserved)\n"
                 + "Help: help, -h, --help, ?; use help <command> or <command> --help");
             foreach (var command in Commands)
