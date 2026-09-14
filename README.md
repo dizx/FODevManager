@@ -6,7 +6,7 @@ The primary experience is the WinUI 3 desktop app. A console entry point is stil
 
 ## Current Version
 
-- App version: `1.1.5`
+- App and CLI version: `1.2.1`
 - Runtime: `.NET 10`
 - UI: WinUI 3, Windows App SDK
 - Platform: Windows x64
@@ -31,12 +31,20 @@ Profiles are stored locally as JSON and can also be imported from repository art
 - Create, delete, switch, import, and export developer profiles
 - Store profile artifacts in repositories for repeatable team setup
 - Import profiles directly from a Git repository
-- Detect model changes in repo-stored profile artifacts and prompt for re-import
+- Detect added or removed models, repository moves, model-type changes, and NuGet version changes in repo-stored profile artifacts and prompt for re-import
+- Show old and new NuGet versions in the re-import prompt
+- Remember a **No** response locally across restarts and suppress prompts for that model/package definition until it changes again
+- Preserve the current local profile name and database override when re-importing from the change prompt
 - Apply the profile database name to FO `web.config`
+
+The desktop app checks the linked profile artifact about 75 seconds after loading a profile, then every 15 minutes while idle. Busy operations and queued background work can delay checks. Dismissal preferences stay in the local profile JSON and are not included in portable exports.
 
 ### Repository-Aware Model Management
 
 - Group models by Git repository in the UI
+- List the repository containing the **Main FO** model first, followed by other repositories alphabetically
+- Show **Code**, **Compiled model**, or **NuGet** badges for repository-backed and standalone models
+- Use compact repository model indentation with aligned model names and a Main FO marker
 - Track repository root, Git URL, preferred branch, main branch, and last known branch
 - Support source, compiled, and compiled NuGet model types
 - Keep repository-backed and standalone models in the same profile
@@ -71,6 +79,7 @@ Profiles are stored locally as JSON and can also be imported from repository art
 - Track package ID, version, source URL, and extracted compiled model folder
 - Download private package feed dependencies using configured Azure Artifacts credentials
 - Use `Build\isv.config` to resolve compiled NuGet package references per repository
+- Apply package versions from imported profile definitions to repository `isv.config` references before package preparation
 - Include only descriptor-referenced compiled NuGet models when building a source model package
 
 ### Package Build Workflow
@@ -267,6 +276,7 @@ FODevManager/
 Important service areas:
 
 - `ProfileService`: profile lifecycle, import/export, repository/model orchestration
+- `ProfileChangeDetector`: model membership, type, and package change detection with revision-based prompt dismissal
 - `ModelDeploymentService`: deployment and undeployment link handling
 - `DeployablePackageService`: compiled NuGet package install, reference resolution, and package builds
 - `VisualStudioSolutionService`: solution creation, project discovery, and package build solution generation
@@ -280,7 +290,7 @@ Run the test suite with:
 dotnet test FODevManager.Tests\FODevManager.Tests.csproj --filter "TestCategory!=LocalIntegration"
 ```
 
-The tests cover command parsing, profile handling, deployment behavior, Visual Studio solution generation, compiled NuGet package preparation, and package build reference resolution.
+The tests cover command parsing, profile handling, deployment behavior, Visual Studio solution generation, compiled NuGet package preparation, and package build reference resolution. Profile sync coverage includes source-to-NuGet replacements, repository moves, standalone removals, version changes, persisted dismissals, and local name/database preservation during re-import.
 
 `LocalIntegration` tests require a configured developer machine and perform real package-build workflows; run them explicitly only in that environment.
 
