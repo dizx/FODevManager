@@ -1,5 +1,47 @@
 # FO Dev Manager Changelog
 
+## [1.2.1] - 2026-09-14
+
+### Added
+- Added **Code**, **Compiled model**, and **NuGet** badges for repository-backed and standalone model rows.
+- Added detection of repository moves, model-type changes, and NuGet package version changes to the profile re-import prompt, including old and new package versions.
+- Added persistent dismissal of profile changes: choosing **No** suppresses prompts for the same model/package definition across restarts until that definition changes again.
+- Added tests for profile change detection, persisted dismissals, imported package versions, and local profile name/database preservation.
+
+### Changed
+- The repository containing the **Main FO** model now appears first, followed by other repositories alphabetically.
+- Reduced repository model indentation and aligned model names by placing the Main FO marker in the existing indicator space.
+- Re-import applies package versions from the profile definition to repository `isv.config` references before package preparation.
+- Updated the WinUI app and CLI versions to `1.2.1`.
+
+### Fixed
+- Fixed missed profile changes when a source model is replaced by a NuGet model with the same name in another repository.
+- Fixed portable profile format detection to recognize `ExportFormatVersion` while retaining support for `ExportProfileVersion`.
+- Re-import from the change prompt now preserves the current local profile name and database override when the linked artifact uses a different profile name.
+
+## [1.2.0] - 2026-09-09
+
+### Added
+- Added model multi-selection in the desktop UI.
+- Added combined publishing and installation of the WinUI app and `fodev.exe` console companion, sharing configuration and dependencies in one output directory.
+- Added support for packaging existing compiled models without requiring a source project or compilation.
+- Added automatic conversion of DLL `HintPath` references to project references when a unique matching C# project is found within the model repository/root.
+- Added temporary build-cache drive mappings to keep FO compiler reference paths short during source package builds.
+- Added a deployment ledger to track managed model ownership and prevent conflicting deployments.
+
+### Changed
+- Source package builds rebuild referenced C# projects and include their runtime dependencies in the generated NuGet package.
+- Generated package build solutions include referenced projects and build configurations without rewriting the original solution.
+- WinUI publishing automatically includes the CLI, supports a shared custom output directory, and validates compatible untrimmed, non-single-file publish settings.
+- The installer validates the combined publish output and supports a custom publish folder.
+- Profile switching undeploys managed models before applying the selected profile, and deployment checks use the ledger alongside actual filesystem state.
+
+### Fixed
+- Prevented source package builds from falling back to stale deployed binaries after failed or skipped compilation, and excluded reference-only assemblies from package output.
+- Removed credentials from published settings and NuGet configuration, excluded Development settings from publishing, and prevented secrets from being logged.
+- Fixed path resolution for directories containing dots.
+- Fixed redeployment when a model's configured source path changes and improved deployment status consistency.
+
 ## [1.1.5] - 2026-05-24
 
 ### Added
