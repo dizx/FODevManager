@@ -246,7 +246,7 @@
                                 <ItemsControl ItemsSource="{x:Bind Models, Mode=OneWay}" Visibility="{x:Bind IsExpandedVisibility, Mode=OneWay}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:ProfileEnvironmentViewModel">
-                                            <ListViewItem Style="{StaticResource ModelRowStyle}" Margin="10,4,0,2"
+                                            <ListViewItem Style="{StaticResource ModelRowStyle}" Margin="0,4,0,2"
                                                           IsSelected="{x:Bind IsSelected, Mode=OneWay}"
                                                           AutomationProperties.Name="{x:Bind DisplayNameWithVersion}"
                                                           Tapped="ModelRow_Tapped" KeyDown="ModelRow_KeyDown">
@@ -267,14 +267,14 @@
                                                 </Border>
 
                                                 <!--<FontIcon Grid.Column="0" Glyph="&#xE734;" FontFamily="Segoe MDL2 Assets" Margin="0,0,6,0" VerticalAlignment="Center" Visibility="{x:Bind Model.IsMainFOModel, Converter={StaticResource BoolToVisibilityConverter}}"/>-->
-                                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
-                                                    <Grid Width="20" Height="20">
+                                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="4">
+                                                    <Grid Width="16" Height="20">
+                                                        <Border x:Name="BorderIsMain" Width="3" CornerRadius="2" Background="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Stretch" HorizontalAlignment="Center" Margin="0,2" x:Load="{x:Bind Model.IsMainFOModel, Mode=OneWay}" />
                                                         <Border CornerRadius="10" Background="{ThemeResource AccentFillColorDefaultBrush}"
                                                                 Visibility="{Binding IsSelected, Converter={StaticResource BoolToVisibilityConverter}}">
                                                             <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"/>
                                                         </Border>
                                                     </Grid>
-                                                    <Border x:Name="BorderIsMain" Grid.Column="0" Width="3" CornerRadius="2" Background="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Stretch" Margin="0,2,8,2" x:Load="{x:Bind Model.IsMainFOModel, Mode=OneWay}" />
                                                     <!-- Source -->
                                                     <TextBlock x:Name="ModelNameSource" Text="{x:Bind DisplayNameWithVersion}" Opacity="0.88" x:Load="{x:Bind IsSource, Mode=OneWay}" />
                                                     <!-- Compiled -->
@@ -288,7 +288,12 @@
                                                 <TextBlock x:Name="ModelNameCompiled" Grid.Column="0" Text="{x:Bind ModelName}" VerticalAlignment="Center" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" FontWeight="SemiBold" x:Load="{x:Bind IsCompiled, Mode=OneWay}" />-->
 
 
-                                                <TextBlock Grid.Column="1" Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}" VerticalAlignment="Center"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                                    <Border Background="{ThemeResource SystemFillColorNeutralBackgroundBrush}" CornerRadius="4" Padding="6,2">
+                                                        <TextBlock Text="{x:Bind ModelTypeLabel, Mode=OneWay}" FontSize="12"/>
+                                                    </Border>
+                                                    <TextBlock Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}" VerticalAlignment="Center"/>
+                                                </StackPanel>
                                                 <Button Grid.Column="2" Content="Deploy" Tag="{x:Bind ModelName}" Click="DeployModel_Click" Margin="6,0,0,0"/>
                                                 <Button Grid.Column="3" Content="Undeploy" Tag="{x:Bind ModelName}" Click="UnDeployModel_Click" Margin="6,0,0,0"/>
                                                 <Button Grid.Column="5" Content="Remove" Tag="{x:Bind ModelName}" Click="RemoveModel_Click" Margin="10,0,0,0" HorizontalAlignment="Right"/>
@@ -313,7 +318,7 @@
                             <Grid Background="Transparent">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="220"/>
-                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="240"/>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
@@ -336,9 +341,12 @@
                                     <TextBlock Text="{x:Bind DisplayNameWithVersion}" Opacity="0.88" VerticalAlignment="Center"/>
                                 </StackPanel>
 
-                                <TextBlock Grid.Column="1"
-                                    Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}"
-                                    VerticalAlignment="Center"/>             
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                    <Border Background="{ThemeResource SystemFillColorNeutralBackgroundBrush}" CornerRadius="4" Padding="6,2">
+                                        <TextBlock Text="{x:Bind ModelTypeLabel, Mode=OneWay}" FontSize="12"/>
+                                    </Border>
+                                    <TextBlock Text="{Binding IsDeployed, Converter={StaticResource BoolToStatusConverter}}" VerticalAlignment="Center"/>
+                                </StackPanel>
 
                                 <Button Grid.Column="2" Content="Deploy" Tag="{x:Bind ModelName}" Click="DeployModel_Click" Margin="6,0,0,0"/>
                                 <Button Grid.Column="3" Content="Undeploy" Tag="{x:Bind ModelName}" Click="UnDeployModel_Click" Margin="6,0,0,0"/>

@@ -93,6 +93,7 @@ namespace FODevManager.WinUI.ViewModel
 
                 _modelType = value;
                 OnPropertyChanged(nameof(ModelType));
+                OnPropertyChanged(nameof(ModelTypeLabel));
                 OnPropertyChanged(nameof(IsCompiled));
                 OnPropertyChanged(nameof(IsSource));
             }
@@ -100,6 +101,14 @@ namespace FODevManager.WinUI.ViewModel
 
         public bool IsCompiled => ModelType == ModelType.Compiled || ModelType == ModelType.CompiledNuget;
         public bool IsSource => ModelType == ModelType.Source;
+
+        public string ModelTypeLabel => ModelType switch
+        {
+            ModelType.Source => "Code",
+            ModelType.Compiled => "Compiled model",
+            ModelType.CompiledNuget => "NuGet",
+            _ => "Unknown"
+        };
 
         public event PropertyChangedEventHandler? PropertyChanged;
 

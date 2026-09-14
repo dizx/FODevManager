@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,7 +10,12 @@ namespace FODevManager.Shared.Models
     {
         public bool IsLegacy { get; set; }
 
-        public bool HasChanges => AddedModels.Any() || RemovedModels.Any();
+        public bool HasChanges => AddedModels.Any() || RemovedModels.Any() || UpdatedModels.Any();
+
+        public string DefinitionRevision { get; set; } = "";
+        public IReadOnlyList<string> UpdatedModels => _updatedModels;
+        private readonly List<string> _updatedModels = new();
+        internal void AddUpdated(string description) => _updatedModels.Add(description);
 
         public IReadOnlyList<string> AddedModels => _addedModels;
         public IReadOnlyList<string> RemovedModels => _removedModels;

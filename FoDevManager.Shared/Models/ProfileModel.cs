@@ -13,6 +13,8 @@ namespace FODevManager.Models
 
         public string ProfileFilePath { get; set; } = "";
 
+        public string DismissedProfileDefinitionRevision { get; set; } = "";
+
         public List<RepositoryModel> Repositories { get; set; } = new();
 
         public List<ProfileEnvironmentModel> StandaloneModels { get; set; } = new();

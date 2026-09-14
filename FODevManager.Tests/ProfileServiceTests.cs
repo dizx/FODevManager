@@ -378,6 +378,74 @@ namespace FODevManager.Tests
             Assert.That(Directory.Exists(Path.Combine(producerDirectory, "bin")), Is.False);
         }
 
+        [Test]
+        public async Task DismissProfileChanges_PersistsLocallyAndDoesNotModifyExternalDefinition()
+        {
+            var service = CreateProfileService();
+            service.CreateProfile("YM");
+            var profile = service.LoadProfile("YM");
+            profile.ProfileFilePath = Path.Combine(_baseDir, "external.json");
+            var external = new ExportProfileModel
+            {
+                ProfileName = "YM-Release",
+                StandaloneModels = [new() { ModelName = "NewModel", ModelType = ModelType.CompiledNuget, PackageId = "NewModel", PackageVersion = "2.0.0" }]
+            };
+            File.WriteAllText(profile.ProfileFilePath, JsonSerializer.Serialize(external));
+            new FileService(CreateAppConfig()).SaveProfile(profile);
+            var original = File.ReadAllText(profile.ProfileFilePath);
+            var changes = await service.CheckProfileModelChangesAsync(profile);
+            Assert.That(changes.HasChanges, Is.True);
+
+            service.DismissProfileChanges(profile, changes.DefinitionRevision);
+            var reloaded = CreateProfileService().LoadProfile("YM");
+
+            Assert.That((await service.CheckProfileModelChangesAsync(reloaded)).HasChanges, Is.False);
+            Assert.That(File.ReadAllText(profile.ProfileFilePath), Is.EqualTo(original));
+            external.StandaloneModels[0].PackageVersion = "3.0.0";
+            File.WriteAllText(profile.ProfileFilePath, JsonSerializer.Serialize(external));
+            Assert.That((await service.CheckProfileModelChangesAsync(reloaded)).HasChanges, Is.True);
+            Assert.That(JsonSerializer.Serialize(ExportProfileMapper.ToExport(reloaded)), Does.Not.Contain("DismissedProfileDefinitionRevision"));
+        }
+
+        [Test]
+        public void Reimport_UsesCurrentLocalProfileNameAndReadsPortableFormat()
+        {
+            var service = CreateProfileService();
+            service.CreateProfile("YM");
+            service.SetDatabaseName("YM", "LocalDb");
+            var path = Path.Combine(_baseDir, "external.json");
+            File.WriteAllText(path, JsonSerializer.Serialize(new ExportProfileModel
+            {
+                ProfileName = "YM-Release", SolutionFileRelativePath = "YM.sln"
+            }));
+
+            var imported = service.ImportProfile(path, "YM");
+
+            Assert.That(imported, Is.Not.Null);
+            Assert.That(imported.ProfileName, Is.EqualTo("YM"));
+            Assert.That(imported.DatabaseName, Is.EqualTo("LocalDb"));
+            Assert.That(imported.SolutionFilePath, Does.EndWith("YM.sln"));
+            Assert.That(imported.DismissedProfileDefinitionRevision, Is.Empty);
+        }
+
+        [Test]
+        public void ImportedPackageVersionUpdatesExistingIsvReference()
+        {
+            var repository = new RepositoryModel
+            {
+                RepoRootFolder = _baseDir,
+                Models = [new() { ModelName = "Tools", ModelType = ModelType.CompiledNuget, PackageId = "Tools", PackageVersion = "2.0.0" }]
+            };
+            var configPath = Path.Combine(_baseDir, "isv.config");
+            File.WriteAllText(configPath, "<packages><package id=\"Tools\" version=\"1.0.0\" /><package id=\"Other\" version=\"4.0.0\" /></packages>");
+
+            new DeployablePackageService(CreateAppConfig()).ApplyImportedPackageVersions(repository);
+
+            var packages = System.Xml.Linq.XDocument.Load(configPath).Descendants("package").ToList();
+            Assert.That(packages.Single(package => (string?)package.Attribute("id") == "Tools").Attribute("version")!.Value, Is.EqualTo("2.0.0"));
+            Assert.That(packages.Single(package => (string?)package.Attribute("id") == "Other").Attribute("version")!.Value, Is.EqualTo("4.0.0"));
+        }
+
         private ProfileService CreateProfileService()
             => CreateProfileService(out _);
 

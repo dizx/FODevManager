@@ -160,35 +160,6 @@ namespace FODevManager.Services
 
         }
 
-        private static ModelSyncResult GetEnvironmentDiff(ProfileModel current, ProfileModel imported)
-        {
-            var result = new ModelSyncResult();
-
-            var currentNames = new HashSet<string>(
-                current.AllModels.Select(e => e.ModelName),
-                StringComparer.OrdinalIgnoreCase);
-
-            var importedNames = new HashSet<string>(
-                imported.AllModels.Select(e => e.ModelName),
-                StringComparer.OrdinalIgnoreCase);
-
-            // Added models (in imported but not in current)
-            foreach (var name in importedNames)
-            {
-                if (!currentNames.Contains(name))
-                    result.AddAdded(name);
-            }
-
-            // Removed models (in current but not in imported)
-            foreach (var name in currentNames)
-            {
-                if (!importedNames.Contains(name))
-                    result.AddRemoved(name);
-            }
-
-            return result;
-        }
-
         public Task<ModelSyncResult> CheckProfileModelChangesAsync(ProfileModel currentProfile)
         {
             var result = CheckProfileModelChanges(currentProfile);
@@ -233,7 +204,7 @@ namespace FODevManager.Services
                 }
 
 
-                var diff = GetEnvironmentDiff(currentProfile, importedProfile);
+                var diff = ProfileChangeDetector.Compare(currentProfile, importedProfile);
 
                 if (diff.HasChanges)
                 {
@@ -242,6 +213,9 @@ namespace FODevManager.Services
 
                     if (diff.RemovedModels.Any())
                         MessageLogger.Info($"CheckProfileModelChanges: Removed models: {string.Join(", ", diff.RemovedModels)}");
+
+                    if (diff.UpdatedModels.Any())
+                        MessageLogger.Info($"CheckProfileModelChanges: Updated models: {string.Join(", ", diff.UpdatedModels)}");
                 }
 
                 //TODO: This code can be removed in the future when we are sure legacy profiles are no longer in use
@@ -309,7 +283,16 @@ namespace FODevManager.Services
             return true;
         }
 
-        public ProfileModel ImportProfile(string importPath)
+        public void DismissProfileChanges(ProfileModel profile, string definitionRevision)
+        {
+            var savedProfile = _fileService.LoadProfile(profile.ProfileName);
+            savedProfile.DismissedProfileDefinitionRevision = definitionRevision;
+            _fileService.SaveProfile(savedProfile);
+            profile.DismissedProfileDefinitionRevision = definitionRevision;
+            MessageLogger.Info($"Profile changes dismissed for '{profile.ProfileName}' until its definition changes");
+        }
+
+        public ProfileModel ImportProfile(string importPath, string? targetProfileName = null)
         {
             if (!File.Exists(importPath))
             {
@@ -331,6 +314,9 @@ namespace FODevManager.Services
                 }
 
                 sourceProfile.ProfileFilePath = importPath;
+                if (!string.IsNullOrWhiteSpace(targetProfileName))
+                    sourceProfile.ProfileName = targetProfileName;
+                sourceProfile.DismissedProfileDefinitionRevision = "";
                 sourceProfile.IsActive = false;
                 PreserveLocalDatabaseOverride(sourceProfile);
 
@@ -345,7 +331,7 @@ namespace FODevManager.Services
                 // 1) Import repositories (clone once per repo, configure models)
                 foreach (var repository in sourceProfile.Repositories ?? new List<RepositoryModel>())
                 {
-                    EnsureRepositoryAvailable(repository);
+                    EnsureRepositoryAvailable(repository, applyImportedPackageVersions: true);
                 }
 
                 // 2) Import standalone models (non-repo)
@@ -1704,7 +1690,7 @@ namespace FODevManager.Services
             return _deployablePackageService.GetAvailablePackageVersions(repository, model.PackageId);
         }
 
-        private bool EnsureRepositoryAvailable(RepositoryModel? repository)
+        private bool EnsureRepositoryAvailable(RepositoryModel? repository, bool applyImportedPackageVersions = false)
         {
             if (repository == null)
                 return false;
@@ -1766,6 +1752,9 @@ namespace FODevManager.Services
                 model.ModelRootFolder = repoRootFolder;
                 ConfigureModelPathsAndDeployment(repository, model, repoRootFolder);
             }
+
+            if (applyImportedPackageVersions)
+                _deployablePackageService.ApplyImportedPackageVersions(repository);
 
             var packageModelsChanged = _deployablePackageService.EnsureCompiledNugetModels(new ProfileModel 
                 { 
@@ -1907,7 +1896,8 @@ namespace FODevManager.Services
                 if (document.RootElement.ValueKind != JsonValueKind.Object)
                     return false;
 
-                if (document.RootElement.TryGetProperty("ExportProfileVersion", out _))
+                if (document.RootElement.TryGetProperty("ExportFormatVersion", out _)
+                    || document.RootElement.TryGetProperty("ExportProfileVersion", out _))
                 {
                     var exportProfile = FileHelper.LoadJson<ExportProfileModel>(filePath);
                     if (exportProfile == null || exportProfile.ProfileName.IsNullOrEmpty())

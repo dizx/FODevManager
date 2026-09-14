@@ -64,7 +64,8 @@ namespace FODevManager.WinUI.ViewModel
                     );
                 })
                 .Where(group => group.Models.Count > 0)
-                .OrderBy(group => group.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(group => group.Repository.Models?.Any(model => model.IsMainFOModel) == true)
+                .ThenBy(group => group.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             GitGroups = new ReadOnlyCollection<RepoGroupViewModel>(groups);

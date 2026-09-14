@@ -60,6 +60,34 @@ namespace FODevManager.Services
             return anyUpdated;
         }
 
+        public void ApplyImportedPackageVersions(RepositoryModel repository)
+        {
+            var packages = (repository.Models ?? [])
+                .Where(model => model.ModelType == ModelType.CompiledNuget)
+                .GroupBy(model => model.PackageId, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (packages.Count == 0)
+                return;
+
+            foreach (var package in packages)
+            {
+                if (string.IsNullOrWhiteSpace(package.Key)
+                    || package.Any(model => string.IsNullOrWhiteSpace(model.PackageVersion))
+                    || package.Select(model => model.PackageVersion).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 1)
+                    throw new InvalidOperationException($"Invalid or conflicting imported versions for package '{package.Key}'");
+            }
+
+            if (!TryGetIsvConfigPath(repository, createIfMissing: true, out var configPath))
+                throw new InvalidOperationException($"Cannot configure imported NuGet versions for '{repository.DisplayName}'");
+
+            foreach (var package in packages)
+            {
+                var version = package.First().PackageVersion;
+                UpsertPackageReference(configPath, package.Key, version);
+                MessageLogger.Info($"Imported NuGet reference: {package.Key} {version} in '{repository.DisplayName}'");
+            }
+        }
+
         public bool EnsureCompiledNugetModels(ProfileModel profile, RepositoryModel repository)
         {
             if (profile == null || repository == null)
