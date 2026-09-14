@@ -427,11 +427,10 @@ namespace FODevManager.WinUI
 
                     _backgroundQueue!.TryEnqueue(ct => RunGitHealthCheckAndUpdates(profile, ct));
 
-                    
                     if (DateTime.UtcNow - lastModelSyncUtc >= modelSyncInterval)
                     {
                         lastModelSyncUtc = DateTime.UtcNow;
-                        _backgroundQueue!.TryEnqueue(ct => RunModelSyncCheckAsync(profile, ct));
+                        _backgroundQueue!.TryEnqueue(ct => RunModelSyncCheckAsync(profile, cancellationToken));
                     }
                 }
             }
@@ -618,6 +617,7 @@ namespace FODevManager.WinUI
                     return;
 
                 var syncResult = await _profileService.CheckProfileModelChangesAsync(currentProfile).ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
 
                 if (!syncResult.HasChanges)
                     return;
@@ -630,32 +630,42 @@ namespace FODevManager.WinUI
                     ? $"Removed: {string.Join(", ", syncResult.RemovedModels)}\n"
                     : string.Empty;
 
-                var message = $"The {currentProfile.ProfileName} profile definition has changed (models were added or removed).\n\n" +
-                    added + removed + "\nDo you want to re-import the profile now?";
+                var updated = syncResult.UpdatedModels.Any()
+                    ? $"Updated: {string.Join("\n", syncResult.UpdatedModels)}\n"
+                    : string.Empty;
 
-                var userWantsImport = await Ui.EnqueueAsync(async () =>
+                var message = $"The {currentProfile.ProfileName} profile definition has changed.\n\n" +
+                    added + removed + updated + "\nDo you want to re-import the profile now?\nChoosing No ignores this definition until it changes again.";
+
+                var userWantsImport = await ShowDialogSingleFlightAsync(() => Ui.EnqueueAsync(async () =>
                 {
+                    token.ThrowIfCancellationRequested();
                     var dialog = new ContentDialog
                     {
                         Title = "Profile changes detected",
                         Content = message,
                         PrimaryButtonText = "Re-import",
-                        CloseButtonText = "Cancel",
+                        CloseButtonText = "No",
                         DefaultButton = ContentDialogButton.Primary,
                         XamlRoot = Content.XamlRoot
                     };
 
                     var result = await dialog.ShowAsync();
                     return result == ContentDialogResult.Primary;
-                }).ConfigureAwait(false);
+                }), token).ConfigureAwait(false);
+
+                token.ThrowIfCancellationRequested();
 
                 if (!userWantsImport)
+                {
+                    _profileService.DismissProfileChanges(currentProfile, syncResult.DefinitionRevision);
                     return;
+                }
 
                 if (currentProfile.ProfileFilePath.IsNullOrEmpty())
                     return;
 
-                var (ok, updatedProfile) = await BusyOps.TrySyncAsAsync(() => _profileService.ImportProfile(currentProfile.ProfileFilePath), "Import profile");
+                var (ok, updatedProfile) = await BusyOps.TrySyncAsAsync(() => _profileService.ImportProfile(currentProfile.ProfileFilePath, currentProfile.ProfileName), "Import profile");
 
                 if (!ok || updatedProfile == null)
                     return;
