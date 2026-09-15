@@ -17,7 +17,7 @@ public static class McpHost
 {
     public static IMcpServerBuilder RegisterTools(IMcpServerBuilder server) => server
         .WithTools<ProfileTools>().WithTools<ModelTools>().WithTools<RepositoryTools>()
-        .WithTools<PackageTools>().WithTools<EnvironmentTools>().WithTools<ApplicationTools>();
+        .WithTools<PackageTools>().WithTools<EnvironmentTools>().WithTools<ApplicationTools>().WithTools<AzureDevOpsTools>();
 
     public static Task<int> RunAsync(CancellationToken cancellationToken = default) => RunAsync(null, cancellationToken);
 

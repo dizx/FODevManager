@@ -207,7 +207,8 @@ public class McpToolTests
             "repositories_list", "repository_show", "repository_properties_update", "repository_status", "git_fetch", "repository_remote", "git_assign_task",
             "repository_task_url", "git_merge_main", "git_reset_profile", "git_tag_release", "nuget_versions", "nuget_add", "nuget_update", "nuget_remove",
             "nuget_prepare", "package_build", "deployment_inspect", "deployment_deploy", "deployment_undeploy", "deployment_undeploy_all", "solution_path",
-            "solution_ensure", "solution_open", "database_get", "database_set", "database_apply", "application_about", "settings_read", "settings_update", "operation_status"
+            "solution_ensure", "solution_open", "database_get", "database_set", "database_apply", "application_about", "settings_read", "settings_update", "operation_status",
+            "azure_devops_projects_list", "azure_devops_repositories_list", "azure_devops_repository_inspect"
         };
         Assert.That(tools.Select(t => t.Name), Is.EquivalentTo(expected));
         foreach (var tool in tools)
@@ -215,6 +216,9 @@ public class McpToolTests
             Assert.That(tool.ProtocolTool.InputSchema.GetProperty("properties").TryGetProperty("progress", out _), Is.False, tool.Name);
             Assert.That(tool.ProtocolTool.InputSchema.GetProperty("properties").TryGetProperty("token", out _), Is.False, tool.Name);
         }
+        var invalidOrganization = await client.CallToolAsync("azure_devops_projects_list", new Dictionary<string, object?> { ["organization"] = "https://foreign.invalid" }, cancellationToken: timeout.Token);
+        Assert.That(invalidOrganization.IsError, Is.True);
+        Assert.That(invalidOrganization.StructuredContent!.Value.GetProperty("status").GetString(), Is.EqualTo("failed"));
         var progress = new System.Collections.Concurrent.ConcurrentQueue<ProgressNotificationValue>();
         var created = await tools.Single(t => t.Name == "profile_create")
             .CallAsync(new Dictionary<string, object?> { ["profileName"] = "protocol", ["requestId"] = "creation" },

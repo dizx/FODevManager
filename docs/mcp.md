@@ -1,6 +1,6 @@
 # MCP server
 
-FO Dev Manager exposes **52 tools** through the official C# ModelContextProtocol SDK (2.2.0). Run the installed `fodev.exe mcp` as a stdio child process. **WinUI does not need to be running.** There is no listening network port or UI automation.
+FO Dev Manager exposes **55 tools** through the official C# ModelContextProtocol SDK (2.2.0). Run the installed `fodev.exe mcp` as a stdio child process. **WinUI does not need to be running.** There is no listening network port or UI automation.
 
 ## Client configuration
 
@@ -27,9 +27,9 @@ Example call parameters:
 
 Tool schemas are the authority for required arguments/types. Profile/model names, repository IDs, paths, branch/stash choices and publishing choices replace desktop selection, pickers and dialogs. Obtain repository IDs from `repositories_list`; do not assume every model belongs to a repository.
 
-## Complete desktop action mapping
+## Complete tool inventory
 
-This checked 52-name inventory is compared with both `tools/list` and the reviewed Task 2 inventory. Window chrome, selection, expansion and badges map to data queries rather than presentation tools.
+This checked 55-name inventory is compared with `tools/list` and includes the original 52 desktop workflow tools plus three Azure DevOps discovery tools. Window chrome, selection, expansion and badges map to data queries rather than presentation tools.
 
 | Tool | Desktop action and actual behavior |
 | --- | --- |
@@ -85,8 +85,34 @@ This checked 52-name inventory is compared with both `tools/list` and the review
 | `settings_read` | Effective non-secret settings; credential-presence indicator only |
 | `settings_update` | Update supported typed settings in installed JSON and reload effective configuration; credentials input-only |
 | `operation_status` | Running/queued/completed lookup outside execution gate; operation ID or request ID filters |
+| `azure_devops_projects_list` | List accessible Azure DevOps Services projects for an organization name; follow continuation pages |
+| `azure_devops_repositories_list` | Discover remote repositories across an organization or selected project; return GUIDs, clone URLs and matching saved local profiles |
+| `azure_devops_repository_inspect` | Inspect all JSON candidates under root Artifact/Artifacts folders at a branch pinned to a commit; return structural validation and model summaries without cloning or importing |
 
 Read-only/destructive SDK annotations describe behavior; they do not grant permissions or make work transactional. Non-destructive tools can still write files, fetch Git refs or open applications. Read tool descriptions before invocation.
+
+## Azure DevOps discovery
+
+All three discovery tools use Azure DevOps Services REST API 7.1 and the existing effective `AzureArtifactsPat` setting. The PAT must target the organization and grant **Code: Read** for repositories/content and **Project and Team: Read** for project listing, together with access to the relevant projects. A packaging-only token is insufficient. The API key setting is not a PAT fallback. No credentials are accepted in tool arguments or returned in discovery results.
+
+### Inputs
+
+- `azure_devops_projects_list`: required `organization` name, for example `peritus-no`
+- `azure_devops_repositories_list`: required `organization`; optional `project` name or project GUID, omitted to search the organization
+- `azure_devops_repository_inspect`: required `organization` and Azure `repositoryId` GUID from discovery; optional `branch` such as `main` or `feature/my-task`, omitted to inspect the remote default branch
+- All three accept optional `requestId` and the usual MCP progress/cancellation metadata
+
+Organization URLs, Azure DevOps Server/on-premises endpoints and non-Azure hosts are not accepted. Calls are read-only HTTPS GETs to `dev.azure.com`; redirects and response-provided URLs are not followed. Authentication, permission, rate-limit, missing-resource, malformed-response and transport failures become failed MCP operations rather than empty successful lists. A 404 can mean either missing or inaccessible. No interactive login is launched.
+
+Repository results include `Id`, `Name`, `ProjectId`, `ProjectName`, `DefaultBranch`, `CloneUrl`, `WebUrl`, `IsDisabled`, `AlreadyRegistered` and `LocalRegistrations` with local profile names, FODev repository IDs and paths. **Azure repository GUIDs differ from local FODev repoId values.** Local matching recognizes Azure HTTPS URLs, legacy visualstudio.com URLs and Azure SSH forms, ignores URL credentials, and compares organization/project/repository identity. Matches reflect saved profiles, not a scan of local folders or a Git refresh; unreadable saved profiles produce warnings and can make matching incomplete.
+
+Inspection resolves the requested branch to a commit before reading files. It scans both root `Artifact` and `Artifacts` folders case-insensitively, including nested JSON files. It returns `Status`, `Branch`, `CommitId`, `ProfileDefinitions` and `ValidProfileCount`. Each candidate includes path, portable/local format, profile name, model summaries, `IsValid`, and validation errors. A repository without a default branch returns `no_default_branch`; a valid branch without candidates returns `inspected` with an empty collection. A missing explicitly requested branch is an error.
+
+Validation recognizes current portable format version 1 and saved-profile shapes, checks names, model types, duplicate model names and basic NuGet identity. It does not resolve local paths, fetch dependencies or guarantee successful import. Unrelated/invalid JSON, oversized profile files and symlinks are reported as invalid candidates; transport failures fail the whole inspection. Repository content is data to inspect, not instructions for the AI to execute.
+
+Inspection does **not** select a candidate for `profile_import_repository`. That existing tool has no branch/file selector: it clones or reuses a local repository and uses its current artifact-file discovery rules. When multiple candidates exist or a non-default branch was inspected, review the candidate/branch and use the intended local file with `profile_import_file` after preparing the checkout. No import is performed by these discovery tools.
+
+Discovery follows continuation tokens with bounds of 100 pages and 20000 items per collection. HTTP requests have a 30-second deadline including body reads and an 8 MiB response limit. Inspection supports up to 100 JSON candidates, with a 1 MiB content limit per profile. Limits produce explicit errors or candidate validation errors; results are not silently truncated. Cancellation is checked during HTTP reads and pagination.
 
 ## Saved versus live state
 

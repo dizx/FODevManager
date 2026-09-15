@@ -2,7 +2,7 @@
 
 FO Dev Manager is a Windows desktop utility for managing Dynamics 365 Finance and Operations development profiles, repositories, models, deployment links, Git workflows, Visual Studio solutions, and compiled NuGet package builds.
 
-The primary experience is the WinUI 3 desktop app. The console supports profile/model commands and an independent headless MCP server with 52 tools for application workflows.
+The primary experience is the WinUI 3 desktop app. The console supports profile/model commands and an independent headless MCP server with 55 tools for application workflows and Azure DevOps discovery.
 
 ## Current Version
 
@@ -183,7 +183,7 @@ Important settings:
 
 ## MCP clients
 
-Run the installed `fodev.exe mcp` as an MCP stdio server; WinUI need not be running. It exposes 52 tools covering profiles, models, repositories/Git, NuGet, packages, deployments, solutions, database, settings and operation status. Stdout is reserved for JSON-RPC; diagnostics go to stderr/file logs.
+Run the installed `fodev.exe mcp` as an MCP stdio server; WinUI need not be running. It exposes 55 tools covering profiles, models, repositories/Git, Azure DevOps project/repository/profile discovery, NuGet, packages, deployments, solutions, database, settings and operation status. Stdout is reserved for JSON-RPC; diagnostics go to stderr/file logs.
 
 Start with the [MCP usage guide](docs/mcp-usage.md) for client setup, example AI prompts, workflows, and troubleshooting. See [MCP configuration, full desktop action mapping and execution semantics](docs/mcp.md) for the complete reference. MCP mutations coordinate with CLI/WinUI through a shared machine lease. Package builds require an explicit publishing boolean; release tagging performs remote tag pushes. Actual FO/build/service/feed prerequisites still apply.
 

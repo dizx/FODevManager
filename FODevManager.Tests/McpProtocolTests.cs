@@ -31,9 +31,9 @@ public class McpProtocolTests
         string[] Inventory(string file) => Regex.Matches(File.ReadAllText(Path.Combine(TestContext.CurrentContext.TestDirectory, file)), @"(?m)^\| `([a-z_]+)` \|")
             .Select(m => m.Groups[1].Value).ToArray();
         var documented = Inventory("mcp.md");
-        Assert.That(documented, Has.Length.EqualTo(52));
-        Assert.That(documented.Distinct().Count(), Is.EqualTo(52));
-        Assert.That(documented, Is.EquivalentTo(Inventory("mcp-task-2-report.md")));
+        Assert.That(documented, Has.Length.EqualTo(55));
+        Assert.That(documented.Distinct().Count(), Is.EqualTo(55));
+        Assert.That(Inventory("mcp-task-2-report.md"), Is.SubsetOf(documented));
         Assert.That(tools.Select(t => t.GetProperty("name").GetString()), Is.EquivalentTo(documented));
         foreach (var tool in tools)
         {
@@ -42,6 +42,15 @@ public class McpProtocolTests
             Assert.That(tool.TryGetProperty("annotations", out _), Is.True);
         }
         JsonElement Tool(string name) => tools.Single(t => t.GetProperty("name").GetString() == name);
+        foreach (var name in new[] { "azure_devops_projects_list", "azure_devops_repositories_list", "azure_devops_repository_inspect" })
+        {
+            var discovery = Tool(name);
+            Assert.That(discovery.GetProperty("annotations").GetProperty("readOnlyHint").GetBoolean(), Is.True);
+            var properties = discovery.GetProperty("inputSchema").GetProperty("properties");
+            Assert.That(properties.TryGetProperty("organization", out _), Is.True);
+            Assert.That(properties.TryGetProperty("pat", out _), Is.False);
+            Assert.That(properties.TryGetProperty("token", out _), Is.False);
+        }
         Assert.That(Tool("package_build").GetProperty("inputSchema").GetProperty("required").EnumerateArray().Select(p => p.GetString()), Does.Contain("publish"));
         foreach (var (name, phrase) in new[] { ("package_build", "publish=true"), ("git_tag_release", "PUSH tags"),
             ("profile_switch", "control services"), ("repository_status", "without fetching"), ("profile_show", "saved state"),

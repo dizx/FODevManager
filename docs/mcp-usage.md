@@ -2,7 +2,7 @@
 
 This guide connects an AI client to FO Dev Manager so you can manage your FO development environment using natural-language requests.
 
-FO Dev Manager provides **52 MCP tools** for profiles, models, Git repositories, NuGet packages, deployment, solutions, databases, and settings. The AI client launches `fodev.exe mcp` and calls those tools for you. **The WinUI application does not need to be open.**
+FO Dev Manager provides **55 MCP tools** for profiles, models, Git repositories, Azure DevOps discovery, NuGet packages, deployment, solutions, databases, and settings. The AI client launches `fodev.exe mcp` and calls those tools for you. **The WinUI application does not need to be open.**
 
 For every available tool and detailed execution behavior, see the [MCP reference](mcp.md).
 
@@ -137,6 +137,20 @@ Typical tools: `git_fetch`, `repository_status`.
 
 ### Import a profile
 
+To discover repositories before importing:
+
+> List the Azure DevOps projects I can access in peritus-no.
+
+> List repositories in peritus-no and show which are already registered in my local FODev profiles.
+
+> Inspect the Peritus Bank Filer repository on its default branch and show the available FODev profile definitions and models.
+
+The AI uses `azure_devops_projects_list`, `azure_devops_repositories_list`, and `azure_devops_repository_inspect`. It obtains the Azure repository GUID from discovery before inspecting; this differs from the local FODev repository ID. You can filter repositories by project and inspect a named branch, for example `feature/my-task`.
+
+Configure `AzureArtifactsPat` with **Code: Read** and **Project and Team: Read** access for the organization. The existing package-feed PAT works only if it also has those permissions. Use configuration or environment variables to supply it, not a chat prompt. Discovery reads Azure DevOps without cloning, importing, changing profiles, or switching your environment.
+
+Inspection lists all JSON candidates under root `Artifact`/`Artifacts` folders, validates their structure and summarizes their models. Invalid files are reported as such. Multiple definitions are not automatically selected. Inspection of a branch does not make the existing repository importer select that branch or file; for precise selection, prepare the checkout and import its intended local JSON file.
+
 > Import C:\Artifacts\TeamProfile.json as DevProfile using fodev, then show the imported models and resolved solution path.
 
 Typical tools: `profile_import_file`, `profile_show`, `solution_path`.
@@ -226,6 +240,7 @@ Cancellation is cooperative. Some underlying work continues until it reaches a s
 | Access denied for the operation lock | The client account needs access to %ProgramData%\FODevManager\application-operation.lock and its directory |
 | Deployment or database action fails | Check FO paths, symlink privileges, W3SVC/service-control access, and web.config permissions |
 | Git authentication fails | Configure noninteractive Git authentication for the same Windows account; MCP disables interactive credential prompts |
+| Azure DevOps discovery reports 401 or 403 | Check the effective AzureArtifactsPat, expiration, organization, Code: Read / Project and Team: Read scopes, and account access to the project |
 | NuGet lookup, restore, or build fails | Check NuGetExecutablePath/PATH, repository nuget.config and Build/isv.config, feed access, and configured credentials |
 | Settings update has no visible effect | An environment variable may override the saved value; inspect effective settings |
 | MCP protocol/JSON parsing errors | Launch fodev.exe directly; shell banners or other text written to stdout break the protocol |
