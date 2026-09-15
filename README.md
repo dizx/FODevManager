@@ -185,7 +185,7 @@ Important settings:
 
 Run the installed `fodev.exe mcp` as an MCP stdio server; WinUI need not be running. It exposes 52 tools covering profiles, models, repositories/Git, NuGet, packages, deployments, solutions, database, settings and operation status. Stdout is reserved for JSON-RPC; diagnostics go to stderr/file logs.
 
-See [MCP configuration, full desktop action mapping and execution semantics](docs/mcp.md). MCP mutations coordinate with CLI/WinUI through a shared machine lease. Package builds require an explicit publishing boolean; release tagging performs remote tag pushes. Actual FO/build/service/feed prerequisites still apply.
+Start with the [MCP usage guide](docs/mcp-usage.md) for client setup, example AI prompts, workflows, and troubleshooting. See [MCP configuration, full desktop action mapping and execution semantics](docs/mcp.md) for the complete reference. MCP mutations coordinate with CLI/WinUI through a shared machine lease. Package builds require an explicit publishing boolean; release tagging performs remote tag pushes. Actual FO/build/service/feed prerequisites still apply.
 
 ## Console Usage
 
