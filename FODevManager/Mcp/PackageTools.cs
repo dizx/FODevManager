@@ -12,7 +12,7 @@ public sealed class PackageTools(ToolExecution execution)
     public Task<CallToolResult> Versions(string profileName, string repoId, string packageId, IProgress<ProgressNotificationValue> progress, CancellationToken token, string? requestId = null) =>
         execution.Run("nuget_versions", false, (c, _) => new PackageOperations(c).Versions(profileName, repoId, packageId), progress, token, requestId);
 
-    [McpServerTool(Name = "nuget_add", Destructive = true), Description("Add package URL to a selected repository's Build/isv.config and restore/reconcile compiled models; temporarily undeploy verified links and restore surviving deployments")]
+    [McpServerTool(Name = "nuget_add", Destructive = true), Description("Add a package URL to the selected repository in the profile and restore/reconcile compiled models; temporarily undeploy verified links and restore surviving deployments")]
     public Task<CallToolResult> Add(string profileName, string repoId, string packageUrl, IProgress<ProgressNotificationValue> progress, CancellationToken token, string? requestId = null) =>
         execution.Run("nuget_add", true, (c, ct) => new PackageOperations(c).Add(profileName, repoId, packageUrl, ct), progress, token, requestId);
 

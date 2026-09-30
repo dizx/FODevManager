@@ -257,7 +257,7 @@ public class McpToolTests
         }, skipExistCheck: true);
         new PackageOperations(context).Remove("p", "r", "Pkg", CancellationToken.None);
         Assert.That(context.Profile("p").AllModels.Select(m => m.ModelName), Is.EquivalentTo(new[] { "Source", "Compiled" }));
-        Assert.That(File.ReadAllText(isvPath), Does.Not.Contain("Pkg"));
+        Assert.That(File.ReadAllText(isvPath), Is.EqualTo("<packages><package id=\"Pkg\" version=\"1.0.0\" /></packages>"));
     }
 
     [Test]
@@ -469,7 +469,9 @@ public class McpToolTests
         const string incoming = "{\"ProfileName\":\"pending-incoming-profile\"}";
         File.WriteAllText(linked, incoming);
         context.Files.SaveProfile(new ProfileModel { ProfileName = "p", ProfileFilePath = linked,
-            Repositories = [new RepositoryModel { RepoId = "r", RepoRootFolder = repo }] }, skipExistCheck: true);
+            Repositories = [new RepositoryModel { RepoId = "r", RepoRootFolder = repo,
+                Models = hasPackages ? [new ProfileEnvironmentModel { ModelName = "A", ModelType = ModelType.CompiledNuget,
+                    PackageId = "Pkg", PackageVersion = "1.0.0" }] : [] }] }, skipExistCheck: true);
         var savedPath = Path.Combine(config.ProfileStoragePath, "p.json");
         var originalTime = DateTime.UtcNow.AddDays(-1);
         File.SetLastWriteTimeUtc(savedPath, originalTime);

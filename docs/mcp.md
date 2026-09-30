@@ -66,7 +66,7 @@ This checked 55-name inventory is compared with `tools/list` and includes the or
 | `git_reset_profile` | Stash dirty repositories, checkout configured main, fetch and pull throughout profile |
 | `git_tag_release` | Bump changed source revisions, commit descriptors, create release tags and **push tags remotely**; requires clean main/release branches |
 | `nuget_versions` | Version dropdown: selected repository's configured package feed |
-| `nuget_add` | Add package URL to required repository's Build/isv.config, restore/reconcile membership with verified deployment handling |
+| `nuget_add` | Add package URL to the required repository in the profile, restore/reconcile membership with verified deployment handling |
 | `nuget_update` | Change repository package version/URLs; reconcile membership and deployments |
 | `nuget_remove` | Remove reference and all package members after full affected repository synchronization/deployment preflight |
 | `nuget_prepare` | Resolve dependencies on detached graph before replacing changed deployments; no-op preserves links/profile timestamp; local saves preserve incoming linked definitions |
@@ -159,7 +159,7 @@ The server starts without FO or WinUI running and saved queries can use isolated
 - Developer Mode or symlink privilege, appropriate W3SVC/service-control and FO web.config permissions for deployment/database/switch
 - Visual Studio/FO tooling, MSBuild/compiler packages and NuGet for source builds; unused drive letter for existing short-path build-cache mapping
 - Git on PATH and preconfigured noninteractive HTTPS/SSH authentication; MCP disables prompts, askpass and interactive GCM and enforces SSH batch/host-key checking
-- nuget.exe on PATH or configured, repository Build/isv.config and nuget.config, feed/network access and credentials for restore/version lookup/publish
+- nuget.exe on PATH or configured, profile package references and nuget.config, feed/network access and credentials for restore/version lookup/publish
 - Existing supported Azure Artifacts package overview URL format for package addition; Git import retains existing folder/profile-definition discovery behavior
 - Visual Studio/browser and an interactive Windows session for explicit open actions
 

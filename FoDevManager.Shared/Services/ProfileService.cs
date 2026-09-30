@@ -797,7 +797,7 @@ namespace FODevManager.Services
 
             if (!_deployablePackageService.AddOrUpdatePackageFromUrl(profile, repository, packageUrl.Trim()))
             {
-                MessageLogger.Warning($"Package from '{packageUrl}' was added to Build\\isv.config, but no compiled models were discovered yet");
+                MessageLogger.Warning($"No compiled models could be added to the profile from '{packageUrl}'");
             }
 
             _fileService.SaveProfile(profile, updateExternal: true);
@@ -1752,7 +1752,7 @@ namespace FODevManager.Services
             }
 
             if (applyImportedPackageVersions)
-                _deployablePackageService.ApplyImportedPackageVersions(repository);
+                _deployablePackageService.ValidateProfilePackageVersions(repository);
 
             var packageModelsChanged = _deployablePackageService.EnsureCompiledNugetModels(new ProfileModel 
                 { 

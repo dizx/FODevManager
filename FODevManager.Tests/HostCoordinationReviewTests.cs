@@ -125,7 +125,8 @@ public class HostCoordinationReviewTests
         var nextPayload = Path.Combine(config.DeployablePackages, "Pkg-2.0.0");
         Directory.CreateDirectory(nextPayload);
         File.WriteAllText(Path.Combine(nextPayload, "A.xref"), "new cached version");
-        File.WriteAllText(Path.Combine(repo, "Build", "isv.config"), "<packages><package id=\"Pkg\" version=\"2.0.0\" /></packages>");
+        profile.FindModel("A")!.PackageVersion = "2.0.0";
+        context.Files.SaveProfile(profile);
         var state = Singleton<W3cServiceState>.Instance;
         var previous = state.InOperation;
         state.InOperation = true;
@@ -393,7 +394,8 @@ public class HostCoordinationReviewTests
         var payload = Path.Combine(config.DeployablePackages, "Pkg-1.0.0");
         Directory.CreateDirectory(payload);
         File.WriteAllText(Path.Combine(payload, "A.xref"), "cached");
-        context.Files.SaveProfile(new ProfileModel { ProfileName = "p", Repositories = [new() { RepoId = "r", RepoRootFolder = repo }] }, true);
+        context.Files.SaveProfile(new ProfileModel { ProfileName = "p", Repositories = [new() { RepoId = "r", RepoRootFolder = repo,
+            Models = [new() { ModelName = "A", ModelType = ModelType.CompiledNuget, PackageId = "Pkg", PackageVersion = "1.0.0" }] }] }, true);
         new PackageOperations(context).Prepare("p", CancellationToken.None);
         var profile = context.Profile("p");
         profile.FindModel("A")!.IsDeployed = true;

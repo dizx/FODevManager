@@ -241,7 +241,7 @@ Cancellation is cooperative. Some underlying work continues until it reaches a s
 | Deployment or database action fails | Check FO paths, symlink privileges, W3SVC/service-control access, and web.config permissions |
 | Git authentication fails | Configure noninteractive Git authentication for the same Windows account; MCP disables interactive credential prompts |
 | Azure DevOps discovery reports 401 or 403 | Check the effective AzureArtifactsPat, expiration, organization, Code: Read / Project and Team: Read scopes, and account access to the project |
-| NuGet lookup, restore, or build fails | Check NuGetExecutablePath/PATH, repository nuget.config and Build/isv.config, feed access, and configured credentials |
+| NuGet lookup, restore, or build fails | Check NuGetExecutablePath/PATH, profile package references, repository nuget.config, feed access, and configured credentials |
 | Settings update has no visible effect | An environment variable may override the saved value; inspect effective settings |
 | MCP protocol/JSON parsing errors | Launch fodev.exe directly; shell banners or other text written to stdout break the protocol |
 | Desktop does not immediately show an MCP change | Refresh or reload the profile; there is no live desktop IPC connection |

@@ -6,7 +6,7 @@ The primary experience is the WinUI 3 desktop app. The console supports profile/
 
 ## Current Version
 
-- App and CLI version: `1.2.1`
+- App and CLI version: `1.3.0`
 - Runtime: `.NET 10`
 - UI: WinUI 3, Windows App SDK
 - Platform: Windows x64
@@ -78,8 +78,8 @@ The desktop app checks the linked profile artifact about 75 seconds after loadin
 - Add or update compiled NuGet model references from package URLs
 - Track package ID, version, source URL, and extracted compiled model folder
 - Download private package feed dependencies using configured Azure Artifacts credentials
-- Use `Build\isv.config` to resolve compiled NuGet package references per repository
-- Apply package versions from imported profile definitions to repository `isv.config` references before package preparation
+- Resolve compiled NuGet package IDs and versions from each repository's saved profile models
+- Restore imported package versions directly from profile definitions without reading or changing `isv.config`
 - Include only descriptor-referenced compiled NuGet models when building a source model package
 
 ### Package Build Workflow
@@ -110,7 +110,7 @@ The desktop app checks the linked profile artifact about 75 seconds after loadin
 - .NET 10 SDK
 - Git CLI
 - `nuget.exe` on `PATH` or configured in Settings
-- Access to any private Azure Artifacts feeds used by repository `nuget.config` or `Build\isv.config`
+- Access to any private Azure Artifacts feeds used by repository `nuget.config`
 
 ## Build And Run
 
