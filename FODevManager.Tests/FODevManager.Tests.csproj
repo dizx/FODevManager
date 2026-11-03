@@ -25,10 +25,13 @@
 	<ItemGroup>
 	  <ProjectReference Include="..\FoDevManager.Shared\FODevManager.Shared.csproj" />
 	  <ProjectReference Include="..\FODevManager\FODevManager.csproj" />
+	  <ProjectReference Include="..\FODevManager.McpProtocolHost\FODevManager.McpProtocolHost.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<Using Include="NUnit.Framework" />
+		<None Include="..\docs\mcp.md" Link="mcp.md" CopyToOutputDirectory="PreserveNewest" />
+		<None Include="..\docs\superpowers\plans\mcp-task-2-report.md" Link="mcp-task-2-report.md" CopyToOutputDirectory="PreserveNewest" />
 		<Compile Include="..\FODevManager.WinUI\ViewModel\ModelSelection.cs" Link="ViewModel\ModelSelection.cs" />
 	</ItemGroup>
 

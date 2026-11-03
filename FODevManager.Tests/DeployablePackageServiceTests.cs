@@ -51,7 +51,7 @@ namespace FODevManager.Tests
         }
 
         [Test]
-        public void ResolveReferencedCompiledNugetReferenceFolders_Should_Use_Descriptor_And_Isv_Config_Version()
+        public void ResolveReferencedCompiledNugetReferenceFolders_Should_Use_Descriptor_And_Profile_Version()
         {
             var repositoryRoot = Path.Combine(_baseDir, "repo");
             var buildRoot = Path.Combine(repositoryRoot, "Build");
@@ -59,19 +59,17 @@ namespace FODevManager.Tests
             var descriptorRoot = Path.Combine(sourceMetadataRoot, "Descriptor");
             var carModelRoot = Path.Combine(_baseDir, "DeployablePackages", "CarModel-1.0.0");
             var carModelBinRoot = Path.Combine(carModelRoot, "bin");
-            var wrongVersionRoot = Path.Combine(_baseDir, "DeployablePackages", "CarModel-2.0.0");
             var unlistedModelRoot = Path.Combine(_baseDir, "DeployablePackages", "UnlistedModel-1.0.0");
 
             Directory.CreateDirectory(buildRoot);
             Directory.CreateDirectory(descriptorRoot);
             Directory.CreateDirectory(carModelBinRoot);
-            Directory.CreateDirectory(wrongVersionRoot);
             Directory.CreateDirectory(unlistedModelRoot);
 
             File.WriteAllText(Path.Combine(buildRoot, "isv.config"), """
                 <?xml version="1.0" encoding="utf-8"?>
                 <packages>
-                  <package id="CarModel" version="1.0.0" />
+                  <package id="CarModel" version="9.0.0" />
                 </packages>
                 """);
 
@@ -117,15 +115,6 @@ namespace FODevManager.Tests
                             },
                             new ProfileEnvironmentModel
                             {
-                                ModelName = "CarModel-2.0.0",
-                                ModelRootFolder = repositoryRoot,
-                                CompiledModelFolder = wrongVersionRoot,
-                                PackageId = "CarModel",
-                                PackageVersion = "2.0.0",
-                                ModelType = ModelType.CompiledNuget
-                            },
-                            new ProfileEnvironmentModel
-                            {
                                 ModelName = "UnlistedModel-1.0.0",
                                 ModelRootFolder = repositoryRoot,
                                 CompiledModelFolder = unlistedModelRoot,
@@ -140,7 +129,7 @@ namespace FODevManager.Tests
 
             var referenceFolders = ResolveReferencedCompiledNugetReferenceFolders(profile, sourceModel);
 
-            Assert.That(referenceFolders, Is.EquivalentTo(new[] { carModelRoot, carModelBinRoot }));
+            Assert.That(referenceFolders, Is.EquivalentTo(new[] { carModelRoot }));
         }
 
         [Test]
@@ -169,7 +158,7 @@ namespace FODevManager.Tests
         }
 
         [Test]
-        public void ResolveReferencedCompiledNugetReferenceFolders_Should_Fail_When_Isv_Package_Is_Not_In_Profile()
+        public void ResolveReferencedCompiledNugetReferenceFolders_Should_Ignore_Isv_Package_Not_In_Profile()
         {
             var repositoryRoot = Path.Combine(_baseDir, "repo");
             var buildRoot = Path.Combine(repositoryRoot, "Build");
@@ -218,7 +207,7 @@ namespace FODevManager.Tests
                 ]
             };
 
-            Assert.That(TryResolveReferencedCompiledNugetReferenceFolders(profile, sourceModel, out var referenceFolders), Is.False);
+            Assert.That(TryResolveReferencedCompiledNugetReferenceFolders(profile, sourceModel, out var referenceFolders), Is.True);
             Assert.That(referenceFolders, Is.Empty);
         }
 
@@ -404,8 +393,11 @@ namespace FODevManager.Tests
             Assert.That(repository.Models.Single(), Is.SameAs(compiledModel));
         }
 
-        [Test]
-        public void EnsureCompiledNugetModels_Should_Update_Existing_CompiledNuget_Model_With_Same_Name()
+        [TestCase(null)]
+        [TestCase("<packages />")]
+        [TestCase("<packages><package id=\"CarModel\" version=\"9.0.0\" /></packages>")]
+        [TestCase("invalid XML")]
+        public void EnsureCompiledNugetModels_Should_Use_Profile_Regardless_Of_Isv_Config(string? isvContents)
         {
             var repositoryRoot = Path.Combine(_baseDir, "repo");
             var buildRoot = Path.Combine(repositoryRoot, "Build");
@@ -416,12 +408,8 @@ namespace FODevManager.Tests
             Directory.CreateDirectory(buildRoot);
             Directory.CreateDirectory(packageBinRoot);
 
-            File.WriteAllText(Path.Combine(buildRoot, "isv.config"), """
-                <?xml version="1.0" encoding="utf-8"?>
-                <packages>
-                  <package id="CarModel" version="1.0.0" />
-                </packages>
-                """);
+            var isvPath = Path.Combine(buildRoot, "isv.config");
+            if (isvContents != null) File.WriteAllText(isvPath, isvContents);
             File.WriteAllText(Path.Combine(buildRoot, "nuget.config"), """
                 <?xml version="1.0" encoding="utf-8"?>
                 <configuration>
@@ -437,7 +425,7 @@ namespace FODevManager.Tests
                 ModelRootFolder = repositoryRoot,
                 CompiledModelFolder = Path.Combine(_baseDir, "old", "CarModel"),
                 PackageId = "CarModel",
-                PackageVersion = "0.9.0",
+                PackageVersion = "1.0.0",
                 ModelType = ModelType.CompiledNuget
             };
 
@@ -465,6 +453,9 @@ namespace FODevManager.Tests
             Assert.That(repository.Models.Single(), Is.SameAs(existingNugetModel));
             Assert.That(existingNugetModel.CompiledModelFolder, Is.EqualTo(packageRoot));
             Assert.That(existingNugetModel.PackageVersion, Is.EqualTo("1.0.0"));
+            Assert.That(service.GetConfiguredPackageVersions(repository)["CarModel"], Is.EqualTo("1.0.0"));
+            if (isvContents == null) Assert.That(File.Exists(isvPath), Is.False);
+            else Assert.That(File.ReadAllText(isvPath), Is.EqualTo(isvContents));
         }
 
         [Test]
@@ -888,12 +879,13 @@ namespace FODevManager.Tests
                 DeploymentBasePath = Path.Combine(Path.GetTempPath(), "FODevManagerTests", "Metadata")
             });
 
-            var method = typeof(DeployablePackageService).GetMethod("TryResolveReferencedCompiledNugetReferenceFolders", BindingFlags.NonPublic | BindingFlags.Instance);
+            var method = typeof(DeployablePackageService).GetMethod("TryResolveReferencedCompiledNugetModels", BindingFlags.NonPublic | BindingFlags.Instance);
             Assert.That(method, Is.Not.Null);
 
             object?[] parameters = [profile, model, null];
             var succeeded = (bool)method!.Invoke(service, parameters)!;
-            referenceFolders = (IReadOnlyList<string>?)parameters[2] ?? [];
+            referenceFolders = ((IReadOnlyList<ProfileEnvironmentModel>?)parameters[2] ?? [])
+                .Select(compiledModel => compiledModel.CompiledModelFolder).ToList();
 
             return succeeded;
         }

@@ -51,7 +51,7 @@ namespace FODevManager.Services
         }
 
 
-        public bool DeployModel(string profileName, string modelName)
+        public bool DeployModel(string profileName, string modelName, bool preparePackage = true)
         {
             
             ServiceHelper.StopW3SVC();
@@ -60,7 +60,7 @@ namespace FODevManager.Services
             {
                 var profile = _fileService.LoadProfile(profileName);
 
-                if(DeploySingleModel(profile, modelName))
+                if(DeploySingleModel(profile, modelName, preparePackage: preparePackage))
                 {
                     profile.FindModel(modelName)!.IsDeployed = true;
                     _fileService.SaveProfile(profile);
@@ -381,7 +381,7 @@ namespace FODevManager.Services
             }
         }
 
-        private bool DeploySingleModel(ProfileModel profile, string modelName, bool forceReplaceExistingDeployment = false)
+        private bool DeploySingleModel(ProfileModel profile, string modelName, bool forceReplaceExistingDeployment = false, bool preparePackage = true)
         {
             try
             {
@@ -393,7 +393,7 @@ namespace FODevManager.Services
                 }
                 string targetDir = Path.Combine(_deploymentBasePath, modelName);
 
-                if (model.ModelType == ModelType.CompiledNuget)
+                if (preparePackage && model.ModelType == ModelType.CompiledNuget)
                     _deployablePackageService.EnsureCompiledNugetModel(profile, model);
 
                 string linkPath = targetDir;
@@ -773,6 +773,8 @@ namespace FODevManager.Services
 
         public bool ConvertInstalledModelToProjectModel(string modelName, ProfileModel profile, string? projectFolderNameOverride = null)
         {
+            FODevManager.Operations.WorkflowContext.ValidateName(modelName);
+            FODevManager.Operations.WorkflowContext.ValidateName(projectFolderNameOverride ?? modelName);
             var sourceModelPath = Path.Combine(_deploymentBasePath, modelName);
 
             if (!Directory.Exists(sourceModelPath))
@@ -788,10 +790,12 @@ namespace FODevManager.Services
 
             try
             {
+                var expectedFiles = FODevManager.Operations.ModelPathSafety.ValidateConversion(sourceModelPath, projectRootPath, modelName);
                 FileHelper.EnsureDirectoryExists(metadataTargetPath);
                 FileHelper.CopyDirectory(sourceModelPath, metadataTargetPath);
 
                 var projectFilePath = CreateProjectFile(modelName, projectTargetPath);
+                FODevManager.Operations.ModelPathSafety.VerifyCopy(sourceModelPath, metadataTargetPath, expectedFiles);
 
                 MessageLogger.Info($"📁 Created project structure at: {projectRootPath}");
 
@@ -833,10 +837,13 @@ namespace FODevManager.Services
                 {
                     ServiceHelper.StopW3SVC();
 
-                    MessageLogger.Info($"🗑️ Deleting installed model folder: {sourceModelPath}");
-                    Directory.Delete(sourceModelPath, recursive: true);
-
-                    ServiceHelper.StartW3SVC();
+                    try
+                    {
+                        FODevManager.Operations.ModelPathSafety.VerifyCopy(sourceModelPath, metadataTargetPath, expectedFiles);
+                        MessageLogger.Info($"🗑️ Deleting installed model folder: {sourceModelPath}");
+                        Directory.Delete(sourceModelPath, recursive: true);
+                    }
+                    finally { ServiceHelper.StartW3SVC(); }
 
                     MessageLogger.Highlight($"✅ Successfully deleted '{modelName}' from deployment path");
                 }

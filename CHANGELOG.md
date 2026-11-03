@@ -1,5 +1,14 @@
 # FO Dev Manager Changelog
 
+## [1.3.0] - 2026-09-30
+
+### Added
+- MCP server support for managing profiles, repositories, models, deployments, packages, and Azure DevOps discovery from AI clients.
+
+### Fixed
+- Compiled NuGet preparation, import, package changes, and build references now use saved profile models instead of `isv.config`. Empty, missing, or unrelated build package lists no longer override profile dependencies.
+- Package preparation retains existing profile membership if any requested package fails to restore.
+
 ## [1.2.1] - 2026-09-14
 
 ### Added

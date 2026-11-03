@@ -1,4 +1,6 @@
 using FODevManager.Messages;
+using FODevManager.Operations;
+using FODevManager.Services;
 using FODevManager.WinUI.Framework;
 using FODevManager.WinUI.ViewModel;
 using Microsoft.UI.Input;
@@ -156,32 +158,23 @@ namespace FODevManager.WinUI
                 return;
 
             var profileName = models[0].ProfileName;
+            var selected = models.Select(model => FileService.SerializedClone(model.Model)).ToList();
             var operation = deploy ? "Deploy" : "Undeploy";
             await BusyOps.TrySyncAsAsync(() =>
             {
-                foreach (var model in models)
+                SelectedModelOperations.Run(_fileService.LoadProfile(profileName), selected, fresh =>
                 {
-                    try
+                    if (deploy)
                     {
-                        if (deploy)
-                        {
-                            if (!_deploymentService.IsModelActuallyDeployed(model.Model)
-                                && !_deploymentService.DeployModel(profileName, model.ModelName))
-                                MessageLogger.Warning($"Could not deploy selected model '{model.ModelName}'");
-                        }
-                        else
-                        {
-                            if (_deploymentService.IsModelActuallyDeployed(model.Model))
-                                _deploymentService.UnDeployModel(profileName, model.ModelName);
-                            else
-                                MessageLogger.Info($"Skipping '{model.ModelName}': the selected model's source is not deployed");
-                        }
+                        return _deploymentService.IsModelActuallyDeployed(fresh)
+                            || _deploymentService.DeployModel(profileName, fresh.ModelName);
                     }
-                    catch (Exception exception)
-                    {
-                        MessageLogger.Error($"{operation} failed for selected model '{model.ModelName}': {exception.Message}");
-                    }
-                }
+                    if (_deploymentService.IsModelActuallyDeployed(fresh))
+                        _deploymentService.UnDeployModel(profileName, fresh.ModelName);
+                    else
+                        MessageLogger.Info($"Skipping '{fresh.ModelName}': the selected model's source is not deployed");
+                    return !_deploymentService.IsModelActuallyDeployed(fresh);
+                });
             }, $"{operation} {models.Count} selected model(s)", shutdownServer: true);
 
             if (ProfilesDropdown.SelectedItem is string currentProfile && currentProfile == profileName)

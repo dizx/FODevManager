@@ -429,7 +429,7 @@ namespace FODevManager.Tests
         }
 
         [Test]
-        public void ImportedPackageVersionUpdatesExistingIsvReference()
+        public void ImportedPackageVersionDoesNotChangeBuildConfiguration()
         {
             var repository = new RepositoryModel
             {
@@ -439,10 +439,12 @@ namespace FODevManager.Tests
             var configPath = Path.Combine(_baseDir, "isv.config");
             File.WriteAllText(configPath, "<packages><package id=\"Tools\" version=\"1.0.0\" /><package id=\"Other\" version=\"4.0.0\" /></packages>");
 
-            new DeployablePackageService(CreateAppConfig()).ApplyImportedPackageVersions(repository);
+            var service = new DeployablePackageService(CreateAppConfig());
+            service.ValidateProfilePackageVersions(repository);
 
             var packages = System.Xml.Linq.XDocument.Load(configPath).Descendants("package").ToList();
-            Assert.That(packages.Single(package => (string?)package.Attribute("id") == "Tools").Attribute("version")!.Value, Is.EqualTo("2.0.0"));
+            Assert.That(service.GetConfiguredPackageVersions(repository)["Tools"], Is.EqualTo("2.0.0"));
+            Assert.That(packages.Single(package => (string?)package.Attribute("id") == "Tools").Attribute("version")!.Value, Is.EqualTo("1.0.0"));
             Assert.That(packages.Single(package => (string?)package.Attribute("id") == "Other").Attribute("version")!.Value, Is.EqualTo("4.0.0"));
         }
 

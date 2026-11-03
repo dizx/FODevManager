@@ -18,10 +18,10 @@ namespace FODevManager.Services
         private readonly string _appDataPath;
         private const string DeploymentLedgerFileName = "deployed-models.json";
 
-        public FileService(AppConfig config)
+        public FileService(AppConfig config, bool ensureDirectory = true)
         {
             _appDataPath = config.ProfileStoragePath;
-            FileHelper.EnsureDirectoryExists(_appDataPath);
+            if (ensureDirectory) FileHelper.EnsureDirectoryExists(_appDataPath);
         }
 
         private string ProfilePath(string profileName) => Path.Combine(_appDataPath, $"{profileName}.json");

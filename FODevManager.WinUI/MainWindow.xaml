@@ -229,7 +229,7 @@
                                     <Button Grid.Column="4" Content="Assign Task" Click="AssignTask_ForRepo_Click" Margin="6,0,0,0"/>
                                     <Button Grid.Column="5" Content="Open Task" Click="OpenTask_ForRepo_Click" IsEnabled="{x:Bind HasTask}" Margin="6,0,0,0"/>
                                     <Button Grid.Column="6" Content="DevOps" Click="OpenGitForRepo_Click" Margin="20,0,0,0"/>
-                                    <Button x:Name="GridMergeButton" Grid.Column="7" ToolTipService.ToolTip="Merge main into current branch" Click="RepoHeader_GitMerge_Click" x:Load="{x:Bind HasMainUpdates, Mode=OneWay}" 
+                                    <Button x:Name="GridMergeButton" Grid.Column="7" ToolTipService.ToolTip="Fetch and check main for updates, then confirm merge into the current branch" Click="RepoHeader_GitMerge_Click"
                                              Margin="8,0,0,0" Padding="12,6" FontWeight="SemiBold">
 
 

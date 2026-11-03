@@ -32,8 +32,14 @@ namespace FODevManager.Services
         private readonly string _deployablePackagesRoot;
         private readonly string _deploymentBasePath;
 
-        public DeployablePackageService(AppConfig config)
+        private readonly bool allowLegacyDeploymentCleanup;
+        private readonly Func<ProcessStartInfo, (bool Succeeded, string Output)>? versionQueryRunner;
+
+        public DeployablePackageService(AppConfig config, bool allowLegacyDeploymentCleanup = true,
+            Func<ProcessStartInfo, (bool Succeeded, string Output)>? versionQueryRunner = null)
         {
+            this.versionQueryRunner = versionQueryRunner;
+            this.allowLegacyDeploymentCleanup = allowLegacyDeploymentCleanup;
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _deployablePackagesRoot = _config.DeployablePackages;
             _deploymentBasePath = _config.DeploymentBasePath;
@@ -60,32 +66,9 @@ namespace FODevManager.Services
             return anyUpdated;
         }
 
-        public void ApplyImportedPackageVersions(RepositoryModel repository)
+        public void ValidateProfilePackageVersions(RepositoryModel repository)
         {
-            var packages = (repository.Models ?? [])
-                .Where(model => model.ModelType == ModelType.CompiledNuget)
-                .GroupBy(model => model.PackageId, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            if (packages.Count == 0)
-                return;
-
-            foreach (var package in packages)
-            {
-                if (string.IsNullOrWhiteSpace(package.Key)
-                    || package.Any(model => string.IsNullOrWhiteSpace(model.PackageVersion))
-                    || package.Select(model => model.PackageVersion).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 1)
-                    throw new InvalidOperationException($"Invalid or conflicting imported versions for package '{package.Key}'");
-            }
-
-            if (!TryGetIsvConfigPath(repository, createIfMissing: true, out var configPath))
-                throw new InvalidOperationException($"Cannot configure imported NuGet versions for '{repository.DisplayName}'");
-
-            foreach (var package in packages)
-            {
-                var version = package.First().PackageVersion;
-                UpsertPackageReference(configPath, package.Key, version);
-                MessageLogger.Info($"Imported NuGet reference: {package.Key} {version} in '{repository.DisplayName}'");
-            }
+            LoadProfilePackageReferences(repository);
         }
 
         public bool EnsureCompiledNugetModels(ProfileModel profile, RepositoryModel repository)
@@ -93,20 +76,17 @@ namespace FODevManager.Services
             if (profile == null || repository == null)
                 return false;
 
-            var hasNugetModels = repository.Models != null && repository.Models.Any(model => model.ModelType == ModelType.CompiledNuget);
-            if (!hasNugetModels)
-            {
-                if (!TryGetIsvConfigPath(repository, createIfMissing: false, out var isvConfigPath)
-                    || isvConfigPath.IsNullOrEmpty()
-                    || !File.Exists(isvConfigPath))
-                {
-                    return false;
-                }
+            var packages = LoadProfilePackageReferences(repository);
+            if (packages.Count == 0)
+                return false;
 
-                var configuredPackages = LoadIsvPackageReferences(isvConfigPath);
-                if (configuredPackages.Count == 0)
-                    return false;
-            }
+            return PreparePackageModels(profile, repository, packages);
+        }
+
+        private bool PreparePackageModels(ProfileModel profile, RepositoryModel repository, IReadOnlyList<PackageReference> packages, string? packageId = null, string? packageUrl = null)
+        {
+            if (packages.Count == 0)
+                return SyncRepositoryNugetModels(profile, repository, []);
 
             if (_deployablePackagesRoot.IsNullOrEmpty())
             {
@@ -114,7 +94,7 @@ namespace FODevManager.Services
                 return false;
             }
 
-            if (!TryGetPackageContext(repository, out var packageContext))
+            if (!TryGetPackageContext(repository, packages, out var packageContext))
             {
                 MessageLogger.Error($"❌ Nuget is not configured for repository '{repository.DisplayName}'. Cannot prepare compiled NuGet models");
                 return false;
@@ -130,8 +110,12 @@ namespace FODevManager.Services
             var extractedPackages = new List<PackageReference>();
             foreach (var packageReference in packageReferences)
             {
-                if (EnsurePackageExtracted(packageReference, packageContext))
-                    extractedPackages.Add(packageReference);
+                if (!EnsurePackageExtracted(packageReference, packageContext))
+                {
+                    MessageLogger.Error($"Could not prepare package '{packageReference.Id}' {packageReference.Version} for '{repository.DisplayName}'. Profile package membership was retained");
+                    return false;
+                }
+                extractedPackages.Add(packageReference);
             }
 
             if (extractedPackages.Count == 0)
@@ -140,7 +124,10 @@ namespace FODevManager.Services
                 return false;
             }
 
-            return SyncRepositoryNugetModels(profile, repository, extractedPackages);
+            var updated = SyncRepositoryNugetModels(profile, repository, extractedPackages);
+            if (!string.IsNullOrWhiteSpace(packageId) && !string.IsNullOrWhiteSpace(packageUrl))
+                updated |= ApplyPackageUrl(repository, packageId, packageUrl);
+            return updated;
         }
 
         public bool EnsureCompiledNugetModel(ProfileModel profile, ProfileEnvironmentModel model)
@@ -158,8 +145,11 @@ namespace FODevManager.Services
             return EnsureCompiledNugetModels(profile, repository);
         }
 
+        public IReadOnlyList<string> LastBuiltArtifactPaths { get; private set; } = Array.Empty<string>();
+
         public bool BuildDeployableNugetPackage(ProfileModel profile, ProfileEnvironmentModel model, string solutionFilePath)
         {
+            LastBuiltArtifactPaths = Array.Empty<string>();
             if (profile == null)
                 throw new ArgumentNullException(nameof(profile));
 
@@ -364,19 +354,13 @@ namespace FODevManager.Services
                 return false;
             }
 
-            if (!TryGetIsvConfigPath(repository, createIfMissing: true, out var isvConfigPath))
-            {
-                MessageLogger.Error($"❌ Could not locate Build\\isv.config for repository '{repository.DisplayName}'");
-                return false;
-            }
-
             if (!ValidatePackageVersionExists(repository, packageId, packageVersion))
                 return false;
 
-            UpsertPackageReference(isvConfigPath, packageId, packageVersion);
-            var updated = EnsureCompiledNugetModels(profile, repository);
-            ApplyPackageUrl(repository, packageId, packageUrl);
-            return updated;
+            var packages = LoadProfilePackageReferences(repository);
+            packages.RemoveAll(package => package.Id.SameAs(packageId));
+            packages.Add(new PackageReference(packageId, packageVersion));
+            return PreparePackageModels(profile, repository, packages, packageId, packageUrl);
         }
 
         public bool RemovePackage(ProfileModel profile, RepositoryModel repository, string packageId)
@@ -384,22 +368,10 @@ namespace FODevManager.Services
             if (profile == null || repository == null || packageId.IsNullOrEmpty())
                 return false;
 
-            if (!TryGetIsvConfigPath(repository, createIfMissing: false, out var isvConfigPath))
+            var packages = LoadProfilePackageReferences(repository);
+            if (packages.RemoveAll(package => package.Id.SameAs(packageId.Trim())) == 0)
                 return false;
-
-            var removed = RemovePackageReference(isvConfigPath, packageId.Trim());
-            var synced = EnsureCompiledNugetModels(profile, repository);
-
-            var staleModels = (repository.Models ?? new List<ProfileEnvironmentModel>())
-                .Where(model => model.ModelType == ModelType.CompiledNuget && model.PackageId.SameAs(packageId))
-                .ToList();
-
-            foreach (var staleModel in staleModels)
-            {
-                repository.Models.Remove(staleModel);
-            }
-
-            return removed || synced || staleModels.Count > 0;
+            return PreparePackageModels(profile, repository, packages);
         }
 
         public bool UpdatePackageFromUrl(ProfileModel profile, RepositoryModel repository, string existingPackageId, string packageUrl)
@@ -416,24 +388,13 @@ namespace FODevManager.Services
                 return false;
             }
 
-            if (!TryGetIsvConfigPath(repository, createIfMissing: true, out var isvConfigPath))
-            {
-                MessageLogger.Error($"❌ Could not locate Build\\isv.config for repository '{repository.DisplayName}'");
-                return false;
-            }
-
             if (!ValidatePackageVersionExists(repository, newPackageId, newPackageVersion))
                 return false;
 
-            if (!existingPackageId.IsNullOrEmpty() && !existingPackageId.SameAs(newPackageId))
-            {
-                RemovePackageReference(isvConfigPath, existingPackageId);
-            }
-
-            UpsertPackageReference(isvConfigPath, newPackageId, newPackageVersion);
-            var updated = EnsureCompiledNugetModels(profile, repository);
-            ApplyPackageUrl(repository, newPackageId, packageUrl);
-            return updated;
+            var packages = LoadProfilePackageReferences(repository);
+            packages.RemoveAll(package => package.Id.SameAs(existingPackageId) || package.Id.SameAs(newPackageId));
+            packages.Add(new PackageReference(newPackageId, newPackageVersion));
+            return PreparePackageModels(profile, repository, packages, newPackageId, packageUrl);
         }
 
         public bool UpdatePackageVersion(ProfileModel profile, RepositoryModel repository, string packageId, string packageVersion)
@@ -441,34 +402,43 @@ namespace FODevManager.Services
             if (profile == null || repository == null || packageId.IsNullOrEmpty() || packageVersion.IsNullOrEmpty())
                 return false;
 
-            if (!TryGetIsvConfigPath(repository, createIfMissing: true, out var isvConfigPath))
-            {
-                MessageLogger.Error($"❌ Could not locate Build\\isv.config for repository '{repository.DisplayName}'");
-                return false;
-            }
-
             if (!ValidatePackageVersionExists(repository, packageId, packageVersion))
                 return false;
 
-            UpsertPackageReference(isvConfigPath, packageId, packageVersion);
-            return EnsureCompiledNugetModels(profile, repository);
+            var packages = LoadProfilePackageReferences(repository);
+            if (packages.RemoveAll(package => package.Id.SameAs(packageId)) == 0)
+                return false;
+            packages.Add(new PackageReference(packageId, packageVersion));
+            return PreparePackageModels(profile, repository, packages);
         }
 
-        public List<string> GetAvailablePackageVersions(RepositoryModel repository, string packageId)
+        public IReadOnlyDictionary<string, string> GetConfiguredPackageVersions(RepositoryModel repository)
+        {
+            return LoadProfilePackageReferences(repository).ToDictionary(p => p.Id, p => p.Version, StringComparer.OrdinalIgnoreCase);
+        }
+
+        public List<string> GetAvailablePackageVersions(RepositoryModel repository, string packageId, bool throwOnFailure = false)
         {
             if (repository == null || packageId.IsNullOrEmpty())
+            {
+                if (throwOnFailure) throw new ArgumentException("A repository and package ID are required");
                 return new List<string>();
+            }
 
             if (!TryResolvePackageNugetConfigPath(repository, out var nugetConfigPath))
+            {
+                if (throwOnFailure) throw new InvalidOperationException("Cannot resolve package NuGet configuration");
                 return new List<string>();
+            }
 
             if (!TryGetAvailablePackageVersions(
                     repository.RepoRootFolder ?? Directory.GetCurrentDirectory(),
                     nugetConfigPath,
                     packageId,
                     out var versions,
-                    out var errorMessage))
+                    out var errorMessage, requireSuccessfulExit: throwOnFailure))
             {
+                if (throwOnFailure) throw new InvalidOperationException($"Could not load available versions for package '{packageId}': {errorMessage}");
                 MessageLogger.Warning($"⚠️ Could not load available versions for package '{packageId}'. {errorMessage}");
                 return new List<string>();
             }
@@ -478,7 +448,7 @@ namespace FODevManager.Services
                 .ToList();
         }
 
-        private bool TryGetPackageContext(RepositoryModel repository, out PackageContext context)
+        private bool TryGetPackageContext(RepositoryModel repository, IReadOnlyList<PackageReference> packages, out PackageContext context)
         {
             context = null!;
 
@@ -492,21 +462,7 @@ namespace FODevManager.Services
             if (!TryResolvePackageNugetConfigPath(repository, out var nugetConfigPath))
                 return false;
 
-            var isvConfigPath = FindRepositoryConfigFile(repositoryRoot, "isv.config");
-            if (isvConfigPath.IsNullOrEmpty())
-            {
-                MessageLogger.LogOnly($"No isv.config found under repository '{repository.DisplayName}'");
-                return false;
-            }
-
-            var packages = LoadIsvPackageReferences(isvConfigPath);
-            if (packages.Count == 0)
-            {
-                MessageLogger.LogOnly($"No package entries found in Build\\isv.config for repository '{repository.DisplayName}'");
-                return false;
-            }
-
-            context = new PackageContext(repositoryRoot, isvConfigPath, nugetConfigPath, packages);
+            context = new PackageContext(repositoryRoot, nugetConfigPath, packages);
 
             if (!ValidatePackageSettings(repository, context))
                 return false;
@@ -549,6 +505,10 @@ namespace FODevManager.Services
             var existingNugetModels = repository.Models
                 .Where(model => model.ModelType == ModelType.CompiledNuget)
                 .ToList();
+            var packageUrls = existingNugetModels
+                .Where(model => !string.IsNullOrWhiteSpace(model.PackageId) && !string.IsNullOrWhiteSpace(model.PackageUrl))
+                .GroupBy(model => model.PackageId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First().PackageUrl, StringComparer.OrdinalIgnoreCase);
 
             var updated = false;
             var deploymentBasePath = _deploymentBasePath;
@@ -570,6 +530,15 @@ namespace FODevManager.Services
                 }
 
                 updated |= ApplyResolvedModel(existingModel, repository, descriptor);
+                if (packageUrls.TryGetValue(descriptor.PackageReference.Id, out var packageUrl))
+                {
+                    var resolvedUrl = ProfileService.UpdatePackageOverviewUrl(packageUrl, descriptor.PackageReference.Id, descriptor.PackageReference.Version);
+                    if (!existingModel.PackageUrl.SameAs(resolvedUrl))
+                    {
+                        existingModel.PackageUrl = resolvedUrl;
+                        updated = true;
+                    }
+                }
             }
 
             var descriptorNames = descriptors
@@ -588,6 +557,8 @@ namespace FODevManager.Services
 
         private bool TryRemoveLegacyVersionedDeploymentLink(ProfileEnvironmentModel staleModel, IReadOnlyCollection<ResolvedModelDescriptor> descriptors)
         {
+            // Coordinated callers own link removal using the original saved membership and ledger
+            if (!allowLegacyDeploymentCleanup) return false;
             if (!IsLegacyVersionedNugetModel(staleModel, descriptors))
                 return false;
 
@@ -643,17 +614,21 @@ namespace FODevManager.Services
             return updated;
         }
 
-        private static void ApplyPackageUrl(RepositoryModel repository, string packageId, string packageUrl)
+        private static bool ApplyPackageUrl(RepositoryModel repository, string packageId, string packageUrl)
         {
             if (repository?.Models == null || packageId.IsNullOrEmpty() || packageUrl.IsNullOrEmpty())
-                return;
+                return false;
 
+            var updated = false;
             foreach (var model in repository.Models.Where(model =>
                          model.ModelType == ModelType.CompiledNuget &&
                          model.PackageId.SameAs(packageId)))
             {
+                if (model.PackageUrl == packageUrl.Trim()) continue;
                 model.PackageUrl = packageUrl.Trim();
+                updated = true;
             }
+            return updated;
         }
 
         private static bool SetIfDifferent(ProfileEnvironmentModel model, string _, string newValue, Action<string> setter)
@@ -892,90 +867,24 @@ namespace FODevManager.Services
                 .FirstOrDefault();
         }
 
-        private static List<PackageReference> LoadIsvPackageReferences(string isvConfigPath)
+        private static List<PackageReference> LoadProfilePackageReferences(RepositoryModel repository)
         {
-            var document = XDocument.Load(isvConfigPath);
-
-            return document.Descendants()
-                .Where(element => element.Name.LocalName.Contains("package", StringComparison.OrdinalIgnoreCase))
-                .Select(element => new PackageReference(
-                    GetPackageId(element),
-                    GetPackageVersion(element)))
-                .Where(packageReference => !packageReference.Id.IsNullOrEmpty() && !packageReference.Version.IsNullOrEmpty())
-                .DistinctBy(packageReference => packageReference.GetKey(), StringComparer.OrdinalIgnoreCase)
-                .ToList();
-        }
-
-        private static string GetPackageId(XElement element)
-        {
-            return (element.Attribute("id")?.Value
-                ?? element.Attribute("packageId")?.Value
-                ?? element.Attribute("name")?.Value
-                ?? element.Attribute("package")?.Value
-                ?? string.Empty).Trim();
-        }
-
-        private static string GetPackageVersion(XElement element)
-        {
-            return (element.Attribute("version")?.Value
-                ?? element.Attribute("packageVersion")?.Value
-                ?? string.Empty).Trim();
-        }
-
-        private static void UpsertPackageReference(string isvConfigPath, string packageId, string packageVersion)
-        {
-            var document = File.Exists(isvConfigPath)
-                ? XDocument.Load(isvConfigPath)
-                : new XDocument(new XElement("packages"));
-
-            var root = document.Root ?? new XElement("packages");
-            if (document.Root == null)
-                document.Add(root);
-
-            var existingElement = root.DescendantsAndSelf()
-                .FirstOrDefault(element => element.Name.LocalName.Contains("package", StringComparison.OrdinalIgnoreCase)
-                    && GetPackageId(element).SameAs(packageId));
-
-            if (existingElement != null)
+            var packages = new List<PackageReference>();
+            foreach (var group in (repository.Models ?? [])
+                .Where(model => model.ModelType == ModelType.CompiledNuget)
+                .GroupBy(model => model.PackageId?.Trim(), StringComparer.OrdinalIgnoreCase))
             {
-                existingElement.SetAttributeValue(existingElement.Attribute("id") != null ? "id" : existingElement.Attribute("packageId") != null ? "packageId" : existingElement.Attribute("name") != null ? "name" : "id", packageId);
-                existingElement.SetAttributeValue(existingElement.Attribute("version") != null ? "version" : existingElement.Attribute("packageVersion") != null ? "packageVersion" : "version", packageVersion);
-            }
-            else
-            {
-                root.Add(new XElement("package",
-                    new XAttribute("id", packageId),
-                    new XAttribute("version", packageVersion)));
-            }
+                var versions = group.Select(model => model.PackageVersion?.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                if (string.IsNullOrWhiteSpace(group.Key) || versions.Length != 1 || string.IsNullOrWhiteSpace(versions[0]))
+                    throw new InvalidOperationException($"Invalid or conflicting profile versions for package '{group.Key}' in repository '{repository.DisplayName}'");
 
-            Directory.CreateDirectory(Path.GetDirectoryName(isvConfigPath)!);
-            document.Save(isvConfigPath);
+                packages.Add(new PackageReference(group.Key, versions[0]!));
+            }
+            return packages;
         }
 
-        private static bool RemovePackageReference(string isvConfigPath, string packageId)
-        {
-            if (!File.Exists(isvConfigPath))
-                return false;
-
-            var document = XDocument.Load(isvConfigPath);
-            var matches = document.Descendants()
-                .Where(element => element.Name.LocalName.Contains("package", StringComparison.OrdinalIgnoreCase)
-                    && GetPackageId(element).SameAs(packageId))
-                .ToList();
-
-            if (matches.Count == 0)
-                return false;
-
-            foreach (var match in matches)
-            {
-                match.Remove();
-            }
-
-            document.Save(isvConfigPath);
-            return true;
-        }
-
-        private static bool TryParseNugetPackageUrl(string packageUrl, out string packageId, out string packageVersion)
+        public static bool TryParseNugetPackageUrl(string packageUrl, out string packageId, out string packageVersion)
         {
             packageId = string.Empty;
             packageVersion = string.Empty;
@@ -998,25 +907,6 @@ namespace FODevManager.Services
             return !packageId.IsNullOrEmpty()
                 && segments[nugetIndex + 2].SameAs("overview")
                 && !packageVersion.IsNullOrEmpty();
-        }
-
-        private static bool TryGetIsvConfigPath(RepositoryModel repository, bool createIfMissing, out string isvConfigPath)
-        {
-            isvConfigPath = string.Empty;
-
-            var repositoryRoot = (repository.RepoRootFolder ?? string.Empty).Trim();
-            if (repositoryRoot.IsNullOrEmpty())
-                return false;
-
-            isvConfigPath = FindRepositoryConfigFile(repositoryRoot, "isv.config") ?? string.Empty;
-            if (!isvConfigPath.IsNullOrEmpty())
-                return true;
-
-            if (!createIfMissing)
-                return false;
-
-            isvConfigPath = Path.Combine(repositoryRoot, "Build", "isv.config");
-            return true;
         }
 
         private bool TryResolvePackageNugetConfigPath(RepositoryModel repository, out string nugetConfigPath)
@@ -1351,7 +1241,8 @@ namespace FODevManager.Services
             string nugetConfigPath,
             string packageId,
             out List<string> versions,
-            out string errorMessage)
+            out string errorMessage,
+            bool requireSuccessfulExit = false)
         {
             versions = new List<string>();
             errorMessage = string.Empty;
@@ -1377,9 +1268,11 @@ namespace FODevManager.Services
 
             ApplyAzureArtifactsCredentials(processStartInfo, nugetConfigPath);
 
-            if (!RunProcess(processStartInfo, out var output))
+            var query = versionQueryRunner != null ? versionQueryRunner(processStartInfo) : RunVersionQuery(processStartInfo);
+            var output = query.Output;
+            if (!query.Succeeded)
             {
-                if (IsNuGetNoPackagesFoundOutput(output))
+                if (!requireSuccessfulExit && IsNuGetNoPackagesFoundOutput(output))
                     return true;
 
                 errorMessage = output;
@@ -1406,6 +1299,12 @@ namespace FODevManager.Services
                 .ToList();
 
             return true;
+        }
+
+        private (bool Succeeded, string Output) RunVersionQuery(ProcessStartInfo start)
+        {
+            var succeeded = RunProcess(start, out var output);
+            return (succeeded, output);
         }
 
         private static bool IsNuGetNoPackagesFoundOutput(string output)
@@ -1612,44 +1511,21 @@ namespace FODevManager.Services
                 return true;
             }
 
-            var repository = profile.FindRepositoryForModel(model);
-            var repositoryRoot = repository?.RepoRootFolder ?? profile.TryGetRepoRootFolder(model) ?? string.Empty;
-            var isvConfigPath = repositoryRoot.IsNullOrEmpty()
-                ? string.Empty
-                : FindRepositoryConfigFile(repositoryRoot, "isv.config") ?? string.Empty;
-
-            if (isvConfigPath.IsNullOrEmpty() || !File.Exists(isvConfigPath))
-            {
-                MessageLogger.LogOnly($"No Build\\isv.config found for '{model.ModelName}'. No compiled NuGet references were added to the build");
-                return true;
-            }
-
-            List<PackageReference> isvPackageReferences;
-            try
-            {
-                isvPackageReferences = LoadIsvPackageReferences(isvConfigPath);
-            }
-            catch (Exception exception)
-            {
-                MessageLogger.Error($"❌ Could not read package references from '{isvConfigPath}'. {exception.Message}");
-                return false;
-            }
-
-            var referencedPackages = isvPackageReferences
-                .Where(packageReference => moduleReferences.Any(moduleReference => moduleReference.SameAs(packageReference.Id)))
-                .Where(packageReference => !HasNonNugetModelName(profile, packageReference.Id))
+            var referencedModels = profile.AllModels
+                .Where(candidate => candidate.ModelType == ModelType.CompiledNuget)
+                .Where(candidate => moduleReferences.Any(moduleReference => moduleReference.SameAs(GetUnversionedModelName(candidate))))
+                .Where(candidate => !HasNonNugetModelName(profile, GetUnversionedModelName(candidate)))
                 .ToList();
 
-            if (referencedPackages.Count == 0)
+            if (referencedModels.Count == 0)
                 return true;
 
             var resolvedModels = new List<ProfileEnvironmentModel>();
-            foreach (var packageReference in referencedPackages)
+            foreach (var compiledModel in referencedModels)
             {
-                var compiledModel = profile.AllModels.FirstOrDefault(candidate => IsMatchingCompiledNugetModel(candidate, packageReference));
-                if (compiledModel == null)
+                if (referencedModels.Count(candidate => GetUnversionedModelName(candidate).SameAs(GetUnversionedModelName(compiledModel))) != 1)
                 {
-                    MessageLogger.Error($"❌ Model '{model.ModelName}' references NuGet package '{packageReference.Id}' version '{packageReference.Version}', but the profile does not contain that compiled NuGet model");
+                    MessageLogger.Error($"Ambiguous compiled NuGet build reference '{GetUnversionedModelName(compiledModel)}' in profile '{profile.ProfileName}'");
                     return false;
                 }
 
@@ -1661,7 +1537,7 @@ namespace FODevManager.Services
                 }
 
                 resolvedModels.Add(compiledModel);
-                MessageLogger.Info($"Added compiled NuGet build reference '{packageReference.Id}' version '{packageReference.Version}' from '{compiledModelFolder}'");
+                MessageLogger.Info($"Added compiled NuGet build reference '{compiledModel.ModelName}' from package '{compiledModel.PackageId}' version '{compiledModel.PackageVersion}' from '{compiledModelFolder}'");
             }
 
             compiledModels = resolvedModels;
@@ -1888,19 +1764,6 @@ namespace FODevManager.Services
                 .Where(reference => !reference.IsNullOrEmpty())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
-        }
-
-        private static bool IsMatchingCompiledNugetModel(ProfileEnvironmentModel candidate, PackageReference packageReference)
-        {
-            if (candidate == null || candidate.ModelType != ModelType.CompiledNuget)
-                return false;
-
-            if (!candidate.PackageVersion.SameAs(packageReference.Version))
-                return false;
-
-            return candidate.PackageId.SameAs(packageReference.Id)
-                || candidate.ModelName.SameAs(packageReference.Id)
-                || GetUnversionedModelName(candidate).SameAs(packageReference.Id);
         }
 
         private static bool HasNonNugetModelName(ProfileModel profile, string modelName)
@@ -2289,6 +2152,7 @@ namespace FODevManager.Services
 
             packagePath = packageFiles[0];
             nuspecPath = nuspecFiles[0];
+            LastBuiltArtifactPaths = packageFiles.Concat(nuspecFiles).Select(Path.GetFullPath).ToArray();
 
             MessageLogger.Info($"📦 NuGet package: {packagePath}");
             MessageLogger.Info($"📄 Nuspec: {nuspecPath}");
@@ -2819,7 +2683,7 @@ namespace FODevManager.Services
                 yield return candidate;
         }
 
-        private sealed record PackageContext(string RepositoryRoot, string IsvConfigPath, string NugetConfigPath, IReadOnlyList<PackageReference> Packages);
+        private sealed record PackageContext(string RepositoryRoot, string NugetConfigPath, IReadOnlyList<PackageReference> Packages);
         private sealed record PackageReference(string Id, string Version)
         {
             public string GetKey() => $"{Id}|{Version}";

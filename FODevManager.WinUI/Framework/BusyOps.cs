@@ -1,9 +1,9 @@
 ﻿using FODevManager.Messages;
+using FODevManager.Operations;
 using FODevManager.Shared.Utils.FODevManager.WinUI.Services;
 using FODevManager.Utils;
 using FODevManager.WinUI;
 using FODevManager.WinUI.Framework;
-using Serilog;
 using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -44,6 +44,28 @@ namespace FODevManager.WinUI.Framework
 
         private static async Task<TryResult<T>> TryCatchAsync<T>(Func<Task<T>> func, string? operationName, bool shutdownServer, T fallback = default)
         {
+            try
+            {
+                return await new HostOperationBoundary().RunAsync(operationName ?? "Desktop operation", async () =>
+                {
+                    App.ReloadConfiguration();
+                    return await RunBusyAsync(func, operationName, shutdownServer);
+                });
+            }
+            catch (OperationCanceledException exception)
+            {
+                MessageLogger.Warning($"{operationName} canceled: {exception.Message}");
+                return new TryResult<T>(false, fallback);
+            }
+            catch (Exception exception)
+            {
+                MessageLogger.Error($"{operationName} failed: {exception.Message}");
+                return new TryResult<T>(false, fallback);
+            }
+        }
+
+        private static async Task<TryResult<T>> RunBusyAsync<T>(Func<Task<T>> func, string? operationName, bool shutdownServer)
+        {
             var minVisibleMs = 2000;
             var busy = Singleton<BusyHandler>.Instance;
             var operationId = Guid.NewGuid();
@@ -51,7 +73,7 @@ namespace FODevManager.WinUI.Framework
 
             using (OperationScope.Begin(operationId))
             {
-                try
+                var result = await HostOperationExecution.RunAsync(operationName ?? "Desktop operation", async () =>
                 {
                     await Ui.EnqueueAsync(() =>
                     {
@@ -63,7 +85,7 @@ namespace FODevManager.WinUI.Framework
 
                     if (shutdownServer)
                     {
-                        await Task.Run(ServiceHelper.StopW3SVC).ConfigureAwait(false);
+                        await Task.Run(() => WorkflowContext.ServiceCall(ServiceHelper.StopW3SVC)).ConfigureAwait(false);
                     }
 
                     if (!operationName.IsNullOrEmpty())
@@ -71,49 +93,26 @@ namespace FODevManager.WinUI.Framework
 
                     Singleton<W3cServiceState>.Instance.InOperation = true;
 
-                    var result = await func().ConfigureAwait(true);
-
-                    Singleton<W3cServiceState>.Instance.InOperation = false;
-
-                    if (!operationName.IsNullOrEmpty())
-                        MessageLogger.Highlight($"✓ {operationName} completed");
-
-                    return new TryResult<T>(true, result);
-                }
-                catch (OperationCanceledException cancelException)
-                {
-                    if (!operationName.IsNullOrEmpty())
-                        MessageLogger.Warning($"⏹ {operationName} canceled: {cancelException.Message}");
-                    return new TryResult<T>(false, fallback);
-                }
-                catch (Exception exception)
-                {
-                    if (!operationName.IsNullOrEmpty())
-                        MessageLogger.Error($"✖ {operationName} failed: {exception.Message}");
-                    else
-                        MessageLogger.Error($"✖ Operation failed: {exception.Message}");
-                    
-                    Log.Error(exception.ToString());
-                    return new TryResult<T>(false, fallback);
-                }
-                finally
+                    return await func().ConfigureAwait(true);
+                }, async () =>
                 {
                     Singleton<W3cServiceState>.Instance.InOperation = false;
 
-                    await Task.Run(ServiceHelper.StartW3SVC).ConfigureAwait(false);
-
-                    stopWatch.Stop();
-                    var remainingMilliseconds = minVisibleMs - (int)stopWatch.ElapsedMilliseconds;
-                    if (remainingMilliseconds > 0)
+                    try
                     {
-                        await Task.Delay(remainingMilliseconds).ConfigureAwait(true);
+                        await Task.Run(ServiceHelper.StartW3SVC).ConfigureAwait(false);
                     }
-
-                    await Ui.EnqueueAsync(() =>
+                    finally
                     {
-                        busy.Stop(operationId);
-                    }).ConfigureAwait(false);
-                }
+                        stopWatch.Stop();
+                        var remainingMilliseconds = minVisibleMs - (int)stopWatch.ElapsedMilliseconds;
+                        if (remainingMilliseconds > 0)
+                            await Task.Delay(remainingMilliseconds).ConfigureAwait(true);
+
+                        await Ui.EnqueueAsync(() => busy.Stop(operationId)).ConfigureAwait(false);
+                    }
+                });
+                return new TryResult<T>(true, result);
             }
         }
     }

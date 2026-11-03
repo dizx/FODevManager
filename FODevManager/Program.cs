@@ -14,6 +14,9 @@ internal class Program
 {
     public static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0].Equals("mcp", StringComparison.OrdinalIgnoreCase))
+            return FODevManager.Mcp.McpHost.RunAsync().GetAwaiter().GetResult();
+
         var result = 1;
         try
         {
@@ -83,7 +86,8 @@ internal class Program
             .Build();
     }
 
-    internal static int Execute(string[] args, Func<IHost> buildHost, Action? refreshServiceState = null)
+    internal static int Execute(string[] args, Func<IHost> buildHost, Action? refreshServiceState = null,
+        FODevManager.Operations.ApplicationOperationLock? operationLock = null)
     {
         var errors = 0;
         using var errorSubscription = MessageBus.Subscribe(message =>
@@ -99,6 +103,8 @@ internal class Program
             if (!parser.IsValid)
                 return 2;
 
+            using var lease = CommandIsReadOnly(parser.Command) ? null :
+                new FODevManager.Operations.HostOperationBoundary(operationLock).Acquire(parser.Command);
             using (var host = buildHost())
             {
                 if (errors != 0)
@@ -120,9 +126,13 @@ internal class Program
         }
     }
 
+    private static bool CommandIsReadOnly(string command) => command is "list" or "show" or "repos" or "solution-path";
+
     private static bool RunCommand(CommandParser command, IServiceProvider services, Func<bool> hasErrors, Action refreshServiceState)
     {
-        var files = services.GetRequiredService<FileService>();
+        var files = CommandIsReadOnly(command.Command)
+            ? new FileService(services.GetRequiredService<AppConfig>(), ensureDirectory: false)
+            : services.GetRequiredService<FileService>();
         var profileName = command.ProfileName;
         var modelName = command.ModelName;
 
@@ -302,35 +312,8 @@ internal class Program
 
     private static bool VerifyDeploymentOwnership(ProfileModel profile, ProfileEnvironmentModel model, IServiceProvider services)
     {
-        var modelName = model.ModelName;
-        var config = services.GetRequiredService<AppConfig>();
-        var links = services.GetRequiredService<IDirectoryLinkService>();
-        if (string.IsNullOrWhiteSpace(modelName) || modelName != Path.GetFileName(modelName)
-            || modelName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
-            || modelName.EndsWith('.') || modelName.EndsWith(' '))
-            throw new InvalidOperationException("Invalid model name for deployment removal");
-        var linkPath = Path.Combine(config.DeploymentBasePath, modelName);
-        if (!links.Exists(linkPath))
-        {
-            if (File.Exists(linkPath) || new DirectoryInfo(linkPath).LinkTarget != null)
-                throw new InvalidOperationException($"Refusing to remove '{modelName}': deployment path is a file or broken link");
-            return false;
-        }
-
-        var target = links.ResolveLinkTarget(linkPath);
-        var source = model.ModelType == ModelType.Source ? model.MetadataFolder : model.CompiledModelFolder;
-        var records = services.GetRequiredService<IDeploymentLedgerService>().LoadRecords()
-            .Where(record => record.ModelName.SameAs(modelName)).ToList();
-        if (target == null || string.IsNullOrWhiteSpace(source) || records.Count != 1
-            || records[0].IsUnmanaged || !records[0].ProfileName.SameAs(profile.ProfileName)
-            || !SamePath(target, source) || !SamePath(records[0].SourcePath, source))
-            throw new InvalidOperationException($"Refusing to remove '{modelName}': deployment is not a verified link owned by profile '{profile.ProfileName}'");
-
-        return true;
+        return FODevManager.Operations.DeploymentOwnership.Verify(profile, model,
+            services.GetRequiredService<AppConfig>(), services.GetRequiredService<IDirectoryLinkService>(),
+            services.GetRequiredService<IDeploymentLedgerService>());
     }
-
-    private static bool SamePath(string left, string right) =>
-        !string.IsNullOrWhiteSpace(left) && !string.IsNullOrWhiteSpace(right)
-        && string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(left)),
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(right)), StringComparison.OrdinalIgnoreCase);
 }
